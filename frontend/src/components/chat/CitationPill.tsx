@@ -59,6 +59,12 @@ interface CitationPillProps {
    * or note/insight pills).
    */
   onViewSource?: () => void
+  /**
+   * v0.8.130 — Visible text of the chip. Callers that number their citations pass it so
+   * the pill reads like a footnote marker; omitted, the pill falls back to an
+   * abbreviated record ID (`so:abc12345`) or `[N]` for tool calls.
+   */
+  label?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -264,7 +270,7 @@ const KIND_ICONS: Record<CitationKind, React.ElementType> = {
  * Accessibility: the trigger is a focusable button; Radix Popover handles
  * keyboard navigation (Enter/Space to open, Escape to close, focus-trap).
  */
-export function CitationPill({ kind, value, messageId, onViewSource }: CitationPillProps) {
+export function CitationPill({ kind, value, messageId, onViewSource, label: labelOverride }: CitationPillProps) {
   const { t } = useTranslation()
   const Icon = KIND_ICONS[kind]
 
@@ -300,9 +306,10 @@ export function CitationPill({ kind, value, messageId, onViewSource }: CitationP
 
   // Visible badge label
   const label =
-    kind === 'mcp'
+    labelOverride ??
+    (kind === 'mcp'
       ? `[${value}]`
-      : `${kind.slice(0, 2)}:${value.slice(0, 8)}`
+      : `${kind.slice(0, 2)}:${value.slice(0, 8)}`)
 
   // Accessible aria-label
   const ariaLabel =

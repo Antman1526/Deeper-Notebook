@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useId, useMemo } from 'react'
+import { createContext, useContext, useState, useRef, useEffect, useId, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -25,8 +25,8 @@ import { ContextIndicator } from '@/components/common/ContextIndicator'
 import { SessionManager } from '@/components/source/SessionManager'
 import { MessageActions } from '@/components/source/MessageActions'
 import { MessageCopyEditActions } from '@/components/chat/MessageCopyEditActions'
-import { convertReferencesToCompactMarkdown, createCompactReferenceLinkComponent } from '@/lib/utils/source-references'
-import { splitCitations } from '@/lib/utils/citations'
+import { CompactReferenceLink, convertReferencesToCompactMarkdown } from '@/lib/utils/source-references'
+import { linkifyCitations, parseCitationHref, type LinkedCitation } from '@/lib/utils/citations'
 import { CitationPill } from '@/components/chat/CitationPill'
 import { AudioDictateButton } from '@/components/common/AudioDictateButton'
 // v0.8.35c — small "local"/"cloud" chip next to AI messages, lit when
@@ -787,6 +787,103 @@ function ThoughtAccordion({
   )
 }
 
+// v0.8.130 — Everything inside an answer that is a link: numbered citation chips (kept in
+// the flow of their sentence), compact [n] references, and ordinary links.
+//
+// The markdown component map below lives at module level on purpose. Defining
+// it inside AIMessageContent gave React a fresh component type for every <p>,
+// <li> and link on each render, so every streamed token remounted them — which
+// would also reset an open citation popover. Per-message data reaches the
+// anchor through context instead of a closure.
+interface AnswerLinkContextValue {
+  citations: LinkedCitation[]
+  messageId?: string
+  onViewSource?: (sourceId: string, query: string) => void
+  onReferenceClick: (type: string, id: string) => void
+}
+
+const AnswerLinkContext = createContext<AnswerLinkContextValue | null>(null)
+
+function AnswerLink({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
+  const context = useContext(AnswerLinkContext)
+
+  const index = parseCitationHref(href)
+  const citation = context && index !== null ? context.citations[index] : undefined
+  if (context && citation) {
+    // v0.8.1 Item 3 — messageId lets MCP pills look up tool-call payloads from
+    // the TanStack Query cache.
+    // v0.8.79 — "View source" opens the reading view highlighting the cited
+    // passage; the citing sentence is the last sentence before the marker.
+    return (
+      <CitationPill
+        kind={citation.kind}
+        value={citation.value}
+        label={citation.number === null ? undefined : String(citation.number)}
+        messageId={context.messageId}
+        onViewSource={
+          citation.kind === 'source' && context.onViewSource
+            ? () => context.onViewSource?.(`source:${citation.value}`, lastSentence(citation.precedingText))
+            : undefined
+        }
+      />
+    )
+  }
+
+  return (
+    <CompactReferenceLink
+      href={href}
+      {...props}
+      onReferenceClick={(type, id) => context?.onReferenceClick(type, id)}
+    >
+      {children}
+    </CompactReferenceLink>
+  )
+}
+
+const answerMarkdownComponents = {
+  a: AnswerLink,
+  p: ({ children }: { children?: React.ReactNode }) => <p className="mb-4">{children}</p>,
+  h1: ({ children }: { children?: React.ReactNode }) => <h1 className="mb-4 mt-6">{children}</h1>,
+  h2: ({ children }: { children?: React.ReactNode }) => <h2 className="mb-3 mt-5">{children}</h2>,
+  h3: ({ children }: { children?: React.ReactNode }) => <h3 className="mb-3 mt-4">{children}</h3>,
+  h4: ({ children }: { children?: React.ReactNode }) => <h4 className="mb-2 mt-4">{children}</h4>,
+  h5: ({ children }: { children?: React.ReactNode }) => <h5 className="mb-2 mt-3">{children}</h5>,
+  h6: ({ children }: { children?: React.ReactNode }) => <h6 className="mb-2 mt-3">{children}</h6>,
+  li: ({ children }: { children?: React.ReactNode }) => <li className="mb-1">{children}</li>,
+  ul: ({ children }: { children?: React.ReactNode }) => <ul className="mb-4 space-y-1">{children}</ul>,
+  ol: ({ children }: { children?: React.ReactNode }) => <ol className="mb-4 space-y-1">{children}</ol>,
+  table: ({ children }: { children?: React.ReactNode }) => (
+    <div className="my-4 overflow-x-auto">
+      <table className="min-w-full border-collapse border border-border">{children}</table>
+    </div>
+  ),
+  thead: ({ children }: { children?: React.ReactNode }) => <thead className="bg-muted">{children}</thead>,
+  tbody: ({ children }: { children?: React.ReactNode }) => <tbody>{children}</tbody>,
+  tr: ({ children }: { children?: React.ReactNode }) => <tr className="border-b border-border">{children}</tr>,
+  th: ({ children }: { children?: React.ReactNode }) => <th className="border border-border px-3 py-2 text-left font-semibold">{children}</th>,
+  td: ({ children }: { children?: React.ReactNode }) => <td className="border border-border px-3 py-2">{children}</td>,
+  pre: ({ children }: { children?: React.ReactNode }) => (
+    <div className="my-3 overflow-hidden rounded-lg border bg-muted/40 font-mono text-xs shadow-xs">
+      <pre className="overflow-x-auto p-3.5 leading-relaxed">{children}</pre>
+    </div>
+  ),
+  code: ({ className, children, ...props }: React.ComponentPropsWithoutRef<'code'>) => {
+    const isInline = !className && typeof children === 'string' && !children.includes('\n')
+    if (isInline) {
+      return (
+        <code className="rounded bg-muted/70 px-1.5 py-0.5 font-mono text-xs font-medium text-foreground" {...props}>
+          {children}
+        </code>
+      )
+    }
+    return (
+      <code className={className} {...props}>
+        {children}
+      </code>
+    )
+  },
+}
+
 function AIMessageContent({
   content,
   onReferenceClick,
@@ -803,58 +900,18 @@ function AIMessageContent({
   const { t } = useTranslation()
   const { thinking, isThinkingActive, answer } = parseThinking(content)
 
-  // Create custom link component for compact references
-  const LinkComponent = createCompactReferenceLinkComponent(onReferenceClick)
-
-  // Shared ReactMarkdown component overrides — reused per text segment.
-  const mdComponents = {
-    a: LinkComponent,
-    p: ({ children }: { children?: React.ReactNode }) => <p className="mb-4">{children}</p>,
-    h1: ({ children }: { children?: React.ReactNode }) => <h1 className="mb-4 mt-6">{children}</h1>,
-    h2: ({ children }: { children?: React.ReactNode }) => <h2 className="mb-3 mt-5">{children}</h2>,
-    h3: ({ children }: { children?: React.ReactNode }) => <h3 className="mb-3 mt-4">{children}</h3>,
-    h4: ({ children }: { children?: React.ReactNode }) => <h4 className="mb-2 mt-4">{children}</h4>,
-    h5: ({ children }: { children?: React.ReactNode }) => <h5 className="mb-2 mt-3">{children}</h5>,
-    h6: ({ children }: { children?: React.ReactNode }) => <h6 className="mb-2 mt-3">{children}</h6>,
-    li: ({ children }: { children?: React.ReactNode }) => <li className="mb-1">{children}</li>,
-    ul: ({ children }: { children?: React.ReactNode }) => <ul className="mb-4 space-y-1">{children}</ul>,
-    ol: ({ children }: { children?: React.ReactNode }) => <ol className="mb-4 space-y-1">{children}</ol>,
-    table: ({ children }: { children?: React.ReactNode }) => (
-      <div className="my-4 overflow-x-auto">
-        <table className="min-w-full border-collapse border border-border">{children}</table>
-      </div>
-    ),
-    thead: ({ children }: { children?: React.ReactNode }) => <thead className="bg-muted">{children}</thead>,
-    tbody: ({ children }: { children?: React.ReactNode }) => <tbody>{children}</tbody>,
-    tr: ({ children }: { children?: React.ReactNode }) => <tr className="border-b border-border">{children}</tr>,
-    th: ({ children }: { children?: React.ReactNode }) => <th className="border border-border px-3 py-2 text-left font-semibold">{children}</th>,
-    td: ({ children }: { children?: React.ReactNode }) => <td className="border border-border px-3 py-2">{children}</td>,
-    pre: ({ children }: { children?: React.ReactNode }) => (
-      <div className="my-3 overflow-hidden rounded-lg border bg-muted/40 font-mono text-xs shadow-xs">
-        <pre className="overflow-x-auto p-3.5 leading-relaxed">{children}</pre>
-      </div>
-    ),
-    code: ({ className, children, ...props }: React.ComponentPropsWithoutRef<'code'>) => {
-      const isInline = !className && typeof children === 'string' && !children.includes('\n')
-      if (isInline) {
-        return (
-          <code className="rounded bg-muted/70 px-1.5 py-0.5 font-mono text-xs font-medium text-foreground" {...props}>
-            {children}
-          </code>
-        )
-      }
-      return (
-        <code className={className} {...props}>
-          {children}
-        </code>
-      )
-    },
-  }
-
-  // Split the answer on ALL citation markers ([mcp:N], [source:ID], etc.).
-  // Text segments are rendered via ReactMarkdown (with compact-reference conversion).
-  // Citation segments are rendered as CitationPill components inline.
-  const segments = splitCitations(answer)
+  // v0.8.130 — Citation markers ([mcp:N], [source:ID], …) become numbered markdown links so
+  // the WHOLE answer goes through one markdown pass and each chip stays inside
+  // the sentence it supports. Rendering the answer piecewise put every chip on
+  // its own line. Remaining reference shapes go through the compact-reference
+  // conversion afterwards, as before.
+  const { markdown, citations } = useMemo(() => linkifyCitations(answer), [answer])
+  const firstLegacyNumber = citations.reduce((highest, citation) => Math.max(highest, citation.number ?? 0), 0) + 1
+  const markdownWithCompactRefs = convertReferencesToCompactMarkdown(markdown, t('common.references'), firstLegacyNumber)
+  const linkContext = useMemo(
+    () => ({ citations, messageId, onViewSource, onReferenceClick }),
+    [citations, messageId, onViewSource, onReferenceClick],
+  )
 
   // v0.7.25 — was `prose-a:text-blue-600 prose-a:break-all`. The
   // hardcoded blue-600 fails WCAG AA against the dark muted
@@ -865,46 +922,15 @@ function AIMessageContent({
       {thinking && (
         <ThoughtAccordion thinking={thinking} isThinkingActive={isThinkingActive} />
       )}
-      {segments.map((seg, idx) => {
-        if (seg.kind === 'text') {
-          // Pass text segments through the existing compact-reference pipeline.
-          const markdownWithCompactRefs = convertReferencesToCompactMarkdown(
-            seg.value,
-            t('common.references')
-          )
-          return (
-            <ReactMarkdown
-              key={idx}
-              remarkPlugins={[remarkGfm, remarkMath]}
-              rehypePlugins={[rehypeKatex]}
-              components={mdComponents}
-            >
-              {markdownWithCompactRefs}
-            </ReactMarkdown>
-          )
-        }
-        // Citation segment → render as an inline pill.
-        // v0.8.1 Item 3 — pass messageId so MCP pills can look up
-        // tool-call payloads from the TanStack Query cache.
-        // v0.8.79 — for source citations, wire "View source" to open the
-        // reading view highlighting the cited passage (citing sentence = the
-        // last sentence of the preceding text segment).
-        const prev = idx > 0 ? segments[idx - 1] : undefined
-        const citingSentence = prev && prev.kind === 'text' ? lastSentence(prev.value) : ''
-        return (
-          <CitationPill
-            key={`${seg.kind}-${idx}`}
-            kind={seg.kind}
-            value={seg.value}
-            messageId={messageId}
-            onViewSource={
-              seg.kind === 'source' && onViewSource
-                ? () => onViewSource(`source:${seg.value}`, citingSentence)
-                : undefined
-            }
-          />
-        )
-      })}
+      <AnswerLinkContext.Provider value={linkContext}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm, remarkMath]}
+          rehypePlugins={[rehypeKatex]}
+          components={answerMarkdownComponents}
+        >
+          {markdownWithCompactRefs}
+        </ReactMarkdown>
+      </AnswerLinkContext.Provider>
     </div>
   )
 }
