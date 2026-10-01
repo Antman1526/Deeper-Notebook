@@ -90,3 +90,76 @@ test.describe('2a — bounded frame', () => {
     await expect(studio.getByRole('region', { name: 'Evidence Studio artifacts' })).toBeAttached()
   })
 })
+
+test.describe('2b — column cards', () => {
+  for (const viewport of [
+    { label: 'wide', width: 1440, height: 900 },
+    { label: 'laptop', width: 1280, height: 800 },
+    { label: 'compact', width: 1024, height: 768 },
+  ]) {
+    test(`column headers stay on one row and nothing clips (${viewport.label})`, async ({ page }) => {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height })
+      await page.goto(`/notebooks/${notebook.id}`)
+      await expect(page.locator('main textarea[name="chat-message"]')).toBeVisible()
+
+      const headers = await page.locator('[data-dn-column] > [data-slot="card-header"]').evaluateAll((elements) =>
+        elements.filter((el) => (el as HTMLElement).offsetParent !== null).map((el) => ({
+          height: el.getBoundingClientRect().height,
+          overflow: el.scrollWidth - el.clientWidth,
+        })),
+      )
+      expect(headers.length).toBeGreaterThanOrEqual(3)
+      for (const header of headers) {
+        // One row: 44px touch targets (the V2 floor) plus padding. A wrapped header is ~110px.
+        expect(header.height).toBeLessThanOrEqual(80)
+        expect(header.overflow).toBeLessThanOrEqual(1)
+      }
+
+      // v0.8.130 — the titles themselves read in full: header actions crowded "Sources" down
+      // to "So…" at 1440 and "S" at 1024, and "Chat with Notebook" wrapped.
+      const titles = await page.locator('[data-dn-column] > [data-slot="card-header"] [data-slot="card-title"]').evaluateAll((elements) =>
+        elements.filter((el) => (el as HTMLElement).offsetParent !== null).map((el) => ({
+          text: el.textContent?.trim(),
+          truncated: el.scrollWidth - el.clientWidth,
+          height: el.getBoundingClientRect().height,
+        })),
+      )
+      expect(titles.length).toBeGreaterThanOrEqual(3)
+      for (const title of titles) {
+        expect(title, title.text).toEqual(expect.objectContaining({ truncated: 0 }))
+        expect(title.height, title.text).toBeLessThanOrEqual(32)
+      }
+
+      // ...and so do the column action labels ("+ Add Source" read "A…" at 1280).
+      const actions = await page.locator('[data-dn-column-actions] button').evaluateAll((elements) =>
+        elements.filter((el) => (el as HTMLElement).offsetParent !== null).map((el) => ({
+          name: el.getAttribute('aria-label') ?? el.textContent?.trim(),
+          truncated: Math.max(0, ...Array.from(el.querySelectorAll('span')).map((span) => span.scrollWidth - span.clientWidth)),
+        })),
+      )
+      expect(actions.length).toBeGreaterThanOrEqual(2)
+      for (const action of actions) expect(action.truncated, action.name ?? '').toBe(0)
+    })
+  }
+
+  test('columns are borderless surfaces on the tinted canvas', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto(`/notebooks/${notebook.id}`)
+    await expect(page.locator('main textarea[name="chat-message"]')).toBeVisible()
+
+    const borders = await page.locator('[data-dn-column]').evaluateAll((elements) =>
+      elements.map((el) => getComputedStyle(el).borderTopColor),
+    )
+    expect(borders.length).toBeGreaterThanOrEqual(4)
+    for (const color of borders) expect(color).toMatch(/rgba\(0, 0, 0, 0\)|transparent/)
+  })
+
+  test('Studio leads with a two-column generator grid', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto(`/notebooks/${notebook.id}`)
+    const generate = page.getByRole('group', { name: 'Generate' })
+    await expect(generate).toBeVisible()
+    const columns = await generate.evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(' ').length)
+    expect(columns).toBe(2)
+  })
+})

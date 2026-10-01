@@ -74,6 +74,28 @@
   height: 100%;
 }
 
+/* v0.8.130 — Phase 2b: the columns are borderless rounded surfaces on the tinted
+   canvas (NotebookLM's three cards), with a hairline under a compact header row. */
+[data-dn-notebook-workspace] [data-dn-column] {
+  gap: 0;
+  border-color: transparent;
+  border-radius: var(--radius-xl);
+  padding-block: 0;
+  box-shadow: none;
+}
+
+[data-dn-notebook-workspace] [data-dn-column] > [data-slot='card-header'] {
+  padding: 0.625rem 0.75rem 0.625rem 1rem;
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+  /* The implicit auto track sizes to content, so the title could never truncate
+     and pushed the actions past the card edge. */
+  grid-template-columns: minmax(0, 1fr);
+}
+
+[data-dn-notebook-workspace] [data-dn-column] > [data-slot='card-content'] {
+  padding: 0.75rem 1rem;
+}
+
 .dn-workspace-shell > .dn-shell-utilities {
   grid-area: body;
 }

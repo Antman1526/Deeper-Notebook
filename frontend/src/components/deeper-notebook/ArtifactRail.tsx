@@ -241,6 +241,8 @@ export function ArtifactRail({
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([])
   const { t } = useTranslation()
   const [videoDialogOpen, setVideoDialogOpen] = useState(false)
+  // v0.8.130 — the App Mode explainer is a collapsed disclosure in the Studio column.
+  const [explainerOpen, setExplainerOpen] = useState(false)
   const [exportAllDialogOpen, setExportAllDialogOpen] = useState(false)
   const [selectedEpisodeId, setSelectedEpisodeId] = useState('')
   const [videoUrls, setVideoUrls] = useState<{ media: string; captions: string } | null>(null)
@@ -458,18 +460,129 @@ export function ArtifactRail({
 
   if (!enabled) return null
 
+  // v0.8.130 — Phase 2b: this used to be a full-width band above the panes. It is now
+  // the Studio column's body: generators first as a two-column tile grid (NotebookLM's
+  // Studio), then saved outputs as a vertical list, then workflow runs. The App Mode
+  // explainer moved into a closed disclosure instead of a permanent box.
   return (
-    <section
-      aria-label="Evidence Studio artifacts"
-      className="mb-5 overflow-hidden rounded-lg border border-[var(--dn-border-strong)] bg-card shadow-[var(--dn-elevation-md)]"
-    >
-      <div className="flex flex-col gap-3 border-b bg-[var(--dn-surface-raised)] px-4 py-3 @5xl:flex-row @5xl:items-center @5xl:justify-between">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-10 w-10 flex-none items-center justify-center rounded-md border border-[var(--dn-border-strong)] bg-background text-primary shadow-[var(--dn-elevation-low)]">
-            <Layers3 className="h-4 w-4" aria-hidden="true" />
+    <section aria-label="Evidence Studio artifacts" className="space-y-5">
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-medium">Generate</h3>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label={`Artifact sources: ${sourceLabel}`}
+                disabled={sourcesLoading || sources.length === 0}
+              >
+                <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+                {sourceLabel}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-80 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-medium">Artifact sources</div>
+                  <div className="text-xs text-muted-foreground">
+                    Empty selection uses every notebook source.
+                  </div>
+                </div>
+                {selectedSourceIds.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSelectedSourceIds([])}
+                  >
+                    Use all
+                  </Button>
+                )}
+              </div>
+
+              <ScrollArea className="mt-3 max-h-64 pr-2">
+                <div className="space-y-2">
+                  {sources.map((source) => {
+                    const title = sourceTitle(source)
+                    const checkboxId = `artifact-source-${source.id.replace(/[^A-Za-z0-9_-]/g, '-')}`
+                    return (
+                      <div
+                        key={source.id}
+                        className="flex items-start gap-2 rounded-md px-2 py-1.5 hover:bg-accent"
+                      >
+                        <Checkbox
+                          id={checkboxId}
+                          aria-label={title}
+                          checked={selectedSourceIds.includes(source.id)}
+                          onCheckedChange={(checked) => toggleSource(source.id, checked === true)}
+                        />
+                        <label
+                          htmlFor={checkboxId}
+                          className="min-w-0 flex-1 cursor-pointer text-sm leading-5"
+                        >
+                          <span className="block truncate">{title}</span>
+                          <span className="mt-1 block">
+                            <SourceHealthPill source={source} />
+                          </span>
+                        </label>
+                      </div>
+                    )
+                  })}
+                </div>
+              </ScrollArea>
+            </PopoverContent>
+          </Popover>
+        </div>
+        {/* v0.8.130 — why the tiles are disabled, above them. */}
+        {generationBlocked && (
+          <div className="rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-xs text-warning-ink">
+            {blockedSourceMessage}
           </div>
+        )}
+        <div role="group" aria-label="Generate" className="grid grid-cols-2 gap-2">
+          {quickArtifacts.map(({ type, title, label, Icon }) => (
+            <Button
+              key={type}
+              variant="outline"
+              disabled={isCreating || generationBlocked}
+              onClick={() => void createAndQueue(type, title)}
+              className="h-auto min-h-14 flex-col items-start justify-start gap-1.5 whitespace-normal rounded-xl px-3 py-2.5 text-left"
+            >
+              <Icon className="h-4 w-4 text-primary" aria-hidden="true" />
+              <span className="text-sm leading-tight">{label}</span>
+            </Button>
+          ))}
+        </div>
+        <div className="text-xs text-muted-foreground">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-expanded={explainerOpen}
+            aria-controls="artifact-rail-explainer"
+            onClick={() => setExplainerOpen((open) => !open)}
+            className="h-auto px-1 py-1 text-xs font-normal text-muted-foreground hover:text-foreground"
+          >
+            How generation works
+          </Button>
+          <div id="artifact-rail-explainer" hidden={!explainerOpen} className="mt-1 space-y-1 rounded-md bg-muted/50 p-2.5">
+            <div className="text-sm font-medium text-foreground">App Mode templates</div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span>Source readiness</span>
+              <ArrowRight className="h-3 w-3" aria-hidden="true" />
+              <span>Artifact generation</span>
+              <ArrowRight className="h-3 w-3" aria-hidden="true" />
+              <span>Evidence export</span>
+            </div>
+            <div>Pick sources once, then run a reusable grounded workflow.</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <div className="text-sm font-semibold">Evidence Studio</div>
+            <h3 className="text-sm font-medium">Evidence Studio</h3>
             <div className="text-xs text-muted-foreground">
               {isLoading
                 ? 'Artifacts are loading'
@@ -478,103 +591,79 @@ export function ArtifactRail({
                   : `${artifacts.length} ${artifacts.length === 1 ? 'artifact' : 'artifacts'}`}
             </div>
           </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          {/* v0.8.130 — 12px type floor (UI audit Phase 1) */}
-          <Badge variant="outline" className="bg-background/70 text-xs">
-            {stats.completed} completed
-          </Badge>
-          <Badge variant="outline" className="bg-background/70 text-xs">
-            {stats.active} in progress
-          </Badge>
-          <Badge variant="outline" className="bg-background/70 text-xs">
-            {stats.citations} {stats.citations === 1 ? 'citation' : 'citations'}
-          </Badge>
           {/* v0.8.124 — one-click export of every completed artifact as a zip. */}
           <Button
             type="button"
-            variant="outline"
-            size="sm"
+            variant="ghost"
+            size="icon"
             aria-label={t('studio.export.exportAll')}
+            title={t('studio.export.exportAll')}
             disabled={stats.completed === 0}
             onClick={() => setExportAllDialogOpen(true)}
           >
-            <Download className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
-            {t('studio.export.exportAll')}
+            <Download className="h-4 w-4" aria-hidden="true" />
           </Button>
         </div>
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <span>{stats.completed} completed</span>
+          <span>{stats.active} in progress</span>
+          <span>{stats.citations} {stats.citations === 1 ? 'citation' : 'citations'}</span>
+        </div>
+
+        {isLoading && (
+          <div className="flex min-h-12 items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            Loading artifacts
+          </div>
+        )}
+
+        {!isLoading && artifacts.length === 0 && (
+          <div className="rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground">
+            No saved research outputs in this notebook.
+          </div>
+        )}
+
+        {!isLoading && artifacts.length > 0 && (
+          <ul aria-label="Saved outputs" className="space-y-1">
+            {artifacts.map((artifact) => {
+              const Icon = ICONS[artifact.artifact_type] ?? Newspaper
+              return (
+                <li key={artifact.id}>
+                  <button
+                    type="button"
+                    aria-label={`Open ${artifact.title}`}
+                    onClick={() => {
+                      setSelectedArtifact(artifact)
+                      setSelectedCitation(null)
+                    }}
+                    className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-accent"
+                  >
+                    <Icon className="h-4 w-4 flex-none text-muted-foreground" aria-hidden="true" />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium">{artifact.title}</div>
+                      <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
+                        <span className="truncate text-xs text-muted-foreground">
+                          {artifactTypeLabel(artifact.artifact_type)}
+                        </span>
+                        <CitationCoverageBadge citationCount={artifact.citations.length} />
+                      </div>
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className={cn('flex-none text-xs', statusClassName(artifact.status))}
+                    >
+                      {artifact.status}
+                    </Badge>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        )}
       </div>
 
-      <div className="grid gap-3 px-4 py-3">
-        <div className="flex min-w-0 gap-2 overflow-x-auto pb-1">
-          {isLoading && (
-            <div className="flex min-h-12 items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              Loading artifacts
-            </div>
-          )}
-
-          {!isLoading && artifacts.length === 0 && (
-            <div className="flex min-h-12 items-center rounded-md border border-dashed px-3 text-sm text-muted-foreground">
-              No saved research outputs in this notebook.
-            </div>
-          )}
-
-          {!isLoading && artifacts.map((artifact) => {
-            const Icon = ICONS[artifact.artifact_type] ?? Newspaper
-            return (
-              <button
-                type="button"
-                key={artifact.id}
-                aria-label={`Open ${artifact.title}`}
-                onClick={() => {
-                  setSelectedArtifact(artifact)
-                  setSelectedCitation(null)
-                }}
-                className="flex min-h-14 min-w-56 max-w-72 flex-none items-center gap-2 rounded-md border bg-background px-3 py-2 text-left transition-colors hover:border-[var(--dn-border-strong)] hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <Icon className="h-4 w-4 flex-none text-muted-foreground" aria-hidden="true" />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium">{artifact.title}</div>
-                  <div className="mt-1 flex min-w-0 items-center gap-1.5">
-                    <span className="truncate text-xs text-muted-foreground">
-                      {artifactTypeLabel(artifact.artifact_type)}
-                    </span>
-                    <CitationCoverageBadge citationCount={artifact.citations.length} />
-                  </div>
-                </div>
-                <Badge
-                  variant="outline"
-                  className={cn('flex-none text-xs', statusClassName(artifact.status))}
-                >
-                  {artifact.status}
-                </Badge>
-              </button>
-            )
-          })}
-        </div>
-
-        <div className="rounded-md border bg-background/70 p-3">
-          <div className="flex flex-col gap-3 @5xl:flex-row @5xl:items-center @5xl:justify-between">
-            <div>
-              <div className="text-sm font-semibold">App Mode templates</div>
-              <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                <span>Source readiness</span>
-                <ArrowRight className="h-3 w-3" aria-hidden="true" />
-                <span>Artifact generation</span>
-                <ArrowRight className="h-3 w-3" aria-hidden="true" />
-                <span>Evidence export</span>
-              </div>
-            </div>
-            <div className="text-xs text-muted-foreground">
-              Pick sources once, then run a reusable grounded workflow.
-            </div>
-          </div>
-        </div>
-
         {(workflowRunsLoading || workflowRuns.length > 0) && (
-          <div className="rounded-md border bg-background/70 p-3">
+          <div className="rounded-lg bg-muted/40 p-3">
             <div className="flex flex-col gap-2 @2xl:flex-row @2xl:items-center @2xl:justify-between">
               <div className="flex items-center gap-2">
                 <Clock3 className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
@@ -664,91 +753,6 @@ export function ArtifactRail({
           </div>
         )}
 
-        <div className="flex max-w-full flex-wrap gap-2">
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                aria-label={`Artifact sources: ${sourceLabel}`}
-                disabled={sourcesLoading || sources.length === 0}
-              >
-                <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
-                {sourceLabel}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-80 p-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-medium">Artifact sources</div>
-                  <div className="text-xs text-muted-foreground">
-                    Empty selection uses every notebook source.
-                  </div>
-                </div>
-                {selectedSourceIds.length > 0 && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setSelectedSourceIds([])}
-                  >
-                    Use all
-                  </Button>
-                )}
-              </div>
-
-              <ScrollArea className="mt-3 max-h-64 pr-2">
-                <div className="space-y-2">
-                  {sources.map((source) => {
-                    const title = sourceTitle(source)
-                    const checkboxId = `artifact-source-${source.id.replace(/[^A-Za-z0-9_-]/g, '-')}`
-                    return (
-                      <div
-                        key={source.id}
-                        className="flex items-start gap-2 rounded-md px-2 py-1.5 hover:bg-accent"
-                      >
-                        <Checkbox
-                          id={checkboxId}
-                          aria-label={title}
-                          checked={selectedSourceIds.includes(source.id)}
-                          onCheckedChange={(checked) => toggleSource(source.id, checked === true)}
-                        />
-                        <label
-                          htmlFor={checkboxId}
-                          className="min-w-0 flex-1 cursor-pointer text-sm leading-5"
-                        >
-                          <span className="block truncate">{title}</span>
-                          <span className="mt-1 block">
-                            <SourceHealthPill source={source} />
-                          </span>
-                        </label>
-                      </div>
-                    )
-                  })}
-                </div>
-              </ScrollArea>
-            </PopoverContent>
-          </Popover>
-
-          {quickArtifacts.map(({ type, title, label, Icon }) => (
-            <Button
-              key={type}
-              variant="outline"
-              size="sm"
-              disabled={isCreating || generationBlocked}
-              onClick={() => void createAndQueue(type, title)}
-            >
-              <Icon className="h-4 w-4" aria-hidden="true" />
-              {label}
-            </Button>
-          ))}
-        </div>
-      </div>
-
-      {generationBlocked && (
-        <div className="mt-2 rounded-md border border-[var(--dn-warning)] bg-[var(--dn-warning-soft)] px-3 py-2 text-xs text-muted-foreground">
-          {blockedSourceMessage}
-        </div>
-      )}
 
       <Dialog
         open={Boolean(selectedArtifact)}

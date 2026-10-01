@@ -24,13 +24,27 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 
 interface BulkVectorizeButtonProps {
   notebookId: string
+  // v0.8.130 — Phase 2b: controlled mode so a menu item can open the dialog.
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  hideTrigger?: boolean
 }
 
-export function BulkVectorizeButton({ notebookId }: BulkVectorizeButtonProps) {
+export function BulkVectorizeButton({
+  notebookId,
+  open: controlledOpen,
+  onOpenChange,
+  hideTrigger = false,
+}: BulkVectorizeButtonProps) {
   const { t } = useTranslation()
   const vectorize = useVectorizeNotebookSources()
 
-  const [open, setOpen] = useState(false)
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
+  const open = controlledOpen ?? uncontrolledOpen
+  const setOpen = (next: boolean) => {
+    if (controlledOpen === undefined) setUncontrolledOpen(next)
+    onOpenChange?.(next)
+  }
   const [onlyMissing, setOnlyMissing] = useState(true)
 
   const handleConfirm = async () => {
@@ -47,16 +61,19 @@ export function BulkVectorizeButton({ notebookId }: BulkVectorizeButtonProps) {
 
   return (
     <>
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={() => setOpen(true)}
-        aria-label={t('notebooks.bulkVectorize.button')}
-        title={t('notebooks.bulkVectorize.button')}
-      >
-        <Sparkles className="h-4 w-4 mr-2" />
-        {t('notebooks.bulkVectorize.button')}
-      </Button>
+      {/* v0.8.130 — Phase 2b: an icon action in the Sources header (name and tooltip kept). */}
+      {!hideTrigger && (
+        <Button
+          size="icon"
+          variant="ghost"
+          className="size-8"
+          onClick={() => setOpen(true)}
+          aria-label={t('notebooks.bulkVectorize.button')}
+          title={t('notebooks.bulkVectorize.button')}
+        >
+          <Sparkles className="h-4 w-4" />
+        </Button>
+      )}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-md">

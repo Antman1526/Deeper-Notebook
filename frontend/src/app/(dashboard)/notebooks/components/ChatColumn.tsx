@@ -105,7 +105,7 @@ export function ChatColumn({ notebookId, contextSelections, sources, sourcesLoad
   // Show loading state while sources/notes are being fetched
   if (sourcesLoading || notesLoading) {
     return (
-      <Card className="h-full flex flex-col">
+      <Card data-dn-column="" className="h-full flex flex-col">
         <CardContent className="flex-1 flex items-center justify-center">
           <LoadingSpinner size="lg" />
         </CardContent>
@@ -123,7 +123,8 @@ export function ChatColumn({ notebookId, contextSelections, sources, sourcesLoad
 
   return (
     <ChatPanel
-      title={t('chat.chatWithNotebook')}
+      // v0.8.130 — Phase 2b: "Chat", as on the tabs; "Chat with Notebook" wrapped in the column.
+      title={t('common.chat')}
       contextType="notebook"
       messages={chat.messages}
       isStreaming={chat.isSending}

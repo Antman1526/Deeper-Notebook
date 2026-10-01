@@ -14,6 +14,7 @@ const {
   mockRetryMutateAsync,
   mockRemoveMutateAsync,
   mockAddSourceDialog,
+  mockBulkVectorize,
 } = vi.hoisted(() => ({
   mockVisualSystemEnabled: vi.fn(() => false),
   mockSourceVisualsEnabled: vi.fn(() => false),
@@ -25,6 +26,7 @@ const {
   mockRetryMutateAsync: vi.fn().mockResolvedValue(undefined),
   mockRemoveMutateAsync: vi.fn().mockResolvedValue(undefined),
   mockAddSourceDialog: vi.fn(),
+  mockBulkVectorize: vi.fn(),
 }))
 
 vi.mock('@/lib/features', () => ({
@@ -70,6 +72,7 @@ vi.mock('@/components/ui/dropdown-menu', () => ({
   DropdownMenu: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   DropdownMenuContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   DropdownMenuItem: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props}>{children}</button>,
+  DropdownMenuSeparator: () => <hr />,
   DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }))
 vi.mock('@/components/common/LoadingSpinner', () => ({ LoadingSpinner: () => <div>Loading</div> }))
@@ -101,7 +104,12 @@ vi.mock('@/components/ui/virtualized-list', () => ({
     return <div data-testid="virtualized">{props.renderItem(props.items[0])}</div>
   },
 }))
-vi.mock('./BulkVectorizeButton', () => ({ BulkVectorizeButton: () => null }))
+vi.mock('./BulkVectorizeButton', () => ({
+  BulkVectorizeButton: (props: { open?: boolean; hideTrigger?: boolean }) => {
+    mockBulkVectorize(props)
+    return null
+  },
+}))
 vi.mock('@/lib/hooks/use-sources', () => ({
   useDeleteSource: () => ({ mutateAsync: mockDeleteMutateAsync, isPending: false }),
   useRetrySource: () => ({ mutateAsync: mockRetryMutateAsync }),
@@ -231,5 +239,29 @@ describe('SourcesColumn visual rollback gate', () => {
       defaultNotebookId: 'notebook:one',
       initialFiles: [file],
     }))
+  })
+
+  // v0.8.130 — Phase 2b: bulk context and Embed all share one "Source options" menu so the
+  // header keeps a single row of 44px targets in a 20% column.
+  it('groups bulk context and embed-all under one Source options menu', () => {
+    const onBulkContextModeChange = vi.fn()
+    render(
+      <SourcesColumn
+        sources={[source]}
+        isLoading={false}
+        notebookId="notebook:one"
+        onBulkContextModeChange={onBulkContextModeChange}
+      />
+    )
+
+    expect(screen.getByRole('button', { name: 'sources.sourceOptions' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'sources.bulkContext' })).not.toBeInTheDocument()
+    expect(mockBulkVectorize).toHaveBeenLastCalledWith(expect.objectContaining({ open: false, hideTrigger: true }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'sources.includeAllFull' }))
+    expect(onBulkContextModeChange).toHaveBeenCalledWith('full')
+
+    fireEvent.click(screen.getByRole('button', { name: 'notebooks.bulkVectorize.button' }))
+    expect(mockBulkVectorize).toHaveBeenLastCalledWith(expect.objectContaining({ open: true, hideTrigger: true }))
   })
 })

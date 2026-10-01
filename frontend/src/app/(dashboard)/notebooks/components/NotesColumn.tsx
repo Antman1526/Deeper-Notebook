@@ -10,7 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, StickyNote, Bot, User, MoreVertical, Trash2, Download, ListChecks, ChevronDown } from 'lucide-react'
+import { Plus, StickyNote, Bot, User, MoreVertical, Trash2, Download, ListChecks } from 'lucide-react'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { EmptyState } from '@/components/common/EmptyState'
 import { Badge } from '@/components/ui/badge'
@@ -89,45 +89,49 @@ export function NotesColumn({
         collapsedIcon={StickyNote}
         collapsedLabel={notesLabel}
       >
-        <Card className="h-full flex flex-col flex-1 overflow-hidden">
-          <CardHeader className="pb-3 flex-shrink-0">
-            {/* v0.8.130 — wrap instead of clipping: in the 1024–1279px side panel the
-                header actions ran off the card. */}
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <CardTitle className="text-lg">{notesLabel}</CardTitle>
-              <div className="flex flex-wrap items-center gap-2">
-                {onBulkContextModeChange && notes && notes.length > 0 && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm" title={t('sources.bulkContext')}>
-                        <ListChecks className="h-4 w-4" />
-                        <ChevronDown className="h-4 w-4 ml-1" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => onBulkContextModeChange('include')}>
-                        {t('sources.includeAllInContext')}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => onBulkContextModeChange('exclude')}>
-                        {t('sources.excludeAllFromContext')}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setEditingNote(null)
-                    setShowAddDialog(true)
-                  }}
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  {t('common.writeNote')}
-                </Button>
-                {collapseButton}
-              </div>
+        <Card data-dn-column="" className="h-full flex flex-col flex-1 overflow-hidden">
+          <CardHeader className="flex-shrink-0">
+            {/* v0.8.130 — Phase 2b: the header holds the title and collapse only; with the
+                actions beside it the title truncated to "N…" at 1280px. */}
+            <div className="flex items-center gap-1">
+              <CardTitle className="min-w-0 flex-1 truncate text-base font-medium">{notesLabel}</CardTitle>
+              {collapseButton}
             </div>
           </CardHeader>
+
+          {/* v0.8.130 — Phase 2b: a full-width Write note row, bulk context beside it. */}
+          <div data-dn-column-actions="" className="flex flex-none items-center gap-2 px-4 pt-3">
+            <Button
+              variant="outline"
+              className="min-w-0 flex-1 rounded-full"
+              aria-label={t('common.addNote')}
+              onClick={() => {
+                setEditingNote(null)
+                setShowAddDialog(true)
+              }}
+            >
+              <Plus className="h-4 w-4" />
+              {/* v0.8.130 — visible "Add"; "Write Note" truncated at 1280px. */}
+              <span className="truncate">{t('common.add')}</span>
+            </Button>
+            {onBulkContextModeChange && notes && notes.length > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="size-8" aria-label={t('sources.bulkContext')} title={t('sources.bulkContext')}>
+                    <ListChecks className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => onBulkContextModeChange('include')}>
+                    {t('sources.includeAllInContext')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onBulkContextModeChange('exclude')}>
+                    {t('sources.excludeAllFromContext')}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
 
           <CardContent className="flex-1 overflow-y-auto min-h-0">
             {isLoading ? (

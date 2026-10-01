@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { applyRuntimeFeatures, resetRuntimeFeatures } from '@/lib/features'
@@ -1866,6 +1866,66 @@ describe('ArtifactRail', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Target Notes' })).toBeInTheDocument()
+    })
+  })
+
+  // v0.8.130 — Phase 2b: the band became the Studio column's body. Generators are a
+  // two-column tile grid, saved outputs a vertical list, and the App Mode explainer a
+  // closed disclosure (it used to take a permanent box above the generators).
+  describe('Studio column layout', () => {
+    const oneSource = [{
+      id: 'source:one', title: 'Source One', asset: null, embedded: true, embedded_chunks: 3,
+      insights_count: 0, status: 'completed', created: '2026-06-23T00:00:00Z', updated: '2026-06-23T00:00:00Z',
+    }]
+
+    it('lays the generators out as a two-column tile grid', () => {
+      isEvidenceStudioEnabled.mockReturnValue(true)
+      useStudioArtifacts.mockReturnValue({ data: [], isLoading: false })
+      render(<ArtifactRail notebookId="notebook:alpha" sources={oneSource as never} />)
+
+      const generate = screen.getByRole('group', { name: 'Generate' })
+      expect(generate).toHaveClass('grid', 'grid-cols-2')
+      expect(within(generate).getByRole('button', { name: 'Report' })).toBeInTheDocument()
+      expect(within(generate).getByRole('button', { name: 'Flashcards' })).toBeInTheDocument()
+    })
+
+    it('lists saved outputs vertically', () => {
+      isEvidenceStudioEnabled.mockReturnValue(true)
+      useStudioArtifacts.mockReturnValue({
+        data: [{
+          id: 'studio_artifact:one', notebook_id: 'notebook:alpha', artifact_type: 'report', title: 'Report',
+          status: 'completed', source_ids: [], output_payload: {}, citations: [], export_paths: {},
+        }],
+        isLoading: false,
+      })
+      render(<ArtifactRail notebookId="notebook:alpha" />)
+
+      const saved = screen.getByRole('list', { name: 'Saved outputs' })
+      expect(within(saved).getByRole('button', { name: 'Open Report' })).toBeInTheDocument()
+    })
+
+    // v0.8.130 — the reason the tiles are disabled sits above them, not under a column of greyed tiles.
+    it('explains blocked generation before the generator grid', () => {
+      isEvidenceStudioEnabled.mockReturnValue(true)
+      useStudioArtifacts.mockReturnValue({ data: [], isLoading: false })
+      render(<ArtifactRail notebookId="notebook:alpha" sources={[]} />)
+
+      const warning = screen.getByText('Add at least one ready source before generating artifacts.')
+      const generate = screen.getByRole('group', { name: 'Generate' })
+      expect(warning.compareDocumentPosition(generate) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    })
+
+    it('keeps the App Mode explainer in a closed disclosure', () => {
+      isEvidenceStudioEnabled.mockReturnValue(true)
+      useStudioArtifacts.mockReturnValue({ data: [], isLoading: false })
+      render(<ArtifactRail notebookId="notebook:alpha" sources={oneSource as never} />)
+
+      const toggle = screen.getByRole('button', { name: 'How generation works' })
+      expect(toggle).toHaveAttribute('aria-expanded', 'false')
+      expect(screen.getByText('App Mode templates').closest('#artifact-rail-explainer')).toHaveAttribute('hidden')
+      fireEvent.click(toggle)
+      expect(toggle).toHaveAttribute('aria-expanded', 'true')
+      expect(screen.getByText('App Mode templates')).toBeVisible()
     })
   })
 })
