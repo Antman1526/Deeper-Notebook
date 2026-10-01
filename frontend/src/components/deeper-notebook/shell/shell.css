@@ -539,8 +539,10 @@
 
   /* v0.8.130 — Icon-only palette trigger: the label and the keyboard hint both go. It keeps
    * its aria-label. With both controls icon-only the action row is only ~96px, so
-   * it keeps `min-width: max-content` and the breadcrumb is what gives way. */
-  .dn-command-trigger > span {
+   * it keeps `min-width: max-content` and the breadcrumb is what gives way.
+   * The hint is the shared Kbd primitive, a <kbd>, so it is named here too. */
+  .dn-command-trigger > span,
+  .dn-command-trigger > kbd {
     display: none;
   }
 

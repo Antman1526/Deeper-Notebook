@@ -71,7 +71,7 @@ const commandBarMarkup = `
           <button type="button" class="dn-command-trigger inline-flex items-center h-9 px-3 gap-2">
             <svg width="14" height="14"></svg>
             <span>Quick actions</span>
-            <span class="dn-command-shortcut">Ctrl+K</span>
+            <kbd class="dn-command-shortcut">Ctrl+K</kbd>
           </button>
           <button type="button" class="dn-focus-mode-control inline-flex items-center h-9 px-4 gap-2">
             <svg width="16" height="16"></svg>
@@ -205,6 +205,25 @@ describe('command bar (T0-9)', () => {
       }
     })
   }
+
+  // v0.8.130 — the shortcut chip became a <kbd> (the shared Kbd primitive), which the
+  // `> span` rule no longer hid, so phones showed "Ctrl+K" and squeezed the title.
+  it('shows the palette trigger as an icon on phones and tablets', async () => {
+    for (const width of [390, 768]) {
+      const { tab, close } = await measure(page(commandBarMarkup), { width, height: 900 })
+      try {
+        const hidden = await tab.evaluate(() =>
+          [...document.querySelectorAll('.dn-command-trigger > :not(svg)')].map(
+            (el) => getComputedStyle(el).display === 'none',
+          ),
+        )
+        expect(hidden.length).toBeGreaterThan(0)
+        expect(hidden.every(Boolean), `${width}px`).toBe(true)
+      } finally {
+        await close()
+      }
+    }
+  })
 
   it('shows the Focus control as an icon on phones and mid-size windows', async () => {
     for (const width of [390, 768, 1100]) {
