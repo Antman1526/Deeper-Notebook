@@ -163,3 +163,158 @@ test.describe('2b — column cards', () => {
     expect(columns).toBe(2)
   })
 })
+
+// v0.8.130 — Phase 2c: the chat column. A saved session with one finished answer.
+const chatSession = {
+  id: 'session-2c-001',
+  notebook_id: notebook.id,
+  title: 'Phase 2c chat',
+  created: '2026-01-01T00:00:00Z',
+  updated: '2026-01-01T00:00:00Z',
+  message_count: 2,
+  model_override: null,
+  disabled_mcp_servers: [],
+}
+const chatMessages = [
+  { id: 'message-2c-human', type: 'human' as const, content: 'What does the source say?', timestamp: '2026-01-01T00:00:01Z' },
+  { id: 'message-2c-ai', type: 'ai' as const, content: 'The source states a fixed research finding.', timestamp: '2026-01-01T00:00:02Z' },
+]
+
+async function mockChatHistory(page: Page, answer = chatMessages[1].content) {
+  const json = (pattern: string, body: unknown) => page.route(pattern, async (route) => {
+    if (route.request().method() !== 'GET') return route.fallback()
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
+  })
+  // Registered after beforeEach, so these win over the empty-session mock.
+  await json('**/api/chat/sessions**', [chatSession])
+  const messages = [chatMessages[0], { ...chatMessages[1], content: answer }]
+  await json(`**/api/chat/sessions/${chatSession.id}**`, { ...chatSession, messages })
+}
+
+test.describe('2c — chat column', () => {
+  test('an empty chat shows no run panel', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto(`/notebooks/${notebook.id}`)
+    await expect(page.locator('main textarea[name="chat-message"]')).toBeVisible()
+    await page.waitForTimeout(500)
+
+    // The five-card "Run timeline · idle · no gate triggered" panel sat above every empty chat.
+    await expect(page.getByRole('region', { name: 'Run timeline' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Run details' })).toHaveCount(0)
+  })
+
+  test('a finished run offers collapsed Run details under the answer', async ({ page }) => {
+    await mockChatHistory(page)
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto(`/notebooks/${notebook.id}`)
+    const answer = page.getByText(chatMessages[1].content)
+    await expect(answer).toBeVisible()
+
+    const details = page.getByRole('button', { name: 'Run details' })
+    await expect(details).toHaveCount(1)
+    await expect(details).toHaveAttribute('aria-expanded', 'false')
+    const [answerBox, detailsBox] = await Promise.all([answer.boundingBox(), details.boundingBox()])
+    expect(detailsBox!.y).toBeGreaterThan(answerBox!.y + answerBox!.height - 1)
+
+    await details.click()
+    await expect(details).toHaveAttribute('aria-expanded', 'true')
+    await expect(page.getByText('Model route')).toBeVisible()
+    await expect(page.getByText('Context built')).toBeVisible()
+  })
+
+  test('opening Run details brings the facts into view', async ({ page }) => {
+    // A long answer: the details open below the fold unless the chat scrolls to them.
+    const longAnswer = Array.from({ length: 12 }, (_, i) => `Paragraph ${i + 1} of the grounded answer.`).join('\n\n')
+    await mockChatHistory(page, longAnswer)
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto(`/notebooks/${notebook.id}`)
+    await expect(page.getByText('Paragraph 12 of the grounded answer.')).toBeVisible()
+
+    await page.getByRole('button', { name: 'Run details' }).click()
+    await expect(page.getByText('Agent state')).toBeInViewport()
+  })
+
+  test('answers are flat and questions are tinted bubbles', async ({ page }) => {
+    await mockChatHistory(page)
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto(`/notebooks/${notebook.id}`)
+    await expect(page.getByText(chatMessages[1].content)).toBeVisible()
+
+    const styles = await page.locator('[data-dn-message]').evaluateAll((elements) =>
+      elements.map((el) => {
+        const style = getComputedStyle(el)
+        return {
+          type: el.getAttribute('data-dn-message'),
+          border: parseFloat(style.borderTopWidth),
+          background: style.backgroundColor,
+          image: style.backgroundImage,
+        }
+      }),
+    )
+    const ai = styles.find((s) => s.type === 'ai')
+    const human = styles.find((s) => s.type === 'human')
+    expect(ai).toEqual(expect.objectContaining({ border: 0, background: 'rgba(0, 0, 0, 0)', image: 'none' }))
+    expect(human?.background).not.toBe('rgba(0, 0, 0, 0)')
+    // A soft tint, not the old saturated gradient.
+    expect(human?.image).toBe('none')
+
+    // The evidence status is a quiet caption, not body-size text under every answer.
+    const evidence = page.getByTestId('evidence-review')
+    await expect(evidence).toBeVisible()
+    expect(await evidence.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeLessThanOrEqual(12)
+  })
+
+  for (const viewport of [
+    { label: 'wide', width: 1440, height: 900 },
+    { label: 'compact', width: 1024, height: 768 },
+  ]) {
+    test(`the composer is a pill and the textarea owns its row (${viewport.label})`, async ({ page }) => {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height })
+      await page.goto(`/notebooks/${notebook.id}`)
+      const textarea = page.locator('main textarea[name="chat-message"]')
+      await expect(textarea).toBeVisible()
+
+      const composer = page.locator('[data-dn-composer]')
+      await expect(composer).toHaveCount(1)
+      const [composerBox, textareaBox] = await Promise.all([composer.boundingBox(), textarea.boundingBox()])
+      // At 1024 the mic and send buttons squeezed the textarea to ~95px ("Ask / anything / about").
+      expect(textareaBox!.width).toBeGreaterThanOrEqual(composerBox!.width * 0.75)
+      expect(await composer.evaluate((el) => parseFloat(getComputedStyle(el).borderTopLeftRadius))).toBeGreaterThanOrEqual(20)
+      await expect(composer.getByRole('button', { name: 'Enter Debate mode' })).toBeVisible()
+      await expect(composer.getByRole('button', { name: /send/i })).toBeVisible()
+      // One row of controls: at 1024 the mic and send buttons wrapped below the model picker.
+      const [modelBox, sendBox] = await Promise.all([
+        composer.getByRole('button', { name: 'Default' }).boundingBox(),
+        composer.getByRole('button', { name: /send/i }).boundingBox(),
+      ])
+      expect(Math.abs(modelBox!.y + modelBox!.height / 2 - (sendBox!.y + sendBox!.height / 2))).toBeLessThanOrEqual(4)
+    })
+  }
+
+  test('Enter sends and Shift+Enter adds a line', async ({ page }) => {
+    await mockChatHistory(page)
+    await page.setViewportSize({ width: 1440, height: 900 })
+    const sends: string[] = []
+    await page.route('**/api/chat/**', async (route) => {
+      const request = route.request()
+      if (request.method() === 'POST' && /\/api\/chat\/(stream|execute)/.test(request.url())) {
+        sends.push(request.url())
+        return route.abort()
+      }
+      return route.fallback()
+    })
+    await page.goto(`/notebooks/${notebook.id}`)
+    await expect(page.getByText(chatMessages[1].content)).toBeVisible()
+
+    const textarea = page.locator('main textarea[name="chat-message"]')
+    await textarea.click()
+    await page.keyboard.type('First line')
+    await page.keyboard.press('Shift+Enter')
+    await page.keyboard.type('second line')
+    await expect(textarea).toHaveValue('First line\nsecond line')
+    expect(sends).toHaveLength(0)
+
+    await page.keyboard.press('Enter')
+    await expect.poll(() => sends.length).toBe(1)
+  })
+})

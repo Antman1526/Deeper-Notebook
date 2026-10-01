@@ -1,5 +1,5 @@
 import React from 'react'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -64,8 +64,13 @@ describe('RunTimeline', () => {
       },
     )
 
-    expect(screen.getByText('Run timeline')).toBeInTheDocument()
-    expect(screen.getByText('Context built')).toBeInTheDocument()
+    // v0.8.130 — Phase 2c: the facts sit behind a collapsed "Run details" disclosure.
+    const toggle = screen.getByRole('button', { name: 'Run details' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('Context built')).not.toBeVisible()
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText('Context built')).toBeVisible()
     expect(screen.getByText(/2 insight sources/)).toBeInTheDocument()
     expect(screen.getByText('Model route')).toBeInTheDocument()
     expect(screen.getByText(/cloud/)).toBeInTheDocument()
@@ -87,7 +92,23 @@ describe('RunTimeline', () => {
       />,
     )
 
-    expect(screen.getByText('Run timeline')).toBeInTheDocument()
-    expect(screen.getByText(/Streaming response/)).toBeInTheDocument()
+    // v0.8.130 — Phase 2c: one status line while streaming, not the five-card panel.
+    expect(screen.getByRole('status')).toHaveTextContent(/Streaming response/)
+    expect(screen.queryByText('Context built')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Run details' })).not.toBeInTheDocument()
+  })
+
+  // v0.8.130 — the "Run timeline · idle · Ready" panel sat above every empty chat.
+  it('renders nothing before the first run', () => {
+    const { container } = renderWithClient(
+      <RunTimeline
+        messages={[]}
+        isStreaming={false}
+        disabledMcpServers={[]}
+        contextStats={{ sourcesInsights: 0, sourcesFull: 0, notesCount: 0 }}
+      />,
+    )
+
+    expect(container).toBeEmptyDOMElement()
   })
 })

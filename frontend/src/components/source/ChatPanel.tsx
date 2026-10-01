@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { SourceDialog } from './SourceDialog'
-import { Bot, User, Send, Loader2, FileText, Lightbulb, StickyNote, Clock, Square, Swords, X, ChevronDown, Sparkles } from 'lucide-react'
+import { Bot, MessageSquare, Send, Loader2, FileText, Lightbulb, StickyNote, Clock, Square, Swords, X, ChevronDown, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -273,20 +273,13 @@ export function ChatPanel({
     }
   }
 
+  // v0.8.130 — Phase 2c: Enter sends and Shift+Enter starts a new line (Ctrl/⌘+Enter
+  // still sends). An IME composition's Enter confirms the candidate, so it never sends.
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    // Detect platform for correct modifier key
-    const isMac = typeof navigator !== 'undefined' && navigator.userAgent.toUpperCase().indexOf('MAC') >= 0
-    const isModifierPressed = isMac ? e.metaKey : e.ctrlKey
-
-    if (e.key === 'Enter' && isModifierPressed) {
-      e.preventDefault()
-      handleSend()
-    }
+    if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return
+    e.preventDefault()
+    handleSend()
   }
-
-  // Detect platform for placeholder text
-  const isMac = typeof navigator !== 'undefined' && navigator.userAgent.toUpperCase().indexOf('MAC') >= 0
-  const keyHint = isMac ? '⌘+Enter' : 'Ctrl+Enter'
 
   return (
     <>
@@ -332,22 +325,18 @@ export function ChatPanel({
         </div>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col min-h-0 p-0">
-        <RunTimeline
-          messages={messages}
-          isStreaming={isStreaming}
-          contextStats={notebookContextStats}
-          currentModel={modelOverride}
-          disabledMcpServers={disabledMcpServers}
-        />
         <ScrollArea className="flex-1 min-h-0 px-4" ref={scrollAreaRef}>
           <div className="space-y-4 py-4">
             {messages.length === 0 ? (
-              <div className="text-center text-muted-foreground py-8">
-                <Bot className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p className="text-sm">
+              // v0.8.130 — Phase 2c: a guide card in place of the faded robot.
+              <div className="mx-auto max-w-md py-10 text-center">
+                <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                  <MessageSquare className="h-6 w-6" aria-hidden="true" />
+                </div>
+                <p className="text-base font-medium text-foreground">
                   {t('chat.startConversation').replace('{type}', contextType === 'source' ? t('navigation.sources') : t('common.notebook'))}
                 </p>
-                <p className="text-xs mt-2">{t('chat.askQuestions')}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{t('chat.askQuestions')}</p>
                 {/* v0.8.74 — corpus-grounded starter questions (roadmap Batch 1).
                     Removes the blank-slate problem; clicking a chip sends it. */}
                 {suggestedQuestions && suggestedQuestions.length > 0 && (
@@ -375,25 +364,20 @@ export function ChatPanel({
               messages.map((message, idx) => (
                 <div
                   key={message.id}
-                  className={`flex gap-3 ${
+                  className={`flex ${
                     message.type === 'human' ? 'justify-end' : 'justify-start'
                   }`}
                 >
-                  {message.type === 'ai' && (
-                    <div className="flex-shrink-0">
-                      <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
-                        <Bot className="h-4 w-4" />
-                      </div>
-                    </div>
-                  )}
-                  <div className="flex flex-col gap-2 max-w-[80%]">
-                    {/* v0.8.130 — no catch-all transition (nothing here animates), 12px type floor, link token (UI audit Phase 1) */}
+                  {/* v0.8.130 — Phase 2c: answers read as flat text across the column and
+                      questions as soft tinted bubbles (no avatars, no saturated gradient). */}
+                  <div className={`flex min-w-0 flex-col gap-2 ${message.type === 'human' ? 'max-w-[85%]' : 'w-full'}`}>
                     <div
-                      className={`rounded-2xl px-4 py-3 shadow-xs ${
+                      data-dn-message={message.type}
+                      className={
                         message.type === 'human'
-                          ? 'bg-gradient-to-br from-primary via-primary/95 to-primary/85 text-primary-foreground shadow-sm ring-1 ring-primary/30'
-                          : 'border border-border/60 bg-card/95 ring-1 ring-border/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)] dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.03)]'
-                      }`}
+                          ? 'rounded-2xl rounded-br-md bg-primary/10 px-4 py-2.5 text-foreground'
+                          : 'py-1 text-foreground'
+                      }
                     >
                       {message.type === 'ai' ? (
                         <AIMessageContent
@@ -490,6 +474,8 @@ export function ChatPanel({
                         )}
                         {contextType === 'notebook' && notebookId && evaluationMessageIdSet.has(message.id) && (
                           <EvidenceReview
+                            // v0.8.130 — a caption; unstyled it inherited body size under every answer.
+                            className="text-xs text-muted-foreground"
                             notebookId={notebookId}
                             messageId={message.id}
                             evaluation={messageEvaluations.data
@@ -502,34 +488,26 @@ export function ChatPanel({
                       </div>
                     )}
                   </div>
-                  {message.type === 'human' && (
-                    <div className="flex-shrink-0">
-                      <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center">
-                        <User className="h-4 w-4 text-primary-foreground" />
-                      </div>
-                    </div>
-                  )}
                 </div>
               ))
             )}
             {isStreaming && (
-              <div className="flex gap-3 justify-start">
-                <div className="flex-shrink-0">
-                  <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
-                    <Bot className="h-4 w-4" />
-                  </div>
-                </div>
-                {/* v0.8.70 — a "typing" dot wave reads more alive than a
-                    spinner; the global reduced-motion rule freezes it. */}
-                <div className="rounded-2xl border border-border/60 bg-card px-4 py-3 shadow-sm">
-                  <div className="flex gap-1">
-                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/70 [animation-delay:-0.3s]" />
-                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/70 [animation-delay:-0.15s]" />
-                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/70" />
-                  </div>
-                </div>
+              // v0.8.70 — a "typing" dot wave reads more alive than a
+              // spinner; the global reduced-motion rule freezes it.
+              <div className="flex gap-1 py-2">
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/70 [animation-delay:-0.3s]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/70 [animation-delay:-0.15s]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/70" />
               </div>
             )}
+            {/* v0.8.130 — Phase 2c: run facts under the latest answer (a status line while streaming). */}
+            <RunTimeline
+              messages={messages}
+              isStreaming={isStreaming}
+              contextStats={notebookContextStats}
+              currentModel={modelOverride}
+              disabledMcpServers={disabledMcpServers}
+            />
             <div ref={messagesEndRef} />
           </div>
         </ScrollArea>
@@ -574,7 +552,7 @@ export function ChatPanel({
         )}
 
         {/* Input Area */}
-        <div className="flex-shrink-0 p-4 space-y-3 border-t">
+        <div className="flex-shrink-0 space-y-2 px-4 pb-4 pt-2">
           {mindMapContext && (
             <div data-testid="mind-map-context-chip" className="flex items-start justify-between gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs">
               <div className="min-w-0">
@@ -588,51 +566,14 @@ export function ChatPanel({
               </Button>
             </div>
           )}
-          {/* Model selector + v0.8.46 MCP tool picker on one row.
-              The picker self-hides when there are no enabled MCP
-              servers, so the row collapses to just the model selector
-              for users without MCP configured. */}
-          {(onModelChange || onToggleMcpServer || onToggleDebateMode) && (
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">{t('chat.model')}</span>
-                {onModelChange && (
-                  <ModelSelector
-                    currentModel={modelOverride}
-                    onModelChange={onModelChange}
-                    disabled={isStreaming}
-                  />
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                {/* v0.8.97 — Debate mode: argue the other side from the sources. */}
-                {onToggleDebateMode && (
-                  <Button
-                    type="button"
-                    variant={debateMode ? 'secondary' : 'ghost'}
-                    size="sm"
-                    aria-pressed={debateMode}
-                    aria-label={debateMode ? 'Leave Debate mode' : 'Enter Debate mode'}
-                    title="Debate mode — the assistant argues the opposing case, grounded in your sources"
-                    onClick={onToggleDebateMode}
-                    className="h-7 gap-1.5 px-2 text-xs"
-                    data-testid="debate-mode-toggle"
-                  >
-                    <Swords className="h-3.5 w-3.5" aria-hidden="true" />
-                    Debate
-                  </Button>
-                )}
-                {onToggleMcpServer && (
-                  <McpToolPicker
-                    disabled={disabledMcpServers ?? []}
-                    onToggle={onToggleMcpServer}
-                  />
-                )}
-              </div>
-            </div>
-          )}
-
-          <div className="flex gap-2 items-end min-w-0">
+          {/* v0.8.130 — Phase 2c: one pill composer. The textarea takes the full row (at
+              1024px the mic and send buttons beside it squeezed it to ~95px); the model,
+              Debate and v0.8.46 MCP tool picker sit on a row inside the pill with the
+              mic and send buttons. The picker self-hides without enabled MCP servers. */}
+          <div
+            data-dn-composer=""
+            className="@container rounded-3xl border bg-card px-2 py-1.5 shadow-xs transition-shadow focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/20"
+          >
             <Textarea
               id={chatInputId}
               ref={textareaRef}
@@ -641,42 +582,82 @@ export function ChatPanel({
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={`${t('chat.sendPlaceholder')} (${t('chat.pressToSend').replace('{key}', keyHint)})`}
+              placeholder={t('chat.sendPlaceholder')}
               disabled={isStreaming}
-              className="flex-1 min-h-[40px] max-h-[100px] resize-none py-2 px-3 min-w-0"
+              className="min-h-[44px] max-h-[160px] w-full resize-none border-0 bg-transparent px-3 py-2 shadow-none focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent"
               rows={1}
             />
-            <AudioDictateButton
-              onTranscribed={(text) => setInput((prev) => (prev ? `${prev} ${text}` : text))}
-              disabled={isStreaming}
-              className="h-[40px] w-[40px] flex-shrink-0"
-            />
-            {isStreaming && onCancelStreaming && (
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                aria-label="Stop generating"
-                title="Stop generating"
-                onClick={onCancelStreaming}
-                className="h-[40px] w-[40px] flex-shrink-0"
-              >
-                <Square className="h-4 w-4" />
-              </Button>
-            )}
-            <Button
-              onClick={handleSend}
-              disabled={!input.trim() || isStreaming}
-              size="icon"
-              aria-label={t('chat.send', { defaultValue: 'Send message' })}
-              className="h-[40px] w-[40px] flex-shrink-0"
-            >
-              {isStreaming ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="h-4 w-4" />
+            <div className="flex flex-wrap items-center gap-1">
+              {onModelChange && (
+                <div className="flex items-center">
+                  <span className="sr-only">{t('chat.model')}</span>
+                  <ModelSelector
+                    currentModel={modelOverride}
+                    onModelChange={onModelChange}
+                    disabled={isStreaming}
+                    // v0.8.130 — icon-only in a narrow pill (the name stays for screen readers).
+                    labelClassName="@max-[18rem]:sr-only"
+                  />
+                </div>
               )}
-            </Button>
+              {/* v0.8.97 — Debate mode: argue the other side from the sources. */}
+              {onToggleDebateMode && (
+                <Button
+                  type="button"
+                  variant={debateMode ? 'secondary' : 'ghost'}
+                  size="sm"
+                  aria-pressed={debateMode}
+                  aria-label={debateMode ? 'Leave Debate mode' : 'Enter Debate mode'}
+                  title="Debate mode — the assistant argues the opposing case, grounded in your sources"
+                  onClick={onToggleDebateMode}
+                  className="h-8 gap-1.5 rounded-full px-2.5 text-xs"
+                  data-testid="debate-mode-toggle"
+                >
+                  <Swords className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span className="hidden @[18rem]:inline">Debate</span>
+                </Button>
+              )}
+              {onToggleMcpServer && (
+                <McpToolPicker
+                  disabled={disabledMcpServers ?? []}
+                  onToggle={onToggleMcpServer}
+                />
+              )}
+              <div className="ml-auto flex items-center gap-1">
+                <AudioDictateButton
+                  onTranscribed={(text) => setInput((prev) => (prev ? `${prev} ${text}` : text))}
+                  disabled={isStreaming}
+                  className="h-9 w-9 flex-shrink-0 rounded-full"
+                />
+                {isStreaming && onCancelStreaming && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    aria-label="Stop generating"
+                    title="Stop generating"
+                    onClick={onCancelStreaming}
+                    className="h-9 w-9 flex-shrink-0 rounded-full"
+                  >
+                    <Square className="h-4 w-4" />
+                  </Button>
+                )}
+                <Button
+                  onClick={handleSend}
+                  disabled={!input.trim() || isStreaming}
+                  size="icon"
+                  aria-label={t('chat.send', { defaultValue: 'Send message' })}
+                  title={t('chat.pressToSend').replace('{key}', 'Enter')}
+                  className="h-9 w-9 flex-shrink-0 rounded-full"
+                >
+                  {isStreaming ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       </CardContent>
