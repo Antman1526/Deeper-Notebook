@@ -95,6 +95,18 @@ Frontend UI audit (2026-09-30): the concrete defects behind the "unfinished" fee
 
 🛠 **Tests.** `e2e/theme-contract.spec.ts` (status contrast in all 27 themes, per-mode status identity, the hover tint, a single 3px focus ring, sans headings, theme charts) and `e2e/phase1-primitives.spec.ts`, plus unit contracts for tokens, primitives, Kbd/Switch and the lint rules, and desktop/API tests for the indigo default.
 
+**Phase 2a — notebook workspace frame.**
+
+🐛 **The notebook page no longer scrolls itself away on load.** The chat's scroll-to-bottom used `scrollIntoView`, which scrolls every scrollable ancestor; with the page's height unbounded it scrolled the whole canvas ~936px on desktop (~2,229px on a phone), past the title. The chat now scrolls only its own viewport and the workspace fills the canvas, so only the columns scroll.
+
+🎨 **A 56px title bar.** The editable notebook title is the page's single heading; Synthesis and Mind map stay one click away (icon-only on phones); the description and dates are under "About this notebook"; Archive, Export and Delete moved into a "Notebook actions" menu (a red Delete pill sat among the primary actions).
+
+🎨 **Sources · Chat · Notes · Studio.** Guided research and the Evidence Studio band, which stacked ~1,000px above the panes, live in a new collapsible Studio column; Notes keeps its own column. From 1024 to 1279px Notes and Studio share a tabbed side panel (four columns clipped their controls there), and phones get four tabs. The Studio contents lay out by the column's width (container queries). Saved widths use a new key so the old three-pane widths don't apply.
+
+🐛 **Starter questions wait for the chat history.** They were fetched as soon as sources arrived, before the saved session loaded, so a chat with history requested them (and could flash them) whenever its sources answered first. The columns also render once the viewport is known, removing a transient mobile mount on desktop loads that duplicated session, note and context requests.
+
+🐛 **A bad MCP response no longer crashes the notebook.** The tool picker filtered the server list; a non-array body sent the whole view to the Recovery Center. It now reads as "no servers".
+
 ## v0.8.129 — 2026-09-12 — SurrealDB live integration suite, live service verification & test setting hardening
 
 🛠 **SurrealDB live integration test suite (132 passed).** Resolved a schema migration head stepping issue in `tests/integration/test_search_quality_benchmark.py`: migration 51 round-trip stepping now uses `runner.run_one_up()` against the migration 52 head. Full suite passed 100% against real SurrealDB 2.6.5.
