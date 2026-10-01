@@ -67,6 +67,34 @@ Frontend UI audit (2026-09-30): the concrete defects behind the "unfinished" fee
 
 🛠 **Tests.** A 12-test production-build regression spec (`e2e/phase0-defects.spec.ts`) plus a built-app shadow and layout-toggle check, real-browser layout tests for the shell and Studio, and the stale lens parity e2e updated.
 
+**Phase 1 — design system.** Tokens, primitives, a token codemod across 84 files, and lint rules that keep it that way. Brand and type decisions (2026-09-30): indigo (Gemini-Forward) is the one brand, and headings are sans.
+
+🐛 **Status colours are real green, amber and blue.** The shared catalog-theme block set success to each theme's primary and warning/info to its accent, so "warning" was violet in Gemini-Forward Light and pink in Dracula. They are now fixed hues with `-soft` (tint) and `-ink` (text) roles for light, dark and both high-contrast themes; the `--dn-status-*`, `--dn-success` and `--dn-info` names alias them (`--dn-info` was the brand primary). `e2e/theme-contract.spec.ts` measures every pair at 4.5:1 or more in all 27 themes.
+
+🐛 **Hover and selection are a neutral tint.** `--accent`, shadcn's hover/selected fill, was the theme's second brand hue, so a hovered menu row or the selected command-palette item was solid violet or cyan. It is now a foreground tint; brand uses read the new `--brand-accent`.
+
+🐛 **Destructive text is readable on every theme.** It measured 4.42:1 on Solarized Light's card and 3.48:1 on Nord's.
+
+🐛 **Desktop app no longer overrides those fixes.** The pywebview theme injection outranks `globals.css`, so in the packaged app the neutral hover fill became a brand hue again and destructive buttons kept white text over the light pink destructive of dark themes (~2.6:1). `--accent` and `--destructive` are no longer injected.
+
+🎨 **One radius scale, one easing, one focus ring.** Radii are 8/12/16/24/28 plus pill; every transition uses the standard easing; `--font-serif` is defined (it was undefined, so the editor fell back to Palatino). The 3px keyboard ring (v0.7.121) is kept without `!important`, drawn inset in menu rows, options and scroll viewports where it was clipped, and primitives no longer stack a second box-shadow ring on it.
+
+🎨 **Primitives follow the token spec.** 40px pill buttons (32/48 sizes), pill badges with soft success/warning/info variants, matching Alert variants, 40px inputs and selects, 16px menus with 12px rows, neutral tooltips, and solid dialogs instead of frosted glass. No primitive animates every property or scales on hover/press.
+
+✨ **Kbd and Switch.** Kbd replaces five hand-rolled shortcut chips (one 10px, one unstyled); the home tips show only the current platform's shortcut. The Settings "Guided tips" toggle was a button whose accessible name was its own "On"/"Off" text; it is now a switch named by its heading.
+
+🎨 **Colour, type and motion on tokens everywhere.** A codemod moved 334 raw palette colours, 90 sub-12px text sizes (plus 6 in stylesheets), 73 `transition-all`, 44 hover/press scales, 12 hex colours and the hard-coded teal glows onto tokens, 12px type and named transitions; status chips and banners use the Badge/Alert variants. Two fixed palettes stay as data (the intro's night palette, a minimap fallback).
+
+🛠 **Guardrails.** `npm run lint` rejects raw palette colours, sub-12px text, `transition-all`, hover/press scaling and hex colours in `className`/`style`; `src/lib/design-guardrails.test.ts` proves each rule fires and scans stylesheets for the same rules plus `!important` (down to 8, each allowlisted with its reason).
+
+🐛 **Guided tips stay on top.** The tip rendered inside the shell, so its z-index only counted within the navigator; at 1440px the notebook card's actions painted over its "Got it" button. It is portalled to the document root.
+
+🎨 **Indigo is the brand.** Fresh desktop installs start in Gemini-Forward Light (they started in teal Research Core Dark, while the web default was already indigo), and the desktop bridge and API accept the Gemini-Forward pair: before, the bridge reset a Gemini-Forward choice to Research Core Dark on every page load, so the packaged app could not show the brand. The first-run wizard, model manager and memory dashboard follow. Existing installs keep their saved theme. Chart colours now derive from the theme instead of fixed teal/cyan.
+
+🎨 **Sans headings.** Page, hero, card, state-panel and folio titles use the body face, semibold, on the type scale (32/40 display, 24/32 headline); the serif stays only on the note editor's writing surface.
+
+🛠 **Tests.** `e2e/theme-contract.spec.ts` (status contrast in all 27 themes, per-mode status identity, the hover tint, a single 3px focus ring, sans headings, theme charts) and `e2e/phase1-primitives.spec.ts`, plus unit contracts for tokens, primitives, Kbd/Switch and the lint rules, and desktop/API tests for the indigo default.
+
 ## v0.8.129 — 2026-09-12 — SurrealDB live integration suite, live service verification & test setting hardening
 
 🛠 **SurrealDB live integration test suite (132 passed).** Resolved a schema migration head stepping issue in `tests/integration/test_search_quality_benchmark.py`: migration 51 round-trip stepping now uses `runner.run_one_up()` against the migration 52 head. Full suite passed 100% against real SurrealDB 2.6.5.
