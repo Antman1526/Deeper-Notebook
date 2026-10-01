@@ -117,6 +117,20 @@ Frontend UI audit (2026-09-30): the concrete defects behind the "unfinished" fee
 
 🛠 **Tests.** `e2e/phase2-workspace.spec.ts` checks at 1440, 1280 and 1024px that headers stay one row, nothing clips and every column title and action label reads in full, plus borderless columns and the two-column grid; unit tests cover the Studio layout and warning order, the Source options menu and the vectorize dialog's controlled mode.
 
+**Phase 2c — the chat column.**
+
+🎨 **Run details instead of the Run timeline.** A five-card "Run timeline · idle · Ready · no gate triggered" panel sat above every chat, empty ones included. Nothing shows before the first run now; while a response streams there is one status line; afterwards a collapsed "Run details" button under the latest answer lists the same five facts (context, model route, MCP tools, privacy gate, agent state) and scrolls them into view in the chat.
+
+🎨 **Flat answers.** Answers read as plain text across the column and questions as soft tinted bubbles, without avatars or the saturated gradient. The empty chat is a guide card. The evidence status under each answer ("No evidence review yet") is a small caption; it rendered at body size, larger than the answer.
+
+🎨 **One pill composer.** The model, Debate and Tools controls sit inside the pill with the mic and send buttons, under a full-width textarea (at 1024px the buttons beside it squeezed it to ~95px, three words per line). Debate and the model picker are icon-only when the pill is narrow, so the controls stay on one row.
+
+🐛 **The chat column was padded twice.** The Phase 2b column rule that pads card content is unlayered CSS, so it overrode the chat's own `p-0`; it now skips `.p-0` content.
+
+✨ **Enter sends.** Shift+Enter starts a new line; Ctrl/⌘+Enter still sends; Enter during IME composition never sends.
+
+🛠 **Tests.** `e2e/phase2-workspace.spec.ts` checks the empty chat has no run panel, Run details sits collapsed under the answer, answers are flat and questions tinted, the opened details come into view, the evidence caption is at most 12px, the textarea owns a one-row pill at 1440 and 1024px, and the Enter/Shift+Enter keys; the RunTimeline unit tests keep every fact assertion behind the disclosure.
+
 ## v0.8.129 — 2026-09-12 — SurrealDB live integration suite, live service verification & test setting hardening
 
 🛠 **SurrealDB live integration test suite (132 passed).** Resolved a schema migration head stepping issue in `tests/integration/test_search_quality_benchmark.py`: migration 51 round-trip stepping now uses `runner.run_one_up()` against the migration 52 head. Full suite passed 100% against real SurrealDB 2.6.5.
