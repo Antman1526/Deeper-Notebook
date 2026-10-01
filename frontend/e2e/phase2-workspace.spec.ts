@@ -393,3 +393,77 @@ test.describe('2d — source rows', () => {
     await expect(row.getByRole('button', { name: /click to cycle/i })).toBeVisible()
   })
 })
+
+// v0.8.130 — Phase 2 exit gate (UI audit §8: "keyboard and mobile pass"), on a notebook
+// with sources and a saved answer.
+test.describe('Phase 2 exit gate', () => {
+  test('keyboard: every stop shows the focus ring and each column is reachable', async ({ page }) => {
+    await mockSources(page)
+    await mockChatHistory(page)
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto(`/notebooks/${notebook.id}`)
+    await expect(page.locator('[data-dn-source-row]')).toHaveCount(sourceRows.length)
+    await expect(page.getByText(chatMessages[1].content)).toBeVisible()
+
+    type Stop = { name: string; inMain: boolean; body: boolean; outline: string; width: string }
+    const stops: Stop[] = []
+    // Tab until focus wraps past the end of the page (it lands on <body> once there).
+    for (let i = 0; i < 200; i += 1) {
+      await page.keyboard.press('Tab')
+      const stop = await page.evaluate(() => {
+        const el = document.activeElement as HTMLElement | null
+        const style = el ? getComputedStyle(el) : null
+        return {
+          name: (el?.getAttribute('aria-label') || el?.getAttribute('name') || el?.textContent || el?.tagName || '').trim().slice(0, 60),
+          inMain: Boolean(el?.closest('main')),
+          body: !el || el === document.body,
+          outline: style?.outlineStyle ?? '',
+          width: style?.outlineWidth ?? '',
+        }
+      })
+      if (stop.body) break
+      stops.push(stop)
+    }
+
+    expect(stops.length, 'the page has focus stops before Tab wraps').toBeGreaterThan(20)
+    const inMain = stops.filter((stop) => stop.inMain)
+    const unringed = inMain.filter((stop) => stop.outline !== 'solid' || stop.width !== '3px')
+    expect(unringed, 'every focus stop in the workspace draws the 3px ring').toEqual([])
+    const names = inMain.map((stop) => stop.name)
+    for (const control of ['Add Source', 'chat-message', 'Add note', 'Report']) {
+      expect(names, `${control} is reachable by Tab`).toContain(control)
+    }
+  })
+
+  for (const tab of ['Sources', 'Chat', 'Notes', 'Studio']) {
+    test(`phone: the ${tab} tab has no overflow and 44px targets`, async ({ page }) => {
+      await mockSources(page)
+      await mockChatHistory(page)
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.goto(`/notebooks/${notebook.id}`)
+      await page.getByRole('tab', { name: tab }).click()
+      const panel = page.locator('main [role="tabpanel"]:visible')
+      await expect(panel).toBeVisible()
+      await page.waitForTimeout(400)
+
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0)
+      const { measured, problems } = await panel.evaluate((root) => {
+        const out: string[] = []
+        let count = 0
+        for (const el of Array.from(root.querySelectorAll<HTMLElement>('button, a[href], input, textarea, [role="tab"]'))) {
+          if (el.offsetParent === null || (el as HTMLButtonElement).disabled) continue
+          const rect = el.getBoundingClientRect()
+          if (rect.width === 0 || rect.height === 0) continue
+          count += 1
+          const name = (el.getAttribute('aria-label') || el.textContent || el.tagName).trim().slice(0, 40)
+          if (rect.width < 44 || rect.height < 44) out.push(`small ${Math.round(rect.width)}x${Math.round(rect.height)}: ${name}`)
+          if (el.scrollWidth - el.clientWidth > 1 && getComputedStyle(el).overflowX === 'visible') out.push(`clipped: ${name}`)
+          if (rect.right > window.innerWidth + 1 || rect.left < -1) out.push(`off-screen: ${name}`)
+        }
+        return { measured: count, problems: out }
+      })
+      expect(measured, 'the panel has controls to measure').toBeGreaterThan(0)
+      expect(problems).toEqual([])
+    })
+  }
+})

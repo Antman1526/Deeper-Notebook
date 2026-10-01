@@ -22,7 +22,7 @@ import {
   ResizablePanel,
   ResizableHandle,
 } from '@/components/ui/resizable'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { FileText, StickyNote, MessageSquare, Sparkles } from 'lucide-react'
 import {
   applyBulkNoteContext,
@@ -261,34 +261,37 @@ export default function NotebookPage() {
         <NotebookHeader notebook={notebook} />
 
         {viewportKnown && !isDesktop && (
-          <div className="flex min-h-0 flex-1 flex-col gap-3 lg:hidden">
-            <Tabs value={mobileActiveTab} onValueChange={(value) => setMobileActiveTab(value as MobileTab)}>
-              <TabsList className="grid w-full grid-cols-4">
-                <TabsTrigger value="sources" className="gap-2">
-                  <FileText className="h-4 w-4" />
-                  {t('navigation.sources')}
-                </TabsTrigger>
-                <TabsTrigger value="chat" className="gap-2">
-                  <MessageSquare className="h-4 w-4" />
-                  {t('common.chat')}
-                </TabsTrigger>
-                <TabsTrigger value="notes" className="gap-2">
-                  <StickyNote className="h-4 w-4" />
-                  {t('common.notes')}
-                </TabsTrigger>
-                <TabsTrigger value="studio" className="gap-2">
-                  <Sparkles className="h-4 w-4" />
-                  {t('notebooks.studio')}
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
-            <div className="min-h-0 flex-1 overflow-hidden">
-              {mobileActiveTab === 'sources' && sourcesColumn}
-              {mobileActiveTab === 'chat' && chatColumn}
-              {mobileActiveTab === 'notes' && notesColumn}
-              {mobileActiveTab === 'studio' && studioColumn}
-            </div>
-          </div>
+          // v0.8.130 — Phase 2 exit gate: the columns sit in TabsContent so each tab controls a
+          // real tabpanel (the swapped-in div left aria-controls pointing at nothing). Radix
+          // mounts only the active panel, so the chat still mounts once.
+          <Tabs
+            value={mobileActiveTab}
+            onValueChange={(value) => setMobileActiveTab(value as MobileTab)}
+            className="flex min-h-0 flex-1 flex-col gap-3 lg:hidden"
+          >
+            <TabsList className="grid w-full grid-cols-4">
+              <TabsTrigger value="sources" className="gap-2">
+                <FileText className="h-4 w-4" />
+                {t('navigation.sources')}
+              </TabsTrigger>
+              <TabsTrigger value="chat" className="gap-2">
+                <MessageSquare className="h-4 w-4" />
+                {t('common.chat')}
+              </TabsTrigger>
+              <TabsTrigger value="notes" className="gap-2">
+                <StickyNote className="h-4 w-4" />
+                {t('common.notes')}
+              </TabsTrigger>
+              <TabsTrigger value="studio" className="gap-2">
+                <Sparkles className="h-4 w-4" />
+                {t('notebooks.studio')}
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="sources" className="min-h-0 flex-1 overflow-hidden">{sourcesColumn}</TabsContent>
+            <TabsContent value="chat" className="min-h-0 flex-1 overflow-hidden">{chatColumn}</TabsContent>
+            <TabsContent value="notes" className="min-h-0 flex-1 overflow-hidden">{notesColumn}</TabsContent>
+            <TabsContent value="studio" className="min-h-0 flex-1 overflow-hidden">{studioColumn}</TabsContent>
+          </Tabs>
         )}
 
         {/* Desktop: Sources | Chat | Notes | Studio. Draggable handles; widths are
@@ -366,21 +369,25 @@ export default function NotebookPage() {
               </ResizablePanel>
               <ResizableHandle withHandle />
               <ResizablePanel defaultSize={30} minSize={22} className="min-w-0">
-                <div className="flex h-full min-h-0 flex-col gap-2 pl-1.5">
-                  <Tabs value={sideTab} onValueChange={(value) => setSideTab(value as 'notes' | 'studio')}>
-                    <TabsList aria-label={t('notebooks.notesAndStudio')} className="grid w-full grid-cols-2">
-                      <TabsTrigger value="notes" className="gap-2">
-                        <StickyNote className="h-4 w-4" />
-                        {t('common.notes')}
-                      </TabsTrigger>
-                      <TabsTrigger value="studio" className="gap-2">
-                        <Sparkles className="h-4 w-4" />
-                        {t('notebooks.studio')}
-                      </TabsTrigger>
-                    </TabsList>
-                  </Tabs>
-                  <div className="min-h-0 flex-1">{sideTab === 'notes' ? notesColumn : studioColumn}</div>
-                </div>
+                {/* v0.8.130 — Phase 2 exit gate: real tabpanels, as on small screens. */}
+                <Tabs
+                  value={sideTab}
+                  onValueChange={(value) => setSideTab(value as 'notes' | 'studio')}
+                  className="flex h-full min-h-0 flex-col gap-2 pl-1.5"
+                >
+                  <TabsList aria-label={t('notebooks.notesAndStudio')} className="grid w-full grid-cols-2">
+                    <TabsTrigger value="notes" className="gap-2">
+                      <StickyNote className="h-4 w-4" />
+                      {t('common.notes')}
+                    </TabsTrigger>
+                    <TabsTrigger value="studio" className="gap-2">
+                      <Sparkles className="h-4 w-4" />
+                      {t('notebooks.studio')}
+                    </TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="notes" className="min-h-0 flex-1">{notesColumn}</TabsContent>
+                  <TabsContent value="studio" className="min-h-0 flex-1">{studioColumn}</TabsContent>
+                </Tabs>
               </ResizablePanel>
             </ResizablePanelGroup>
           </div>

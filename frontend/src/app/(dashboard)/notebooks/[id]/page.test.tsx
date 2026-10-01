@@ -100,6 +100,29 @@ describe('NotebookPage', () => {
     ])
   })
 
+  // v0.8.130 — Phase 2 exit gate: the tabs had no panels (content swapped in a plain
+  // div), so each tab's aria-controls pointed at nothing and screen readers could not
+  // tie a tab to its content.
+  it('gives the small-screen tabs a real tabpanel', () => {
+    mockUseIsDesktop.mockReturnValue(false)
+    render(<NotebookPage />)
+
+    const active = screen.getAllByRole('tab').find((tab) => tab.getAttribute('aria-selected') === 'true')!
+    const panel = screen.getByRole('tabpanel')
+    expect(active.getAttribute('aria-controls')).toBe(panel.id)
+    expect(panel).toHaveAccessibleName(active.textContent!)
+  })
+
+  it('gives the compact Notes/Studio tabs a real tabpanel', () => {
+    mockUseIsWideDesktop.mockReturnValue(false)
+    render(<NotebookPage />)
+
+    const notesTab = screen.getByRole('tab', { name: 'common.notes' })
+    const panel = screen.getByRole('tabpanel', { name: 'common.notes' })
+    expect(notesTab.getAttribute('aria-controls')).toBe(panel.id)
+    expect(panel).toHaveTextContent('Notes column')
+  })
+
   // v0.8.130 — useIsDesktop reports false on the first render (SSR-safe), so a
   // desktop load used to mount the mobile chat for one tick before the desktop
   // one: a duplicate set of session, note and context requests, and which of
