@@ -107,6 +107,16 @@ Frontend UI audit (2026-09-30): the concrete defects behind the "unfinished" fee
 
 🐛 **A bad MCP response no longer crashes the notebook.** The tool picker filtered the server list; a non-array body sent the whole view to the Recovery Center. It now reads as "no servers".
 
+**Phase 2b — column cards and the Studio column.**
+
+🎨 **Borderless column cards with title-only headers.** Sources, Chat, Notes and Studio are rounded surfaces on the tinted canvas, each header holding just its title and collapse button. The labelled header buttons wrapped onto two or three lines and ran past the card edge in a 20% column; as icons they still squeezed "Sources" to "S" at 1024px. Adding moved to a full-width "+ Add" row at the top of the column (NotebookLM's pattern; the buttons are named "Add Source" and "Add note", which replaces "Write Note"), which also replaces the empty state's duplicate Add button; bulk context and "Embed all sources" share one "Source options" menu beside it. The chat column is titled "Chat", as on the tabs.
+
+🐛 **Header grid track.** The card header's implicit `auto` track sized to its content, so a long title could not shrink and pushed the actions off the card; column headers use a `minmax(0, 1fr)` track.
+
+🎨 **Studio leads with Generate.** Artifact generators are a two-column tile grid under a "Generate" heading, with the source scope beside it and the reason they're disabled (no ready source) above them; saved outputs are a named list; the long explainer moved behind a disclosure button. Guided research follows the generators.
+
+🛠 **Tests.** `e2e/phase2-workspace.spec.ts` checks at 1440, 1280 and 1024px that headers stay one row, nothing clips and every column title and action label reads in full, plus borderless columns and the two-column grid; unit tests cover the Studio layout and warning order, the Source options menu and the vectorize dialog's controlled mode.
+
 ## v0.8.129 — 2026-09-12 — SurrealDB live integration suite, live service verification & test setting hardening
 
 🛠 **SurrealDB live integration test suite (132 passed).** Resolved a schema migration head stepping issue in `tests/integration/test_search_quality_benchmark.py`: migration 51 round-trip stepping now uses `runner.run_one_up()` against the migration 52 head. Full suite passed 100% against real SurrealDB 2.6.5.
