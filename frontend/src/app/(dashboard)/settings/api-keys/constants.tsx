@@ -88,11 +88,14 @@ export const TYPE_ICONS: Record<ModelType, React.ReactNode> = {
   speech_to_text: <Mic className="h-3 w-3" />,
 }
 
+// v0.8.130 — model types are identities in a set of four, not statuses, so they take the
+// categorical chart tokens (UI audit Phase 1). The chip is a chart-colour tint with
+// foreground text; chart-3 is skipped because it reads as near-white on light themes.
 export const TYPE_COLORS: Record<ModelType, string> = {
-  language: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
-  embedding: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
-  text_to_speech: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
-  speech_to_text: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300',
+  language: 'bg-chart-1/15 text-foreground',
+  embedding: 'bg-chart-2/15 text-foreground',
+  text_to_speech: 'bg-chart-5/20 text-foreground',
+  speech_to_text: 'bg-chart-4/20 text-foreground',
 }
 
 export const TYPE_COLOR_INACTIVE =

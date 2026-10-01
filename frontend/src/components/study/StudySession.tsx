@@ -11,11 +11,13 @@ interface StudySessionProps {
   cards: StudyCard[]
 }
 
+// v0.8.130 — rating colours are status roles from theme tokens: hard = warning,
+// good = success, easy = info (UI audit Phase 1).
 const RATINGS: Array<{ value: StudyRating; label: string; className: string }> = [
   { value: 'again', label: 'Again', className: 'border-destructive text-destructive hover:bg-destructive/10' },
-  { value: 'hard', label: 'Hard', className: 'border-amber-500 text-amber-700 hover:bg-amber-500/10' },
-  { value: 'good', label: 'Good', className: 'border-emerald-600 text-emerald-700 hover:bg-emerald-600/10' },
-  { value: 'easy', label: 'Easy', className: 'border-sky-600 text-sky-700 hover:bg-sky-600/10' },
+  { value: 'hard', label: 'Hard', className: 'border-warning text-warning-ink hover:bg-warning-soft' },
+  { value: 'good', label: 'Good', className: 'border-success text-success-ink hover:bg-success-soft' },
+  { value: 'easy', label: 'Easy', className: 'border-info text-info-ink hover:bg-info-soft' },
 ]
 
 export function StudySession({ cards }: StudySessionProps) {

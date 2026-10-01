@@ -94,7 +94,8 @@ export function EpisodeProfilesPanel({
       </div>
 
       {disableCreate ? (
-        <p className="rounded-lg border border-dashed bg-amber-50 p-4 text-sm text-amber-900">
+        // v0.8.130 — status colours from theme tokens (UI audit Phase 1)
+        <p className="rounded-lg border border-dashed border-warning/40 bg-warning-soft p-4 text-sm text-warning-ink">
           {t('podcasts.createSpeakerFirst')}
         </p>
       ) : null}
@@ -121,7 +122,7 @@ export function EpisodeProfilesPanel({
                         {profile.name}
                       </CardTitle>
                       {unconfigured ? (
-                        <Badge variant="outline" className="text-amber-600 border-amber-300 text-xs">
+                        <Badge variant="warning">
                           <AlertTriangle className="h-3 w-3 mr-1" />
                           {t('podcasts.setupRequired')}
                         </Badge>

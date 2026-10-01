@@ -44,8 +44,9 @@ export default function PodcastsPage() {
         <div className="space-y-10">
 
           {hasUnconfiguredProfiles ? (
-            <Alert className="bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 border-amber-200 dark:border-amber-800/50">
-              <AlertTriangle className="h-4 w-4 text-amber-700 dark:text-amber-400" />
+            // v0.8.130 — status colours from the Alert warning variant (UI audit Phase 1)
+            <Alert variant="warning">
+              <AlertTriangle className="h-4 w-4" />
               <AlertTitle>{t('podcasts.setupRequired')}</AlertTitle>
               <AlertDescription>
                 {t('podcasts.setupRequiredDesc')}

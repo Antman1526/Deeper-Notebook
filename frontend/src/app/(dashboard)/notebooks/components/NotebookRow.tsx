@@ -105,7 +105,8 @@ export function NotebookRow({ notebook }: NotebookRowProps) {
             }`}
             title={`${notebook.note_count} notes`}
           >
-            <StickyNote className={`h-3 w-3 ${notebook.note_count > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground/60'}`} />
+            {/* v0.8.130 — status colours from theme tokens (UI audit Phase 1) */}
+            <StickyNote className={`h-3 w-3 ${notebook.note_count > 0 ? 'text-warning-ink' : 'text-muted-foreground/60'}`} />
             <span>{notebook.note_count}</span>
           </Badge>
         </div>

@@ -150,7 +150,8 @@ export function ExecutiveSynthesisDialog({
               </Button>
             </div>
           ) : data ? (
-            <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none space-y-4 prose-headings:font-semibold prose-a:text-blue-600 prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded">
+            // v0.8.130 — links use the brand token, not raw blue (UI audit Phase 1)
+            <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none space-y-4 prose-headings:font-semibold prose-a:text-primary prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm, remarkMath]}
                 rehypePlugins={[rehypeKatex]}
@@ -199,7 +200,7 @@ export function ExecutiveSynthesisDialog({
                 >
                   {copied ? (
                     <>
-                      <Check className="h-3.5 w-3.5 text-emerald-500" />
+                      <Check className="h-3.5 w-3.5 text-success-ink" />
                       Copied
                     </>
                   ) : (

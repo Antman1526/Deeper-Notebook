@@ -1166,7 +1166,8 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
                           defaultValue: 'Review outline before generating audio',
                         })}
                       </Label>
-                      <span className="text-[11px] text-muted-foreground">
+                      {/* v0.8.130 — 12px type floor (UI audit Phase 1) */}
+                      <span className="text-xs text-muted-foreground">
                         {t('podcasts.reviewOutlineFirstDesc', {
                           defaultValue:
                             'Generation pauses after the outline so you can edit it; audio is created after you approve.',

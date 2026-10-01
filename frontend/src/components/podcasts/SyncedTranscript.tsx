@@ -114,7 +114,8 @@ export function SyncedTranscript({
             Auto-scroll: {autoScroll ? 'On' : 'Off'}
           </Button>
           {activeIndex >= 0 && (
-            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">
+            // v0.8.130 — 12px type floor (UI audit Phase 1)
+            <Badge variant="secondary" className="text-xs px-1.5 py-0 h-4">
               {segments[activeIndex]?.speaker}
             </Badge>
           )}
@@ -128,7 +129,7 @@ export function SyncedTranscript({
             className="h-6 px-2 text-xs gap-1"
             title="Copy full transcript with timestamps"
           >
-            {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+            {copied ? <Check className="h-3 w-3 text-success-ink" /> : <Copy className="h-3 w-3" />}
             Copy
           </Button>
           <Button
@@ -158,7 +159,7 @@ export function SyncedTranscript({
                 segmentRefs.current[index] = el
               }}
               className={cn(
-                'rounded-md border p-3 text-sm transition-all duration-200',
+                'rounded-md border p-3 text-sm transition-[color,background-color,border-color,box-shadow] duration-200',
                 active
                   ? 'border-primary bg-primary/8 shadow-xs ring-1 ring-primary/20'
                   : 'bg-background hover:bg-muted/30',

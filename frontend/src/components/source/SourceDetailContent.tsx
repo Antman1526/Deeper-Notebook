@@ -148,10 +148,11 @@ function renderHighlightedText(
       return (
         <>
           {before}
+          {/* v0.8.130 — highlight tint from theme tokens, no glow shadow (UI audit Phase 1) */}
           <mark
             id={isFirst ? 'inline-cited-passage' : undefined}
             data-testid="inline-cited-passage"
-            className="rounded-md bg-amber-300/35 dark:bg-amber-400/25 px-1.5 py-0.5 font-medium text-foreground ring-1 ring-amber-400/40 dark:ring-amber-300/30 scroll-mt-32 transition-all shadow-[0_0_14px_rgba(251,191,36,0.25)]"
+            className="rounded-md bg-warning-soft px-1.5 py-0.5 font-medium text-foreground ring-1 ring-warning/40 scroll-mt-32"
           >
             {match}
           </mark>
@@ -618,7 +619,7 @@ export function SourceDetailContent({
   if (error || !source) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 p-8">
-        {/* v0.7.180 — text-red-500 → text-destructive (theme-aware). */}
+        {/* v0.7.180 — error text uses the theme-aware destructive token. */}
         <p className="text-destructive">{error || t('sources.notFound')}</p>
       </div>
     )
@@ -727,12 +728,7 @@ export function SourceDetailContent({
       {(hasNoExtractedText || hasLowExtractedText) && (
         <div className="px-2 pb-4">
           <Alert
-            variant={hasNoExtractedText ? 'destructive' : 'default'}
-            className={
-              hasLowExtractedText
-                ? 'border-amber-500/60 text-amber-700 dark:text-amber-300 [&>svg]:text-amber-600'
-                : undefined
-            }
+            variant={hasNoExtractedText ? 'destructive' : 'warning'}
           >
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>
@@ -764,11 +760,11 @@ export function SourceDetailContent({
       <div className="flex-1 overflow-y-auto px-2">
         <Tabs defaultValue="content" className="w-full">
           <TabsList className="grid w-full grid-cols-3 sticky top-0 z-10 rounded-xl bg-muted/60 p-1 backdrop-blur-md border border-border/40 shadow-xs">
-            <TabsTrigger value="content" className="rounded-lg transition-all">{t('sources.content')}</TabsTrigger>
-            <TabsTrigger value="insights" className="rounded-lg transition-all">
+            <TabsTrigger value="content" className="rounded-lg">{t('sources.content')}</TabsTrigger>
+            <TabsTrigger value="insights" className="rounded-lg">
               {t('common.insights')} {insights.length > 0 && `(${insights.length})`}
             </TabsTrigger>
-            <TabsTrigger value="details" className="rounded-lg transition-all">{t('sources.details')}</TabsTrigger>
+            <TabsTrigger value="details" className="rounded-lg">{t('sources.details')}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="content" className="mt-6">
@@ -785,7 +781,7 @@ export function SourceDetailContent({
                       href={source.asset.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="hover:underline text-blue-600"
+                      className="hover:underline text-primary"
                     >
                       {source.asset.url}
                     </a>
@@ -839,9 +835,9 @@ export function SourceDetailContent({
                 {citedPassage && (
                   <div
                     ref={citedPassageRef}
-                    className="mb-5 relative overflow-hidden rounded-2xl border border-primary/30 bg-gradient-to-r from-primary/15 via-primary/5 to-transparent p-4 shadow-[0_0_24px_rgba(45,212,191,0.08),inset_0_1px_0_rgba(255,255,255,0.1)]"
+                    className="mb-5 relative overflow-hidden rounded-2xl border border-primary/30 bg-gradient-to-r from-primary/15 via-primary/5 to-transparent p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]"
                   >
-                    <div className="absolute top-0 left-0 bottom-0 w-1.5 bg-primary shadow-[0_0_8px_rgba(45,212,191,0.6)]" />
+                    <div className="absolute top-0 left-0 bottom-0 w-1.5 bg-primary" />
                     <div className="flex items-center justify-between gap-2 mb-2 pl-2">
                       <div className="flex items-center gap-2">
                         <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
@@ -853,7 +849,7 @@ export function SourceDetailContent({
                         type="button"
                         variant="ghost"
                         size="sm"
-                        className="h-7 text-xs text-primary hover:bg-primary/20 gap-1.5 px-2.5 rounded-lg active:scale-95 transition-all duration-150 font-medium"
+                        className="h-7 text-xs text-primary hover:bg-primary/20 gap-1.5 px-2.5 rounded-lg duration-150 font-medium"
                         onClick={() => {
                           const el = document.getElementById('inline-cited-passage')
                           if (el) {
@@ -872,7 +868,7 @@ export function SourceDetailContent({
                     </p>
                   </div>
                 )}
-                <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none prose-headings:font-semibold prose-a:text-blue-600 prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-p:mb-4 prose-p:leading-7 prose-li:mb-2">
+                <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none prose-headings:font-semibold prose-a:text-primary prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-p:mb-4 prose-p:leading-7 prose-li:mb-2">
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm, remarkMath]}
                     rehypePlugins={[rehypeKatex]}

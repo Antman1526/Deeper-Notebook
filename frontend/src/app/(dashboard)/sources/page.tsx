@@ -372,7 +372,7 @@ export default function SourcesPage() {
           actions={sourceAction()}
         >
           <div className="flex h-full items-center justify-center">
-            {/* v0.7.180 — text-red-500 → text-destructive so the error
+            {/* v0.7.180 — raw red text → text-destructive so the error
                 line absorbs the active theme's destructive hue (same as the
                 v0.7.165 ErrorBoundary fix). */}
             <p className="text-destructive">{error}</p>
@@ -536,7 +536,8 @@ export default function SourcesPage() {
                       )}
                       <div className="mt-1 flex flex-wrap items-center gap-1.5">
                         {(source.is_shared || (source.notebook_count ?? 0) > 1) && (
-                          <Badge variant="outline" className="gap-1 text-[11px]">
+                          // v0.8.130 — 12px type floor (UI audit Phase 1)
+                          <Badge variant="outline" className="gap-1 text-xs">
                             <Share2 className="h-3 w-3" />
                             {(source.notebook_count ?? 0) > 1
                               ? `Shared with ${source.notebook_count}`
@@ -544,12 +545,12 @@ export default function SourcesPage() {
                           </Badge>
                         )}
                         {getProvenanceLabel(source) && (
-                          <Badge variant="outline" className="max-w-[180px] truncate text-[11px]">
+                          <Badge variant="outline" className="max-w-[180px] truncate text-xs">
                             {getProvenanceLabel(source)}
                           </Badge>
                         )}
                         {source.topics?.slice(0, 2).map((topic) => (
-                          <Badge key={topic} variant="outline" className="text-[11px]">
+                          <Badge key={topic} variant="outline" className="text-xs">
                             {topic}
                           </Badge>
                         ))}

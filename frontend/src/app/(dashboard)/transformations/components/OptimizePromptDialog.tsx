@@ -251,13 +251,14 @@ export function OptimizePromptDialog({
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1">
                   <Label className="text-xs">{t('transformations.optimizeOriginal', { defaultValue: 'Current prompt' })}</Label>
-                  <pre className="rounded border bg-muted/20 p-2 text-[11px] whitespace-pre-wrap">
+                  {/* v0.8.130 — status colours from theme tokens, 12px type floor (UI audit Phase 1) */}
+                  <pre className="rounded border bg-muted/20 p-2 text-xs whitespace-pre-wrap">
                     {transformation.prompt}
                   </pre>
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">{t('transformations.optimizeResult', { defaultValue: 'Optimized prompt' })}</Label>
-                  <pre className="rounded border border-emerald-500/40 bg-emerald-500/5 p-2 text-[11px] whitespace-pre-wrap">
+                  <pre className="rounded border border-success/30 bg-success-soft p-2 text-xs whitespace-pre-wrap">
                     {optimized}
                   </pre>
                 </div>

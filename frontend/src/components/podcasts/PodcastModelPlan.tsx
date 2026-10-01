@@ -45,7 +45,8 @@ export function PodcastModelPlan({ plans, overrideChoices = {}, onOverride }: Po
           <li key={`${plan.stage}:${plan.role}`} className="rounded border p-3 text-sm" data-outcome={plan.outcome}>
             <div className="flex items-center justify-between gap-2">
               <span className="font-medium">{plan.label}</span>
-              <span className={plan.outcome === 'blocked' ? 'text-destructive' : plan.outcome === 'approval_required' ? 'text-amber-700' : 'text-muted-foreground'}>{OUTCOME_LABELS[plan.outcome]}</span>
+              {/* v0.8.130 — status colours from theme tokens (UI audit Phase 1) */}
+              <span className={plan.outcome === 'blocked' ? 'text-destructive' : plan.outcome === 'approval_required' ? 'text-warning-ink' : 'text-muted-foreground'}>{OUTCOME_LABELS[plan.outcome]}</span>
             </div>
             <p className="mt-1 text-muted-foreground">{safeDetail(plan.reason)}</p>
             {plan.modelId || plan.provider || plan.resourceTier ? <p className="mt-1 text-xs text-muted-foreground">{[plan.modelId, plan.provider, plan.resourceTier].filter(Boolean).map((detail) => safeDetail(String(detail))).join(' · ')}</p> : null}

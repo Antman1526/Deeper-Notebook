@@ -150,10 +150,11 @@ function RecommendationCard({
           </div>
           <div className="flex items-center gap-1 flex-wrap">
             {rec.tags.map(tag => (
+              // v0.8.130 — 12px type floor, status colours from theme tokens (UI audit Phase 1)
               <Badge
                 key={tag}
                 variant={tag === 'recommended' ? 'default' : 'secondary'}
-                className="text-[10px]"
+                className="text-xs"
               >
                 {tag}
               </Badge>
@@ -183,7 +184,7 @@ function RecommendationCard({
             <dt className="text-muted-foreground">
               {t('localModels.colRepo', { defaultValue: 'Repo' })}
             </dt>
-            <dd className="text-[10px] font-mono break-all">{rec.repo_id}</dd>
+            <dd className="text-xs font-mono break-all">{rec.repo_id}</dd>
           </div>
         </dl>
 
@@ -230,7 +231,7 @@ function RecommendationCard({
         )}
 
         {isDone && (
-          <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+          <div className="flex items-center gap-1.5 text-xs text-success-ink">
             <CheckCircle2 className="h-3 w-3" />
             {t('localModels.completed', { defaultValue: 'Installed' })}
           </div>

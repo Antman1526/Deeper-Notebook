@@ -571,15 +571,16 @@ export function AddSourceDialog({
             {batchProgress && (
               <>
                 <div className="w-full bg-muted rounded-full h-2">
+                  {/* v0.8.130 — named transitions, status colours from theme tokens (UI audit Phase 1) */}
                   <div
-                    className="bg-primary h-2 rounded-full transition-all duration-300"
+                    className="bg-primary h-2 rounded-full transition-[width] duration-300"
                     style={{ width: `${progressPercent}%` }}
                   />
                 </div>
 
                 <div className="flex items-center justify-between text-sm">
                   <div className="flex items-center gap-4">
-                    <span className="flex items-center gap-1.5 text-green-600">
+                    <span className="flex items-center gap-1.5 text-success-ink">
                       <CheckCircleIcon className="h-4 w-4" />
                       {batchProgress.completed} {t('common.completed')}
                     </span>
@@ -607,7 +608,7 @@ export function AddSourceDialog({
             {!batchProgress && processingStatus?.progress && (
               <div className="w-full bg-muted rounded-full h-2">
                 <div
-                  className="bg-primary h-2 rounded-full transition-all duration-300"
+                  className="bg-primary h-2 rounded-full transition-[width] duration-300"
                   style={{ width: `${processingStatus.progress}%` }}
                 />
               </div>

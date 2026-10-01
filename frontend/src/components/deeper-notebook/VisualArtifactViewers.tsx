@@ -148,7 +148,8 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
             setShowNotes(false)
           }}
         >
-          <span className="block text-[0.68rem] font-semibold uppercase tracking-normal">01</span>
+          {/* v0.8.130 — 12px type floor (UI audit Phase 1) */}
+          <span className="block text-xs font-semibold uppercase tracking-normal">01</span>
           <span className="mt-1 block line-clamp-2 text-xs font-medium leading-4">
             {document.title}
           </span>
@@ -170,7 +171,7 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
               setShowNotes(false)
             }}
           >
-            <span className="block text-[0.68rem] font-semibold uppercase tracking-normal">
+            <span className="block text-xs font-semibold uppercase tracking-normal">
               {String(slideIndex + 2).padStart(2, '0')}
             </span>
             <span className="mt-1 block line-clamp-2 text-xs font-medium leading-4">
@@ -254,7 +255,7 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
                 </ul>
                 {slide.visual_direction && (
                   <div className="hidden min-h-0 overflow-y-auto border-l border-[var(--dn-artifact-line)] pl-4 md:block">
-                    <div className="text-[0.62rem] font-semibold uppercase tracking-normal text-[var(--dn-status-info)]">
+                    <div className="text-xs font-semibold uppercase tracking-normal text-[var(--dn-status-info)]">
                       Visual direction
                     </div>
                     <div className="mt-2 text-[clamp(0.68rem,1.8cqi,0.92rem)] leading-relaxed text-[var(--dn-artifact-muted)]">
@@ -263,7 +264,7 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
                   </div>
                 )}
               </div>
-              <div className="flex min-h-5 items-end justify-between gap-3 text-[0.68rem] text-[var(--dn-artifact-muted)]">
+              <div className="flex min-h-5 items-end justify-between gap-3 text-xs text-[var(--dn-artifact-muted)]">
                 <div className="flex flex-wrap gap-1">
                   {slide.citations.map((citation) => (
                     <span key={citation}>{citation}</span>
@@ -334,7 +335,7 @@ export function InfographicViewer({ document }: { document: InfographicVisualDoc
     >
       <div className="border-t-4 border-t-[var(--dn-status-info)] pt-4">
         <h3 className="text-xl font-semibold leading-tight sm:text-2xl">{document.title}</h3>
-        <div className="mt-2 text-[0.68rem] font-semibold uppercase tracking-normal text-[var(--dn-artifact-muted)]">
+        <div className="mt-2 text-xs font-semibold uppercase tracking-normal text-[var(--dn-artifact-muted)]">
           Evidence Studio · Source-grounded visual
         </div>
       </div>
@@ -350,10 +351,10 @@ export function InfographicViewer({ document }: { document: InfographicVisualDoc
             className={cn('min-h-40 border border-[var(--dn-artifact-line)] border-t-4 bg-[var(--dn-artifact-panel)] p-4', PANEL_STYLES[panel.kind])}
           >
             <div className="flex items-start justify-between gap-2">
-              <Badge variant="outline" className="rounded-sm text-[0.62rem] capitalize">
+              <Badge variant="outline" className="rounded-sm text-xs capitalize">
                 {panel.kind}
               </Badge>
-              <span className="text-[0.68rem] font-semibold text-[var(--dn-artifact-muted)]">
+              <span className="text-xs font-semibold text-[var(--dn-artifact-muted)]">
                 {String(index + 1).padStart(2, '0')}
               </span>
             </div>
@@ -367,7 +368,7 @@ export function InfographicViewer({ document }: { document: InfographicVisualDoc
               <div className="mt-3 text-sm leading-6 text-[var(--dn-artifact-muted)]">{panel.body}</div>
             )}
             {panel.citations.length > 0 && (
-              <div className="mt-4 flex flex-wrap gap-1 text-[0.68rem] text-[var(--dn-artifact-muted)]">
+              <div className="mt-4 flex flex-wrap gap-1 text-xs text-[var(--dn-artifact-muted)]">
                 {panel.citations.map((citation) => (
                   <span key={citation}>{citation}</span>
                 ))}
@@ -376,7 +377,7 @@ export function InfographicViewer({ document }: { document: InfographicVisualDoc
           </section>
         ))}
       </div>
-      <figcaption className="mt-4 text-[0.68rem] text-[var(--dn-artifact-muted)]">
+      <figcaption className="mt-4 text-xs text-[var(--dn-artifact-muted)]">
         {document.panels.length} {document.panels.length === 1 ? 'panel' : 'panels'} · {document.orientation}
       </figcaption>
     </figure>

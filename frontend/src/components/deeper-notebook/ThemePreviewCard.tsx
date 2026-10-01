@@ -61,8 +61,9 @@ export function ThemePreviewCard({
           <div className="flex flex-wrap items-center gap-2">
             <h4 className="text-sm font-semibold leading-tight">{theme.label}</h4>
             {selected && (
+              // v0.8.130 — 12px type floor (UI audit Phase 1)
               <span
-                className="rounded-full bg-primary/10 px-2 py-0.5 text-[0.625rem] font-semibold uppercase tracking-wide text-primary"
+                className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-primary"
                 aria-label="Current theme"
               >
                 Current
@@ -70,7 +71,7 @@ export function ThemePreviewCard({
             )}
             {previewing && (
               <span
-                className="rounded-full bg-accent px-2 py-0.5 text-[0.625rem] font-semibold uppercase tracking-wide text-accent-foreground"
+                className="rounded-full bg-accent px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-accent-foreground"
                 aria-label="Previewing theme"
               >
                 Previewing

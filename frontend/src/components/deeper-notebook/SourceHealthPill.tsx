@@ -62,7 +62,8 @@ export function SourceHealthPill({ source }: { source: SourceListResponse }) {
   return (
     <Badge
       variant="outline"
-      className={cn('text-[0.68rem]', readiness.className)}
+      // v0.8.130 — 12px type floor (UI audit Phase 1)
+      className={cn('text-xs', readiness.className)}
     >
       {readiness.label}
     </Badge>

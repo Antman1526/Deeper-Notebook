@@ -367,7 +367,8 @@ export default function SearchPage() {
                   <div className="space-y-2" role="group" aria-labelledby="search-type-label">
                     <span id="search-type-label" className="text-sm font-medium leading-none">{t('searchPage.searchType')}</span>
                     {!hasEmbeddingModel && (
-                      <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-500">
+                      // v0.8.130 — status colours from theme tokens (UI audit Phase 1)
+                      <div className="flex items-center gap-2 text-sm text-warning-ink">
                         <AlertCircle className="h-4 w-4" />
                         <span>{t('searchPage.vectorSearchWarning')}</span>
                       </div>

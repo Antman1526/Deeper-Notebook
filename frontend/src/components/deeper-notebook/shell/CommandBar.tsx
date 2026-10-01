@@ -39,7 +39,7 @@ export function CommandBar() {
         <Button
           type="button"
           variant="outline"
-          className="dn-command-trigger group h-9 px-3 gap-2.5 border-border/80 bg-background/80 hover:bg-background/95 hover:border-primary/40 transition-colors duration-150"
+          className="dn-command-trigger group h-9 px-3 gap-2.5 border-border/80 bg-background/80 hover:bg-background/95 hover:border-primary/40 duration-150"
           aria-label="Open command palette"
           onClick={(event) => requestCommandSurface('global', '', event.currentTarget)}
         >

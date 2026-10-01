@@ -87,11 +87,28 @@ export function replayIntro() {
   }
 }
 
+// v0.8.130 — fixed splash palette (UI audit Phase 1). This is data, not UI
+// chrome: the intro deliberately mirrors desktop/splash.py on a dark backdrop in
+// every theme, so it must NOT follow the theme tokens (a light theme's
+// text-foreground would vanish on the night background). The palette lives here
+// as constants and reaches the markup through `style` / CSS variables, never as
+// hex utility classes.
 // Deep "night" backdrop matching the desktop splash (var(--bg1) → var(--bg0)).
 const NIGHT_BG =
   'radial-gradient(120% 120% at 18% 8%, #181a33 0%, #0d0e1d 68%)'
 
 const AURORA = ['#6c7bff', '#b96cff', '#36c9b0'] as const
+
+const INTRO_INK = '#eef0ff'
+const INTRO_MUTED = '#c5c9ef'
+const INTRO_DIM = '#8a90c0'
+
+const INTRO_ROOT_STYLE = {
+  background: NIGHT_BG,
+  color: INTRO_INK,
+  '--intro-muted': INTRO_MUTED,
+  '--intro-dim': INTRO_DIM,
+} as React.CSSProperties
 
 function fadeUp(reduce: boolean) {
   return {
@@ -147,8 +164,8 @@ export function IntroReveal() {
           key="onp-intro"
           role="dialog"
           aria-label="Deeper Notebook"
-          className="fixed inset-0 z-[9999] flex flex-col items-center justify-center overflow-hidden text-[#eef0ff]"
-          style={{ background: NIGHT_BG }}
+          className="fixed inset-0 z-[9999] flex flex-col items-center justify-center overflow-hidden"
+          style={INTRO_ROOT_STYLE}
           initial={{ opacity: 1 }}
           exit={{
             opacity: 0,
@@ -232,7 +249,7 @@ export function IntroReveal() {
               Deeper Notebook
             </motion.h1>
 
-            <motion.p variants={fadeUp(reduce)} className="mt-3 text-lg text-[#c5c9ef]">
+            <motion.p variants={fadeUp(reduce)} className="mt-3 text-lg text-(color:--intro-muted)">
               {t('intro.tagline', { defaultValue: 'Think further with every source' })}
             </motion.p>
 
@@ -258,13 +275,13 @@ export function IntroReveal() {
             onClick={dismiss}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1, transition: { delay: reduce ? 0 : 0.8 } }}
-            className="absolute bottom-8 right-8 rounded-full border border-white/15 bg-white/5 px-4 py-1.5 text-sm text-[#c5c9ef] backdrop-blur transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+            className="absolute bottom-8 right-8 rounded-full border border-white/15 bg-white/5 px-4 py-1.5 text-sm text-(color:--intro-muted) backdrop-blur transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
           >
             {t('intro.skip', { defaultValue: 'Skip' })} →
           </motion.button>
 
-          <p className="absolute bottom-8 left-8 flex items-center gap-2 text-xs text-[#8a90c0]">
-            <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#36c9b0]" />
+          <p className="absolute bottom-8 left-8 flex items-center gap-2 text-xs text-(color:--intro-dim)">
+            <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: AURORA[2] }} />
             {t('intro.privacy', { defaultValue: 'Everything runs on your Mac — no cloud required.' })}
           </p>
         </motion.div>

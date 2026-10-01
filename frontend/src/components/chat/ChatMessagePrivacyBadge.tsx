@@ -98,7 +98,8 @@ export function ChatMessagePrivacyBadge({
         {categories.length > 0 && (
           <div className="flex flex-wrap gap-1" data-testid="privacy-categories">
             {categories.map((c) => (
-              <Badge key={c} variant="secondary" className="text-[10px] font-normal">
+              // v0.8.130 — 12px type floor (UI audit Phase 1)
+              <Badge key={c} variant="secondary" className="text-xs font-normal">
                 {c}
               </Badge>
             ))}

@@ -40,8 +40,9 @@ export function ContextToggle<TMode extends ContextMode = ContextMode>({
     insights: {
       icon: Lightbulb,
       label: t('common.contextModes.insights'),
-      color: 'text-amber-600',
-      bgColor: 'hover:bg-amber-50'
+      // v0.8.130 — status colours from theme tokens (UI audit Phase 1)
+      color: 'text-warning-ink',
+      bgColor: 'hover:bg-warning-soft'
     },
     full: {
       icon: FileText,
@@ -76,7 +77,7 @@ export function ContextToggle<TMode extends ContextMode = ContextMode>({
             size="sm"
             aria-label={`${config.label}: ${t('common.contextModes.clickToCycle')}`}
             className={cn(
-              'h-8 w-8 p-0 transition-colors',
+              'h-8 w-8 p-0',
               config.bgColor,
               className
             )}
@@ -87,7 +88,7 @@ export function ContextToggle<TMode extends ContextMode = ContextMode>({
         </TooltipTrigger>
         <TooltipContent>
           <p className="text-xs">{config.label}</p>
-          <p className="text-[10px] text-muted-foreground mt-1">
+          <p className="text-xs text-muted-foreground mt-1">
             {t('common.contextModes.clickToCycle')}
           </p>
         </TooltipContent>

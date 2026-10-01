@@ -481,13 +481,14 @@ export function ArtifactRail({
         </div>
 
         <div className="flex flex-wrap items-center gap-2 text-xs">
-          <Badge variant="outline" className="bg-background/70 text-[0.72rem]">
+          {/* v0.8.130 — 12px type floor (UI audit Phase 1) */}
+          <Badge variant="outline" className="bg-background/70 text-xs">
             {stats.completed} completed
           </Badge>
-          <Badge variant="outline" className="bg-background/70 text-[0.72rem]">
+          <Badge variant="outline" className="bg-background/70 text-xs">
             {stats.active} in progress
           </Badge>
-          <Badge variant="outline" className="bg-background/70 text-[0.72rem]">
+          <Badge variant="outline" className="bg-background/70 text-xs">
             {stats.citations} {stats.citations === 1 ? 'citation' : 'citations'}
           </Badge>
           {/* v0.8.124 — one-click export of every completed artifact as a zip. */}
@@ -545,7 +546,7 @@ export function ArtifactRail({
                 </div>
                 <Badge
                   variant="outline"
-                  className={cn('flex-none text-[0.68rem]', statusClassName(artifact.status))}
+                  className={cn('flex-none text-xs', statusClassName(artifact.status))}
                 >
                   {artifact.status}
                 </Badge>
@@ -579,7 +580,7 @@ export function ArtifactRail({
                 <Clock3 className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
                 <div className="text-sm font-semibold">Workflow runs</div>
               </div>
-              <Badge variant="outline" className="w-fit text-[0.68rem]">
+              <Badge variant="outline" className="w-fit text-xs">
                 {workflowRuns.length} {workflowRuns.length === 1 ? 'run' : 'runs'}
               </Badge>
             </div>
@@ -605,7 +606,7 @@ export function ArtifactRail({
                             <div className="truncate text-sm font-medium">{run.title}</div>
                             <Badge
                               variant="outline"
-                              className={cn('text-[0.68rem]', workflowRunStatusClassName(run.status))}
+                              className={cn('text-xs', workflowRunStatusClassName(run.status))}
                             >
                               {workflowRunStatusLabel(run.status)}
                             </Badge>
@@ -639,7 +640,7 @@ export function ArtifactRail({
                             <span
                               key={`${run.id}-${step.id}`}
                               className={cn(
-                                'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[0.68rem]',
+                                'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs',
                                 workflowStepClassName(step.status),
                               )}
                             >
@@ -882,7 +883,7 @@ export function ArtifactRail({
                         </div>
                       )}
                       {selectedArtifact.provider && (
-                        <Badge variant="outline" className="mt-2 text-[0.68rem]">
+                        <Badge variant="outline" className="mt-2 text-xs">
                           {selectedArtifact.provider}
                         </Badge>
                       )}
@@ -970,7 +971,7 @@ export function ArtifactRail({
                     <div className="flex items-center justify-between gap-2">
                       <div className="text-sm font-medium">Revision history</div>
                       {artifactRevisions.length > 0 && (
-                        <Badge variant="outline" className="text-[0.68rem]">
+                        <Badge variant="outline" className="text-xs">
                           {artifactRevisions.length} {artifactRevisions.length === 1 ? 'revision' : 'revisions'}
                         </Badge>
                       )}

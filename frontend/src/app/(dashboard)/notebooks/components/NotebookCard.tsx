@@ -47,7 +47,7 @@ export function NotebookCard({ notebook }: NotebookCardProps) {
           link inside the title would also stop the title truncating. Controls that
           must stay independently clickable sit above it with `relative z-10`. */}
       <div
-        className="group relative rounded-2xl p-1 bg-gradient-to-b from-border/40 via-border/10 to-transparent ring-1 ring-border/30 transition-all duration-300 hover:ring-primary/40 hover:shadow-md active:scale-[0.99]"
+        className="group relative rounded-2xl p-1 bg-gradient-to-b from-border/40 via-border/10 to-transparent ring-1 ring-border/30 transition-shadow duration-300 hover:ring-primary/40 hover:shadow-md"
       >
         <Link
           href={`/notebooks/${encodeURIComponent(notebook.id)}`}
@@ -75,7 +75,7 @@ export function NotebookCard({ notebook }: NotebookCardProps) {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="relative z-10 h-8 w-8 p-0 rounded-full opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-all duration-200 hover:bg-muted/80"
+                    className="relative z-10 h-8 w-8 p-0 rounded-full opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-[opacity,background-color] duration-200 hover:bg-muted/80"
                     aria-label={`Actions for ${notebook.name}`}
                   >
                     <MoreHorizontal className="h-4 w-4" />
@@ -132,7 +132,7 @@ export function NotebookCard({ notebook }: NotebookCardProps) {
             <div className="mt-3 flex items-center gap-1.5 border-t pt-3">
               <Badge
                 variant="outline"
-                className={`text-xs flex items-center gap-1.5 px-2.5 py-0.5 rounded-full transition-all duration-200 ${
+                className={`text-xs flex items-center gap-1.5 px-2.5 py-0.5 rounded-full transition-[color,background-color,border-color,box-shadow] duration-200 ${
                   notebook.source_count > 0
                     ? 'text-foreground bg-muted/40 border-border/80 shadow-xs'
                     : 'text-muted-foreground/70 bg-transparent border-border/40'
@@ -144,14 +144,15 @@ export function NotebookCard({ notebook }: NotebookCardProps) {
               </Badge>
               <Badge
                 variant="outline"
-                className={`text-xs flex items-center gap-1.5 px-2.5 py-0.5 rounded-full transition-all duration-200 ${
+                className={`text-xs flex items-center gap-1.5 px-2.5 py-0.5 rounded-full transition-[color,background-color,border-color,box-shadow] duration-200 ${
                   notebook.note_count > 0
                     ? 'text-foreground bg-muted/40 border-border/80 shadow-xs'
                     : 'text-muted-foreground/70 bg-transparent border-border/40'
                 }`}
                 title={`${notebook.note_count} notes`}
               >
-                <StickyNote className={`h-3 w-3 ${notebook.note_count > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground/60'}`} />
+                {/* v0.8.130 — status colours from theme tokens (UI audit Phase 1) */}
+                <StickyNote className={`h-3 w-3 ${notebook.note_count > 0 ? 'text-warning-ink' : 'text-muted-foreground/60'}`} />
                 <span>{notebook.note_count}</span>
               </Badge>
             </div>

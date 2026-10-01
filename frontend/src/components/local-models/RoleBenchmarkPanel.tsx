@@ -33,12 +33,13 @@ function Metric({ label, value }: { label: string; value: string }) {
   return <div><dt className="text-muted-foreground">{label}</dt><dd className="font-mono">{value}</dd></div>
 }
 
+// v0.8.130 — status colours from theme tokens (UI audit Phase 1)
 function ResultRow({ result }: { result: BenchmarkResult }) {
   const qualityMeasured = hasQualityMeasurement(result)
   const metrics = result.normalized_metrics ?? {}
   return <div className="rounded-md border px-3 py-3" data-testid={`benchmark-${result.role}`}>
     <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-sm font-medium">{result.label}</p><p className="font-mono text-xs text-muted-foreground">{result.model_name ?? result.error ?? result.status}</p></div><Badge variant={result.status === 'completed' ? 'secondary' : 'outline'}>{result.status}</Badge></div>
-    {result.status === 'completed' && <><dl className="mt-3 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4"><Metric label="Quality score" value={qualityMeasured ? `${result.score.toFixed(1)} / 100` : 'Not measured'} /><Metric label="Speed" value={result.tokens_per_second ? `${result.tokens_per_second.toFixed(0)} tok/s` : 'Unknown'} /><Metric label="Latency" value={result.latency_ms ? `${result.latency_ms} ms` : 'Unknown'} /><Metric label="Raw checks" value={qualityMeasured ? `${Object.keys(metrics).filter(key => !['latency', 'throughput'].includes(key)).length} measured` : 'Speed only'} /></dl>{qualityMeasured ? <p className="mt-2 text-xs text-muted-foreground">Quality combines role-specific checks with latency. Raw normalized signals: {Object.entries(metrics).map(([key, value]) => `${key} ${Math.round(value)}`).join(', ') || 'not returned'}.</p> : <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">Speed-only legacy result. It is not eligible as a quality winner until this role is benchmarked again.</p>}</>}
+    {result.status === 'completed' && <><dl className="mt-3 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4"><Metric label="Quality score" value={qualityMeasured ? `${result.score.toFixed(1)} / 100` : 'Not measured'} /><Metric label="Speed" value={result.tokens_per_second ? `${result.tokens_per_second.toFixed(0)} tok/s` : 'Unknown'} /><Metric label="Latency" value={result.latency_ms ? `${result.latency_ms} ms` : 'Unknown'} /><Metric label="Raw checks" value={qualityMeasured ? `${Object.keys(metrics).filter(key => !['latency', 'throughput'].includes(key)).length} measured` : 'Speed only'} /></dl>{qualityMeasured ? <p className="mt-2 text-xs text-muted-foreground">Quality combines role-specific checks with latency. Raw normalized signals: {Object.entries(metrics).map(([key, value]) => `${key} ${Math.round(value)}`).join(', ') || 'not returned'}.</p> : <p className="mt-2 text-xs text-warning-ink">Speed-only legacy result. It is not eligible as a quality winner until this role is benchmarked again.</p>}</>}
   </div>
 }
 

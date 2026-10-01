@@ -141,9 +141,10 @@ export function NotesColumn({
             ) : (
               <div className="space-y-3">
                 {notes.map((note) => (
+                  // v0.8.130 — narrow transition, no press-scale (UI audit Phase 1)
                   <div
                     key={note.id}
-                    className="group relative cursor-pointer rounded-xl border border-border/50 bg-card/95 p-3.5 transition-all duration-200 ease-out ring-1 ring-border/30 hover:ring-primary/40 hover:border-border/80 hover:shadow-md active:scale-[0.99] shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)] dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.03)]"
+                    className="group relative cursor-pointer rounded-xl border border-border/50 bg-card/95 p-3.5 transition-[border-color,box-shadow] duration-200 ease-out ring-1 ring-border/30 hover:ring-primary/40 hover:border-border/80 hover:shadow-md shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)] dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.03)]"
                     onClick={() => setEditingNote(note)}
                   >
                     <div className="flex items-start justify-between mb-2">
@@ -153,7 +154,7 @@ export function NotesColumn({
                         ) : (
                           <User className="h-4 w-4 text-muted-foreground" />
                         )}
-                        <Badge variant="secondary" className="text-[11px] rounded-full px-2 py-0.5">
+                        <Badge variant="secondary" className="text-xs rounded-full px-2 py-0.5">
                           {note.note_type === 'ai' ? t('common.aiGenerated') : t('common.human')}
                         </Badge>
                       </div>
@@ -183,7 +184,7 @@ export function NotesColumn({
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-7 w-7 p-0 rounded-full opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-all duration-150 hover:bg-muted/80"
+                              className="h-7 w-7 p-0 rounded-full opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-[opacity,background-color] duration-150 hover:bg-muted/80"
                               onClick={(e) => e.stopPropagation()}
                             >
                               <MoreVertical className="h-4 w-4" />

@@ -379,8 +379,9 @@ export function ChatPanel({
                     </div>
                   )}
                   <div className="flex flex-col gap-2 max-w-[80%]">
+                    {/* v0.8.130 — no catch-all transition (nothing here animates), 12px type floor, link token (UI audit Phase 1) */}
                     <div
-                      className={`rounded-2xl px-4 py-3 shadow-xs transition-all duration-200 ${
+                      className={`rounded-2xl px-4 py-3 shadow-xs ${
                         message.type === 'human'
                           ? 'bg-gradient-to-br from-primary via-primary/95 to-primary/85 text-primary-foreground shadow-sm ring-1 ring-primary/30'
                           : 'border border-border/60 bg-card/95 ring-1 ring-border/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)] dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.03)]'
@@ -752,7 +753,7 @@ function ThoughtAccordion({
   if (!thinking) return null
 
   return (
-    <div className="not-prose mb-3 overflow-hidden rounded-xl border border-primary/20 bg-primary/[0.03] transition-all duration-200">
+    <div className="not-prose mb-3 overflow-hidden rounded-xl border border-primary/20 bg-primary/[0.03]">
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
@@ -761,7 +762,7 @@ function ThoughtAccordion({
       >
         <div className="flex items-center gap-2">
           <Sparkles className={cn('h-3.5 w-3.5 transition-colors', isThinkingActive ? 'text-primary animate-pulse' : 'text-muted-foreground')} />
-          <span className="font-mono text-[11px] uppercase tracking-wider">
+          <span className="font-mono text-xs uppercase tracking-wider">
             {isThinkingActive ? 'Thinking…' : 'Thought process'}
           </span>
           {isThinkingActive && (
@@ -913,12 +914,12 @@ function AIMessageContent({
     [citations, messageId, onViewSource, onReferenceClick],
   )
 
-  // v0.7.25 — was `prose-a:text-blue-600 prose-a:break-all`. The
-  // hardcoded blue-600 fails WCAG AA against the dark muted
-  // background in dark themes (~3.2:1), and break-all hyphenates
-  // URLs mid-character. Theme-aware token + break-words.
+  // v0.7.25 — was a hard-coded blue link colour plus `prose-a:break-all`. The
+  // raw blue fails WCAG AA against the dark muted background in dark themes
+  // (~3.2:1), and break-all hyphenates URLs mid-character. Theme-aware
+  // token + break-words (v0.8.130 dropped the leftover dark: blue twin).
   return (
-    <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none break-words prose-headings:font-semibold prose-a:text-primary dark:prose-a:text-blue-400 prose-a:underline prose-a:break-words prose-p:mb-4 prose-p:leading-7 prose-li:mb-2">
+    <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none break-words prose-headings:font-semibold prose-a:text-primary prose-a:underline prose-a:break-words prose-p:mb-4 prose-p:leading-7 prose-li:mb-2">
       {thinking && (
         <ThoughtAccordion thinking={thinking} isThinkingActive={isThinkingActive} />
       )}

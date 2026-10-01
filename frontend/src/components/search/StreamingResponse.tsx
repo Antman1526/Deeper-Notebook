@@ -194,6 +194,7 @@ function FinalAnswerContent({
   content: string
   onReferenceClick: (type: string, id: string) => void
 }) {
+  // v0.8.130 — link colour from the brand token; the dark: blue twin is gone (UI audit Phase 1)
   // Convert references to markdown links
   const markdownWithLinks = convertReferencesToMarkdownLinks(content)
 
@@ -201,7 +202,7 @@ function FinalAnswerContent({
   const LinkComponent = createReferenceLinkComponent(onReferenceClick)
 
   return (
-    <div className="prose prose-sm max-w-none dark:prose-invert break-words prose-a:text-primary dark:prose-a:text-blue-400 prose-a:underline prose-a:break-words prose-p:leading-relaxed prose-headings:mt-4 prose-headings:mb-2 prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded">
+    <div className="prose prose-sm max-w-none dark:prose-invert break-words prose-a:text-primary prose-a:underline prose-a:break-words prose-p:leading-relaxed prose-headings:mt-4 prose-headings:mb-2 prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded">
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeKatex]}

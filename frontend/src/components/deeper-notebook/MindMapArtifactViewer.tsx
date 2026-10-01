@@ -72,9 +72,11 @@ function toFlowGraph(nodes: MindMapArtifactNode[], collapsed: Set<string>): { no
       id: node.id,
       position: { x: depth * 270, y: row * 104 },
       data: { label: node.label },
+      // v0.8.130 — node colours from theme tokens (UI audit Phase 1); React Flow
+      // applies this as an inline style, so CSS variables resolve per theme.
       style: {
-        background: '#f8fafc', border: '1px solid #475569', borderRadius: 6,
-        color: '#0f172a', fontSize: 13, fontWeight: 600, maxWidth: 220,
+        background: 'var(--card)', border: '1px solid var(--muted-foreground)', borderRadius: 6,
+        color: 'var(--card-foreground)', fontSize: 13, fontWeight: 600, maxWidth: 220,
         padding: '10px 14px', textAlign: 'center' as const,
       },
     }
@@ -83,7 +85,7 @@ function toFlowGraph(nodes: MindMapArtifactNode[], collapsed: Set<string>): { no
     const separator = node.id.lastIndexOf('/')
     const parentId = separator === -1 ? null : node.id.slice(0, separator)
     return parentId && visibleIds.has(parentId)
-      ? [{ id: `edge-${parentId}-${node.id}`, source: parentId, target: node.id, style: { stroke: '#94a3b8', strokeWidth: 1.5 } }]
+      ? [{ id: `edge-${parentId}-${node.id}`, source: parentId, target: node.id, style: { stroke: 'var(--muted-foreground)', strokeWidth: 1.5 } }]
       : []
   })
   return { nodes: flowNodes, edges }

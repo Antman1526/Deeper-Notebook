@@ -296,7 +296,8 @@ export function GmailIntegration() {
           <Mail className="h-4 w-4" />
           Email Digests
           {status.connected && (
-            <span className="ml-2 inline-flex items-center gap-1 text-xs text-[var(--dn-success,_#14B870)]">
+            // v0.8.130 — status colours from theme tokens (UI audit Phase 1)
+            <span className="ml-2 inline-flex items-center gap-1 text-xs text-success-ink">
               <CheckCircle2 className="h-3 w-3" /> Connected
             </span>
           )}
@@ -315,7 +316,7 @@ export function GmailIntegration() {
           </p>
         )}
         {message && (
-          <p className="text-sm text-[var(--dn-success,_#14B870)] p-2 rounded bg-[var(--dn-success-soft,_rgba(20,184,112,0.1))]">
+          <p className="text-sm text-success-ink p-2 rounded bg-success-soft">
             {message}
           </p>
         )}
@@ -369,7 +370,7 @@ export function GmailIntegration() {
               /* v0.8.68 — offline-deferred digest indicator. The scheduler
                  deferred a due digest because the machine is offline; it
                  retries every few minutes and sends once back online. */
-              <p className="text-xs p-2 rounded border border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-400">
+              <p className="text-xs p-2 rounded border border-warning/40 bg-warning-soft text-warning-ink">
                 A digest is queued — it will send automatically when you&apos;re
                 back online.
               </p>

@@ -435,10 +435,11 @@ export function CoursePackViewer({
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline" className="text-[0.68rem]">
+          {/* v0.8.130 — 12px type floor (UI audit Phase 1) */}
+          <Badge variant="outline" className="text-xs">
             {modules.length} {modules.length === 1 ? 'module' : 'modules'}
           </Badge>
-          <Badge variant="secondary" className="text-[0.68rem]">
+          <Badge variant="secondary" className="text-xs">
             {completedCount} complete
           </Badge>
         </div>
@@ -499,7 +500,7 @@ export function CoursePackViewer({
                     </button>
                   </div>
                   {module.hasFacilitatorNotes && (
-                    <Badge variant="outline" className="mt-2 text-[0.68rem]">
+                    <Badge variant="outline" className="mt-2 text-xs">
                       Facilitator ready
                     </Badge>
                   )}
@@ -519,7 +520,7 @@ export function CoursePackViewer({
                   : 'Facilitator-only notes are hidden for learner handouts.'}
               </div>
             </div>
-            <Badge variant="outline" className="text-[0.68rem]">
+            <Badge variant="outline" className="text-xs">
               Module {Math.min(selectedIndex, modules.length - 1) + 1}
             </Badge>
           </div>
@@ -633,7 +634,7 @@ export function MindMapViewer({
             {nodeCount} {nodeCount === 1 ? 'node' : 'nodes'} arranged from the source-grounded outline.
           </div>
         </div>
-        <Badge variant="outline" className="text-[0.68rem]">
+        <Badge variant="outline" className="text-xs">
           {nodes.length} {nodes.length === 1 ? 'root' : 'roots'}
         </Badge>
       </div>
@@ -689,7 +690,7 @@ export function FlashcardDeck({
             Card {index + 1} of {cards.length}
           </div>
         </div>
-        <Badge variant="outline" className="text-[0.68rem]">
+        <Badge variant="outline" className="text-xs">
           {cards.length} cards
         </Badge>
       </div>
@@ -781,10 +782,10 @@ export function ResearchRunViewer({
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline" className="text-[0.68rem]">
+          <Badge variant="outline" className="text-xs">
             {sections.length} {sections.length === 1 ? 'stage' : 'stages'}
           </Badge>
-          <Badge variant="secondary" className="text-[0.68rem]">
+          <Badge variant="secondary" className="text-xs">
             {stageSourceLabel}
           </Badge>
         </div>
@@ -872,7 +873,7 @@ export function QuizRunner({
             Question {index + 1} of {questions.length}
           </div>
         </div>
-        <Badge variant="outline" className="text-[0.68rem]">
+        <Badge variant="outline" className="text-xs">
           Score: {score} / {answeredCount || questions.length}
         </Badge>
       </div>

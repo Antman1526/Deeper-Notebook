@@ -91,16 +91,17 @@ export function DeepResearchPanel({ result, openModal, copiedBrief, onCopyBrief,
                       <span className="truncate">{p.sub_question}</span>
                     </span>
                     {p.facet && (
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 capitalize shrink-0 font-normal">
+                      // v0.8.130 — 12px type floor (UI audit Phase 1)
+                      <Badge variant="outline" className="text-xs px-1.5 py-0 capitalize shrink-0 font-normal">
                         {p.facet}
                       </Badge>
                     )}
                   </div>
-                  <div className="text-muted-foreground font-mono text-[11px] bg-muted/60 px-2 py-1 rounded truncate">
+                  <div className="text-muted-foreground font-mono text-xs bg-muted/60 px-2 py-1 rounded truncate">
                     &ldquo;{p.search_query}&rdquo;
                   </div>
                   {p.rationale && (
-                    <p className="text-[11px] text-muted-foreground leading-normal line-clamp-2">
+                    <p className="text-xs text-muted-foreground leading-normal line-clamp-2">
                       {p.rationale}
                     </p>
                   )}
@@ -112,7 +113,7 @@ export function DeepResearchPanel({ result, openModal, copiedBrief, onCopyBrief,
 
         <div className="space-y-2">
           <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Research Brief</Label>
-          <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none break-words p-5 rounded-lg border bg-card/40 leading-relaxed shadow-xs prose-headings:font-semibold prose-a:text-primary dark:prose-a:text-blue-400 prose-a:underline prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-table:my-4">
+          <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none break-words p-5 rounded-lg border bg-card/40 leading-relaxed shadow-xs prose-headings:font-semibold prose-a:text-primary prose-a:underline prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-table:my-4">
             <ReactMarkdown
               remarkPlugins={[remarkGfm, remarkMath]}
               rehypePlugins={[rehypeKatex]}

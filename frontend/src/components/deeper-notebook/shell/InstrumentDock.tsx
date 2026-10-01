@@ -59,7 +59,8 @@ export function InstrumentDock() {
       data-mobile-mode="bottom-tool-row"
     >
       <div className="dn-dock-brand" data-guided-tip-anchor="/">
-        <span className="dn-dock-brand-mark shadow-[0_0_14px_rgba(45,212,191,0.25),inset_0_1px_0_rgba(255,255,255,0.2)] ring-1 ring-primary/30 transition-all duration-200" aria-hidden="true">DN</span>
+        {/* v0.8.130 — no teal glow, no scale, named transitions (UI audit Phase 1) */}
+        <span className="dn-dock-brand-mark ring-1 ring-primary/30" aria-hidden="true">DN</span>
         <span className="dn-dock-brand-name">Deeper Notebook</span>
       </div>
 
@@ -69,9 +70,9 @@ export function InstrumentDock() {
             <Button
               type="button"
               aria-label={t('common.create')}
-              className="w-full justify-center p-0 h-10 rounded-xl group relative overflow-hidden bg-primary text-primary-foreground shadow-[0_2px_10px_rgba(20,184,166,0.3),inset_0_1px_0_rgba(255,255,255,0.2)] hover:bg-primary/95 active:scale-95 transition-all duration-150"
+              className="w-full justify-center p-0 h-10 rounded-xl group relative overflow-hidden bg-primary text-primary-foreground hover:bg-primary/95 duration-150"
             >
-              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-black/10 dark:bg-white/10 group-hover:scale-110 group-hover:bg-black/15 transition-all duration-150">
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-black/10 dark:bg-white/10 group-hover:bg-black/15 transition-colors duration-150">
                 <Plus className="h-4 w-4" aria-hidden="true" />
               </span>
               {/* v0.8.130 — Only this span is visually hidden in the narrow dock; the icon
@@ -116,7 +117,7 @@ export function InstrumentDock() {
         <Button
           type="button"
           variant="outline"
-          className="w-full justify-start gap-3 rounded-xl hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive active:scale-95 transition-all duration-150"
+          className="w-full justify-start gap-3 rounded-xl hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive duration-150"
           onClick={logout}
           aria-label={t('common.signOut')}
         >

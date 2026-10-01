@@ -153,7 +153,8 @@ export function EpisodeProfileFormDialog({
         </DialogHeader>
 
         {speakerProfiles.length === 0 ? (
-          <Alert className="bg-amber-50 text-amber-900 border-amber-200">
+          // v0.8.130 — status colours from theme tokens (UI audit Phase 1)
+          <Alert variant="warning">
             <AlertTitle>{t('podcasts.noSpeakerProfilesAvailable')}</AlertTitle>
             <AlertDescription>
               {t('podcasts.noSpeakerProfilesDesc')}

@@ -173,8 +173,9 @@ export default function MCPServersPage() {
                       <div className="min-w-0 flex-1">
                         <div className="flex min-w-0 items-center gap-2">
                           <p className="min-w-0 truncate font-medium text-sm">{server.name}</p>
+                          {/* v0.8.130 — 12px type floor (UI audit Phase 1) */}
                           <span
-                            className="shrink-0 text-[11px] text-muted-foreground"
+                            className="shrink-0 text-xs text-muted-foreground"
                             data-testid={`mcp-status-${server.id}`}
                           >
                             {server.enabled

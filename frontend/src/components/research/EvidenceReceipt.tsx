@@ -28,9 +28,14 @@ const freshnessLabels: Record<ResearchEvidence['freshness'], string> = {
   unknown: 'Freshness unknown',
 }
 
-const freshnessTones: Record<ResearchEvidence['freshness'], string> = {
-  fresh: 'border-emerald-600/60 text-emerald-700 dark:text-emerald-400',
-  stale: 'border-amber-500/70 text-amber-700 dark:text-amber-400',
+// v0.8.130 — freshness is a status, so it uses the Badge status variants (UI audit Phase 1).
+const freshnessVariants: Record<ResearchEvidence['freshness'], 'success' | 'warning' | 'outline'> = {
+  fresh: 'success',
+  stale: 'warning',
+  unknown: 'outline',
+}
+
+const freshnessTones: Partial<Record<ResearchEvidence['freshness'], string>> = {
   unknown: 'border-muted-foreground/50 text-muted-foreground',
 }
 
@@ -47,7 +52,7 @@ export function EvidenceReceipt({ evidence }: { evidence?: ResearchEvidence | nu
 
         <dt className="font-medium text-muted-foreground">Freshness</dt>
         <dd>
-          <Badge variant="outline" className={freshnessTones[evidence.freshness]} aria-label={`Freshness: ${freshnessLabel}`}>
+          <Badge variant={freshnessVariants[evidence.freshness]} className={freshnessTones[evidence.freshness]} aria-label={`Freshness: ${freshnessLabel}`}>
             {freshnessLabel}
           </Badge>
         </dd>
@@ -56,7 +61,7 @@ export function EvidenceReceipt({ evidence }: { evidence?: ResearchEvidence | nu
           <>
             <dt className="font-medium text-muted-foreground">Provider path</dt>
             <dd>
-              <Badge variant="outline" className="border-amber-500/70 text-amber-700 dark:text-amber-400">
+              <Badge variant="warning">
                 Fallback provider
               </Badge>
             </dd>

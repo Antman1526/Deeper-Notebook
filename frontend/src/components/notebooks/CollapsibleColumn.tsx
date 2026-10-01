@@ -35,7 +35,8 @@ export function CollapsibleColumn({
                 'w-12 h-full min-h-0',
                 'border rounded-lg',
                 'bg-card hover:bg-accent/50',
-                'transition-all duration-150',
+                // v0.8.130 — named transition (UI audit Phase 1)
+                'transition-colors duration-150',
                 'cursor-pointer group',
                 'py-6'
               )}
@@ -59,7 +60,7 @@ export function CollapsibleColumn({
   }
 
   return (
-    <div className="h-full min-h-0 transition-all duration-150">
+    <div className="h-full min-h-0">
       {children}
     </div>
   )

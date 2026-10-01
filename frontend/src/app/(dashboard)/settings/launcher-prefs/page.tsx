@@ -154,8 +154,9 @@ export default function LauncherPrefsPage() {
 
             {/* Restart-required banner — shown after a successful save */}
             {showRestartBanner && (
+              // v0.8.130 — status colours from theme tokens (UI audit Phase 1)
               <div
-                className="flex items-start gap-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200"
+                className="flex items-start gap-3 rounded-md border border-warning/40 bg-warning-soft px-4 py-3 text-sm text-warning-ink"
                 role="alert"
                 data-testid="restart-banner"
               >

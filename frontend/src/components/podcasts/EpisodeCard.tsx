@@ -56,21 +56,24 @@ interface EpisodeCardProps {
   retrying?: boolean
 }
 
+// v0.8.130 — status colours from the Badge status variants (UI audit Phase 1).
+// `variant` is set for the warning/success/info states; the rest keep a className.
 const getSTATUS_META = (t: TFunction): Record<
   EpisodeStatus | 'unknown',
-  { label: string; className: string }
+  { label: string; variant?: 'warning' | 'success' | 'info'; className?: string }
 > => ({
+  // v0.8.130 — in-flight states are info everywhere (sources and embeddings too).
   running: {
     label: t('podcasts.processingLabel'),
-    className: 'bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800/50',
+    variant: 'info',
   },
   processing: {
     label: t('podcasts.processingLabel'),
-    className: 'bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800/50',
+    variant: 'info',
   },
   completed: {
     label: t('podcasts.completedLabel'),
-    className: 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/50',
+    variant: 'success',
   },
   failed: {
     label: t('podcasts.failedLabel'),
@@ -82,11 +85,11 @@ const getSTATUS_META = (t: TFunction): Record<
   },
   pending: {
     label: t('podcasts.pendingLabel'),
-    className: 'bg-sky-100 dark:bg-sky-950/40 text-sky-800 dark:text-sky-300 border-sky-200 dark:border-sky-800/50',
+    variant: 'info',
   },
   submitted: {
     label: t('podcasts.pendingLabel'),
-    className: 'bg-sky-100 dark:bg-sky-950/40 text-sky-800 dark:text-sky-300 border-sky-200 dark:border-sky-800/50',
+    variant: 'info',
   },
   unknown: {
     label: t('common.unknown'),
@@ -104,7 +107,7 @@ function StatusBadge({ status }: { status?: EpisodeStatus | null }) {
   const meta = getSTATUS_META(t)[status ?? 'unknown']
   return (
     <Badge
-      variant="outline"
+      variant={meta.variant ?? 'outline'}
       className={cn('uppercase tracking-wide text-xs rounded-full px-2.5 py-0.5 font-medium shadow-xs', meta.className)}
     >
       {meta.label}
@@ -501,7 +504,7 @@ export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: 
   const isCompleted = episode.job_status === 'completed' && !isAwaitingReview
 
   return (
-    <div className="group relative rounded-2xl p-[1.5px] bg-gradient-to-b from-border/80 via-border/40 to-border/20 shadow-sm hover:shadow-md hover:from-border hover:via-border/60 hover:to-border/30 transition-all duration-200">
+    <div className="group relative rounded-2xl p-[1.5px] bg-gradient-to-b from-border/80 via-border/40 to-border/20 shadow-sm hover:shadow-md hover:from-border hover:via-border/60 hover:to-border/30 transition-[box-shadow,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to] duration-200">
       <div className="rounded-[14.5px] bg-card/95 backdrop-blur-sm p-4 sm:p-5 space-y-4 border border-white/[0.04] dark:border-white/[0.02] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
@@ -531,12 +534,12 @@ export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: 
                 generation_stage; suppressed while awaiting outline review
                 (the review banner below takes over). */}
             {isProcessing && !isAwaitingReview && (
-              <div className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
+              <div className="flex items-center gap-2 text-xs text-info-ink">
                 <div className="flex items-center gap-0.5 h-3.5" aria-hidden="true">
-                  <span className="w-1 bg-amber-500/80 rounded-full animate-[pulse_1s_ease-in-out_infinite] h-2" />
-                  <span className="w-1 bg-amber-500 rounded-full animate-[pulse_1.2s_ease-in-out_infinite_200ms] h-3.5" />
-                  <span className="w-1 bg-amber-500/90 rounded-full animate-[pulse_0.9s_ease-in-out_infinite_400ms] h-2.5" />
-                  <span className="w-1 bg-amber-500/70 rounded-full animate-[pulse_1.1s_ease-in-out_infinite_100ms] h-1.5" />
+                  <span className="w-1 bg-info/80 rounded-full animate-[pulse_1s_ease-in-out_infinite] h-2" />
+                  <span className="w-1 bg-info rounded-full animate-[pulse_1.2s_ease-in-out_infinite_200ms] h-3.5" />
+                  <span className="w-1 bg-info/90 rounded-full animate-[pulse_0.9s_ease-in-out_infinite_400ms] h-2.5" />
+                  <span className="w-1 bg-info/70 rounded-full animate-[pulse_1.1s_ease-in-out_infinite_100ms] h-1.5" />
                 </div>
                 <span>
                   {stageLabel(
@@ -548,7 +551,7 @@ export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: 
               </div>
             )}
             {isAwaitingReview && (
-              <p className="text-xs text-amber-700 dark:text-amber-400">
+              <p className="text-xs text-warning-ink">
                 {t('podcasts.awaitingReview', {
                   defaultValue:
                     'Outline ready — review it to generate the audio.',
@@ -561,7 +564,7 @@ export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: 
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 rounded-xl px-2.5 gap-2 border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary hover:text-primary font-medium active:scale-95 shadow-[0_0_12px_rgba(45,212,191,0.15),inset_0_1px_0_rgba(255,255,255,0.1)] transition-all duration-150"
+                className="h-8 rounded-xl px-2.5 gap-2 border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary hover:text-primary font-medium duration-150"
                 onClick={() =>
                   setPlayingEpisode({
                     id: episode.id,
@@ -579,7 +582,7 @@ export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: 
             ) : null}
             <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
               <DialogTrigger asChild>
-                <Button variant="outline" size="sm" className="h-8 rounded-xl px-2.5 active:scale-95 transition-all duration-150">
+                <Button variant="outline" size="sm" className="h-8 rounded-xl px-2.5 duration-150">
                   <InfoIcon className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" /> {t('podcasts.details')}
                 </Button>
               </DialogTrigger>
@@ -704,7 +707,7 @@ export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: 
                                 <div className="flex items-center justify-between gap-2">
                                   <p className="font-semibold text-foreground">{segment.name ?? `${t('podcasts.segment')} ${index + 1}`}</p>
                                   {segment.size ? (
-                                    <Badge variant="outline" className="text-[10px] uppercase tracking-wide">{segment.size}</Badge>
+                                    <Badge variant="outline" className="text-xs uppercase tracking-wide">{segment.size}</Badge>
                                   ) : null}
                                 </div>
                                 <p className="text-muted-foreground whitespace-pre-wrap">{segment.description ?? t('podcasts.noDescription')}</p>
@@ -831,9 +834,9 @@ export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: 
         ) : null}
 
         {isFailed && episode.error_message ? (
-          <div className="rounded-md border border-red-200 bg-red-50 p-3 dark:border-red-900 dark:bg-red-950/30">
-            <p className="text-xs font-medium text-red-800 dark:text-red-300">{t('podcasts.errorDetails')}</p>
-            <p className="mt-1 text-xs whitespace-pre-wrap text-red-700 dark:text-red-400">{episode.error_message}</p>
+          <div className="rounded-md border border-destructive/30 bg-destructive-soft p-3">
+            <p className="text-xs font-medium text-destructive-ink">{t('podcasts.errorDetails')}</p>
+            <p className="mt-1 text-xs whitespace-pre-wrap text-destructive-ink">{episode.error_message}</p>
           </div>
         ) : null}
       </div>

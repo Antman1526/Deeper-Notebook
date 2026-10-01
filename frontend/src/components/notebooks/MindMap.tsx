@@ -384,6 +384,9 @@ function MindMapCanvas({
   // v0.8.126 — resolve the semantic var(...) to a concrete color; see
   // resolveCssVar() above. Falls back to a neutral gray if nothing resolves
   // (e.g. jsdom, where getComputedStyle never returns custom properties).
+  // v0.8.130 — the hex below is the one sanctioned literal: react-flow's
+  // MiniMap paints into SVG and needs a concrete colour when no CSS variable
+  // resolves, so it cannot be a token (UI audit Phase 1).
   const minimapNodeColor = useCallback(
     (node: Node) => {
       const type = typeById.get(node.id) ?? 'notebook'

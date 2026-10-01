@@ -9,6 +9,7 @@ export function StudyDashboard({ cards }: { cards: StudyCard[] }) {
     .filter((card) => card.lapse_count > 0)
     .slice(0, 3)
 
+  // v0.8.130 — status colours from theme tokens (UI audit Phase 1)
   return (
     <div className="grid gap-3 md:grid-cols-2">
       <Card>
@@ -16,7 +17,7 @@ export function StudyDashboard({ cards }: { cards: StudyCard[] }) {
         <CardContent><p className="text-3xl font-semibold">{cards.length}</p><p className="mt-1 text-xs text-muted-foreground">Evidence-backed cards ready for review.</p></CardContent>
       </Card>
       <Card>
-        <CardHeader className="flex-row items-center gap-2 space-y-0"><RotateCcw className="h-4 w-4 text-amber-600" /><CardTitle className="text-sm">Weak topics</CardTitle></CardHeader>
+        <CardHeader className="flex-row items-center gap-2 space-y-0"><RotateCcw className="h-4 w-4 text-warning-ink" /><CardTitle className="text-sm">Weak topics</CardTitle></CardHeader>
         <CardContent>
           {weakTopics.length ? <ul className="space-y-1 text-sm">{weakTopics.map((card) => <li key={card.id} className="flex justify-between gap-3"><span className="truncate">{card.artifact_id}</span><span className="text-muted-foreground">{card.lapse_count} lapses</span></li>)}</ul> : <p className="text-sm text-muted-foreground">No repeat misses in the current due set.</p>}
         </CardContent>

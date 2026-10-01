@@ -369,7 +369,8 @@ export default function StudioPage() {
           </header>
         </>} sourceDesk={<>
 
-      <div className="mb-6 group relative rounded-2xl p-[1.5px] bg-gradient-to-b from-border/80 via-border/40 to-border/20 shadow-sm hover:shadow-md transition-all duration-200">
+      {/* v0.8.130 — no glow, no press/hover scale, narrow transitions (UI audit Phase 1) */}
+      <div className="mb-6 group relative rounded-2xl p-[1.5px] bg-gradient-to-b from-border/80 via-border/40 to-border/20 shadow-sm hover:shadow-md transition-shadow duration-200">
         <div className="rounded-[14.5px] bg-card/95 backdrop-blur-sm p-6 space-y-6 border border-white/[0.04] dark:border-white/[0.02] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
           <div>
             <h2 className="text-lg font-semibold text-foreground">{t('studio.step1Title')}</h2>
@@ -385,10 +386,10 @@ export default function StudioPage() {
             onClick={() => fileInputRef.current?.click()}
             onKeyDown={onKeyDown}
             className={cn(
-              "border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all duration-200",
+              "border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors duration-200",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
               isDragging
-                ? "border-primary bg-primary/[0.08] shadow-[0_0_24px_rgba(45,212,191,0.15)]"
+                ? "border-primary bg-primary/[0.08]"
                 : "border-muted-foreground/25 hover:border-primary/40 hover:bg-muted/20"
             )}
             role="button"
@@ -459,7 +460,7 @@ export default function StudioPage() {
       </div>
       </>} editorialBrief={<>
 
-      <div className="mb-6 group relative rounded-2xl p-[1.5px] bg-gradient-to-b from-border/80 via-border/40 to-border/20 shadow-sm hover:shadow-md transition-all duration-200">
+      <div className="mb-6 group relative rounded-2xl p-[1.5px] bg-gradient-to-b from-border/80 via-border/40 to-border/20 shadow-sm hover:shadow-md transition-shadow duration-200">
         <div className="rounded-[14.5px] bg-card/95 backdrop-blur-sm p-6 space-y-6 border border-white/[0.04] dark:border-white/[0.02] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
           <div>
             <h2 className="text-lg font-semibold text-foreground">{t('studio.step2Title')}</h2>
@@ -473,13 +474,13 @@ export default function StudioPage() {
               type="button"
               onClick={() => setMode('notebook')}
               className={cn(
-                "group relative rounded-2xl p-5 text-left transition-all duration-200 active:scale-[0.98]",
+                "group relative rounded-2xl p-5 text-left transition-[border-color,background-color,box-shadow] duration-200",
                 mode === 'notebook'
-                  ? "border-2 border-primary bg-primary/[0.06] shadow-[0_0_20px_rgba(45,212,191,0.12),inset_0_1px_0_rgba(255,255,255,0.1)] ring-1 ring-primary/30"
+                  ? "border-2 border-primary bg-primary/[0.06] shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] ring-1 ring-primary/30"
                   : "border border-border/70 bg-card/60 hover:border-primary/40 hover:bg-card/90"
               )}
             >
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary mb-3.5 group-hover:scale-105 transition-transform">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary mb-3.5">
                 <BookOpen className="h-5 w-5" />
               </div>
               <div className="text-base font-semibold text-foreground">{t('studio.notebookModeTitle')}</div>
@@ -492,13 +493,13 @@ export default function StudioPage() {
               type="button"
               onClick={() => setMode('podcast')}
               className={cn(
-                "group relative rounded-2xl p-5 text-left transition-all duration-200 active:scale-[0.98]",
+                "group relative rounded-2xl p-5 text-left transition-[border-color,background-color,box-shadow] duration-200",
                 mode === 'podcast'
-                  ? "border-2 border-primary bg-primary/[0.06] shadow-[0_0_20px_rgba(45,212,191,0.12),inset_0_1px_0_rgba(255,255,255,0.1)] ring-1 ring-primary/30"
+                  ? "border-2 border-primary bg-primary/[0.06] shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] ring-1 ring-primary/30"
                   : "border border-border/70 bg-card/60 hover:border-primary/40 hover:bg-card/90"
               )}
             >
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary mb-3.5 group-hover:scale-105 transition-transform">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary mb-3.5">
                 <Mic className="h-5 w-5" />
               </div>
               <div className="text-base font-semibold text-foreground">{t('studio.podcastModeTitle')}</div>
@@ -511,13 +512,13 @@ export default function StudioPage() {
               type="button"
               onClick={() => setMode('both')}
               className={cn(
-                "group relative rounded-2xl p-5 text-left transition-all duration-200 active:scale-[0.98]",
+                "group relative rounded-2xl p-5 text-left transition-[border-color,background-color,box-shadow] duration-200",
                 mode === 'both'
-                  ? "border-2 border-primary bg-primary/[0.06] shadow-[0_0_20px_rgba(45,212,191,0.12),inset_0_1px_0_rgba(255,255,255,0.1)] ring-1 ring-primary/30"
+                  ? "border-2 border-primary bg-primary/[0.06] shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] ring-1 ring-primary/30"
                   : "border border-border/70 bg-card/60 hover:border-primary/40 hover:bg-card/90"
               )}
             >
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary mb-3.5 group-hover:scale-105 transition-transform">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary mb-3.5">
                 <Sparkles className="h-5 w-5" />
               </div>
               <div className="text-base font-semibold text-foreground">{t('studio.bothModeTitle')}</div>
@@ -530,13 +531,13 @@ export default function StudioPage() {
               type="button"
               onClick={() => setMode('course_pack')}
               className={cn(
-                "group relative rounded-2xl p-5 text-left transition-all duration-200 active:scale-[0.98]",
+                "group relative rounded-2xl p-5 text-left transition-[border-color,background-color,box-shadow] duration-200",
                 mode === 'course_pack'
-                  ? "border-2 border-primary bg-primary/[0.06] shadow-[0_0_20px_rgba(45,212,191,0.12),inset_0_1px_0_rgba(255,255,255,0.1)] ring-1 ring-primary/30"
+                  ? "border-2 border-primary bg-primary/[0.06] shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] ring-1 ring-primary/30"
                   : "border border-border/70 bg-card/60 hover:border-primary/40 hover:bg-card/90"
               )}
             >
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary mb-3.5 group-hover:scale-105 transition-transform">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary mb-3.5">
                 <GraduationCap className="h-5 w-5" />
               </div>
               <div className="text-base font-semibold text-foreground">{t('studio.coursePackModeTitle')}</div>
@@ -615,7 +616,7 @@ export default function StudioPage() {
               onClick={onGenerate}
               disabled={!canSubmit}
               size="lg"
-              className="h-11 px-7 rounded-full font-medium bg-primary text-primary-foreground shadow-[0_4px_16px_rgba(20,184,166,0.35),inset_0_1px_0_rgba(255,255,255,0.2)] hover:bg-primary/95 active:scale-95 transition-all duration-150"
+              className="h-11 px-7 rounded-full font-medium bg-primary text-primary-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] hover:bg-primary/95 duration-150"
             >
               {isPending ? (
                 <>

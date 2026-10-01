@@ -168,7 +168,8 @@ export function RunTimeline({
         <Badge
           variant="outline"
           className={cn(
-            'bg-background/80 text-[0.7rem]',
+            // v0.8.130 — 12px type floor (UI audit Phase 1)
+            'bg-background/80 text-xs',
             isStreaming && 'border-[var(--dn-info)] text-[var(--dn-info)]',
           )}
         >
@@ -185,7 +186,7 @@ export function RunTimeline({
               active && 'border-[var(--dn-accent-strong)] bg-[var(--dn-accent-soft)]',
             )}
           >
-            <div className="flex items-center gap-1.5 text-[0.7rem] font-medium text-muted-foreground">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
               <Icon className="h-3.5 w-3.5 flex-none" aria-hidden="true" />
               <span>{label}</span>
             </div>

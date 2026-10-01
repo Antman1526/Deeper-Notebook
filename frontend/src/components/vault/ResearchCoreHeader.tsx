@@ -45,11 +45,12 @@ export function ResearchCoreHeader({
       <div className="min-w-0">
         <h1 className="truncate text-lg font-semibold tracking-tight text-foreground">{workspaceTitle}</h1>
         <div className="research-core-authority mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground" aria-label="Source authority summary">
-          <span data-authority="app-owned" className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/25 bg-teal-500/10 px-2.5 py-0.5 font-medium text-teal-700 dark:text-teal-300">
+          {/* v0.8.130 — authority chips from theme tokens: brand tint for app-owned, warning for read-only (UI audit Phase 1) */}
+          <span data-authority="app-owned" className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 font-medium text-primary">
             <FilePenLine className="h-3.5 w-3.5" aria-hidden="true" />
             {authoritySummary.appOwned} app-owned editable
           </span>
-          <span data-authority="external-read-only" className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/25 bg-amber-500/10 px-2.5 py-0.5 font-medium text-amber-700 dark:text-amber-300">
+          <span data-authority="external-read-only" className="inline-flex items-center gap-1.5 rounded-full border border-warning/40 bg-warning-soft px-2.5 py-0.5 font-medium text-warning-ink">
             <LockKeyhole className="h-3.5 w-3.5" aria-hidden="true" />
             {authoritySummary.externalReadOnly} external read-only
           </span>
@@ -70,7 +71,7 @@ export function ResearchCoreHeader({
         </div>
       </dl>
       {actions ? <div className="shrink-0">{actions}</div> : null}
-      <details className="basis-full text-xs text-muted-foreground transition-all">
+      <details className="basis-full text-xs text-muted-foreground">
         <summary
           role="button"
           aria-label={`${readinessLabel} — ${readinessDetail}`}
@@ -81,7 +82,7 @@ export function ResearchCoreHeader({
         {readiness.models?.length ? (
           <ul className="mt-2 flex flex-wrap gap-2 pt-1" aria-label="Local readiness details">
             {readiness.models.map((model) => (
-              <li key={`${model.provider}:${model.id}`} className="rounded-md border border-border/40 bg-muted/30 px-2 py-0.5 text-[11px]">
+              <li key={`${model.provider}:${model.id}`} className="rounded-md border border-border/40 bg-muted/30 px-2 py-0.5 text-xs">
                 {model.id} · {model.provider}
               </li>
             ))}

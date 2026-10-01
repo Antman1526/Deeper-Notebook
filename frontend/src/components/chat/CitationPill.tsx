@@ -226,7 +226,7 @@ function McpPopoverContent({ index, messageId }: { index: string; messageId?: st
       </div>
       <div className="space-y-1">
         <p className="text-xs font-medium text-muted-foreground">{t('chat.citations.mcpArgs')}</p>
-        <pre className="text-[0.65rem] bg-muted rounded p-1 overflow-x-auto max-w-full whitespace-pre-wrap break-all">
+        <pre className="text-xs bg-muted rounded p-1 overflow-x-auto max-w-full whitespace-pre-wrap break-all">
           {argsJson}
         </pre>
       </div>
@@ -245,11 +245,14 @@ function McpPopoverContent({ index, messageId }: { index: string; messageId?: st
 // Kind → badge style mapping
 // ---------------------------------------------------------------------------
 
+// v0.8.130 — the four citation kinds are a categorical set, so they take the
+// theme's chart tints with normal text. Status roles (info/warning/success) made a
+// note pill identical to a "Setup required" warning chip (UI audit Phase 1).
 const BADGE_STYLES: Record<CitationKind, string> = {
-  mcp: 'bg-violet-100 text-violet-700 border-violet-200 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-300 dark:border-violet-700 dark:hover:bg-violet-900/50',
-  source: 'bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700 dark:hover:bg-blue-900/50',
-  note: 'bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-700 dark:hover:bg-amber-900/50',
-  insight: 'bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-700 dark:hover:bg-emerald-900/50',
+  mcp: 'bg-primary/10 text-primary border-primary/30 hover:bg-primary/20',
+  source: 'bg-chart-2/15 text-foreground border-chart-2/40 hover:bg-chart-2/25',
+  note: 'bg-chart-5/20 text-foreground border-chart-5/50 hover:bg-chart-5/30',
+  insight: 'bg-chart-3/15 text-foreground border-chart-3/40 hover:bg-chart-3/25',
 }
 
 const KIND_ICONS: Record<CitationKind, React.ElementType> = {
@@ -325,7 +328,7 @@ export function CitationPill({ kind, value, messageId, onViewSource, label: labe
           aria-label={ariaLabel}
           className={[
             'inline-flex items-center gap-0.5',
-            'mx-0.5 px-1.5 py-0 rounded-full border text-[0.65rem] font-semibold',
+            'mx-0.5 px-1.5 py-0 rounded-full border text-xs font-semibold',
             'cursor-pointer transition-colors',
             'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
             // Prevent citation click from navigating or propagating to parent anchor elements

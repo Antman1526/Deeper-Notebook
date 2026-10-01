@@ -236,7 +236,8 @@ export function SyllabusEditor({
             </ul>
           </div>
         ) : (
-          <p className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm">All linked sources are covered and ready.</p>
+          // v0.8.130 — status colours from theme tokens (UI audit Phase 1)
+          <p className="rounded-md border border-success/30 bg-success-soft p-3 text-sm">All linked sources are covered and ready.</p>
         )}
       </section>
 
@@ -247,7 +248,7 @@ export function SyllabusEditor({
         </div>
       ) : null}
       {savedMessage ? <p role="status" className="text-sm text-muted-foreground">{savedMessage}</p> : null}
-      {blockReason ? <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm">{blockReason}</p> : null}
+      {blockReason ? <p className="rounded-md border border-warning/40 bg-warning-soft p-3 text-sm">{blockReason}</p> : null}
 
       <div className="space-y-3" aria-label="Syllabus units">
         {units.map((unit, index) => (

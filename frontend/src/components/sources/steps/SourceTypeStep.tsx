@@ -339,8 +339,9 @@ export function SourceTypeStep({
                     <div>
                       <Label htmlFor="content" className="mb-2 block">{t('sources.textContentLabel')}</Label>
                       {hasHtmlContent && (
-                        <div className="mb-2 p-2 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-md">
-                          <p className="text-sm text-blue-700 dark:text-blue-300">
+                        // v0.8.130 — info tint from theme tokens (UI audit Phase 1)
+                        <div className="mb-2 p-2 bg-info-soft border border-info/30 rounded-md">
+                          <p className="text-sm text-info-ink">
                             {t('sources.htmlDetected')}
                           </p>
                         </div>

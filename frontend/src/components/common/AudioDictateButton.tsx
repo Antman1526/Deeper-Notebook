@@ -159,9 +159,11 @@ export function AudioDictateButton({
       onClick={handleClick}
       disabled={disabled}
       className={cn(
-        'h-8 w-8 transition-all duration-200',
+        // v0.8.130 — status colours from theme tokens (UI audit Phase 1); opacity is
+        // listed so the disabled fade still animates.
+        'h-8 w-8 transition-[color,background-color,box-shadow,opacity] duration-200',
         isRecording
-          ? 'animate-pulse bg-red-600 text-white hover:bg-red-700 shadow-xs ring-2 ring-red-500/40'
+          ? 'animate-pulse bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-xs ring-2 ring-destructive/40'
           : 'text-muted-foreground hover:text-foreground hover:bg-muted/70',
         className
       )}

@@ -165,16 +165,17 @@ export function RecommendationsPanel() {
                   </div>
                   <div className="flex items-center gap-1 flex-wrap">
                     {rec.tags.map(tag => (
+                      // v0.8.130 — 12px type floor (UI audit Phase 1)
                       <Badge
                         key={tag}
                         variant={tag === 'recommended' ? 'default' : 'secondary'}
-                        className="text-[10px]"
+                        className="text-xs"
                       >
                         {tag}
                       </Badge>
                     ))}
                     {rec.replaces && (
-                      <Badge variant="outline" className="text-[10px]">
+                      <Badge variant="outline" className="text-xs">
                         {t('mcp.recommendations.replaces', {
                           defaultValue: 'Replaces {{name}}',
                           name: rec.replaces,
@@ -185,7 +186,7 @@ export function RecommendationsPanel() {
                 </div>
               </CardHeader>
               <CardContent className="pt-0 space-y-3">
-                <p className="text-[10px] text-muted-foreground font-mono break-all">
+                <p className="text-xs text-muted-foreground font-mono break-all">
                   {rec.default_url}
                 </p>
                 <div className="flex items-center gap-2">

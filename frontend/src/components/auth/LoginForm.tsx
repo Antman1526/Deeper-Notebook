@@ -204,7 +204,8 @@ export function LoginForm({ headingLevel = 1 }: LoginFormProps) {
             {configInfo && (
               <div className="text-xs text-center text-muted-foreground pt-2 border-t">
                 <div>{t('common.version')} {configInfo.version}</div>
-                <div className="font-mono text-[10px]">{configInfo.apiUrl}</div>
+                {/* v0.8.130 — 12px type floor (UI audit Phase 1) */}
+                <div className="font-mono text-xs">{configInfo.apiUrl}</div>
               </div>
             )}
           </form>

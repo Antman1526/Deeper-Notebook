@@ -29,7 +29,8 @@ export function CaptureInbox() {
 
   return (
     <div className="space-y-6 max-w-4xl">
-      <div className="group relative rounded-2xl p-[1.5px] bg-gradient-to-b from-border/80 via-border/40 to-border/20 shadow-sm hover:shadow-md transition-all duration-200">
+      {/* v0.8.130 — named transitions, no press-scale (UI audit Phase 1) */}
+      <div className="group relative rounded-2xl p-[1.5px] bg-gradient-to-b from-border/80 via-border/40 to-border/20 shadow-sm hover:shadow-md transition-shadow duration-200">
         <div className="rounded-[14.5px] bg-card/95 backdrop-blur-sm p-5 space-y-4 border border-white/[0.04] dark:border-white/[0.02] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -44,7 +45,7 @@ export function CaptureInbox() {
               size="sm"
               onClick={scan}
               disabled={actions.scan.isPending}
-              className="rounded-xl active:scale-95 transition-all duration-150 shadow-xs"
+              className="rounded-xl duration-150 shadow-xs"
             >
               <RefreshCw
                 className={`mr-2 h-4 w-4 ${actions.scan.isPending ? 'animate-spin' : ''}`}
@@ -77,7 +78,7 @@ export function CaptureInbox() {
               variant="secondary"
               disabled={!path.trim() || actions.addRoot.isPending}
               onClick={() => void addRoot()}
-              className="shrink-0 rounded-xl active:scale-95 transition-all duration-150"
+              className="shrink-0 rounded-xl duration-150"
             >
               <FolderPlus className="mr-2 h-4 w-4" />
               Add

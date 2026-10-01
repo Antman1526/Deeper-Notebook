@@ -36,7 +36,8 @@ export function MindMapButton({ notebookId }: { notebookId: string }) {
         variant="outline"
         size="sm"
         onClick={() => setOpen(true)}
-        className="rounded-full transition-all duration-200 active:scale-95 shadow-xs"
+        // v0.8.130 — named transition, no press-scale (UI audit Phase 1)
+        className="rounded-full duration-200 shadow-xs"
       >
         <Network className="mr-2 h-4 w-4" />
         {t('mindMap.button', { defaultValue: 'Mind map' })}

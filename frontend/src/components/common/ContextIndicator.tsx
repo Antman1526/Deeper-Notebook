@@ -95,7 +95,8 @@ export function ContextIndicator({
           {sourcesInsights > 0 && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Badge variant="outline" className="text-xs flex items-center gap-1 px-1.5 py-0.5 text-amber-600 border-amber-600/50 cursor-default">
+                {/* v0.8.130 — status colours from theme tokens (UI audit Phase 1) */}
+                <Badge variant="outline" className="text-xs flex items-center gap-1 px-1.5 py-0.5 text-warning-ink border-warning/40 cursor-default">
                   <Lightbulb className="h-3 w-3" />
                   <span>{sourcesInsights}</span>
                 </Badge>

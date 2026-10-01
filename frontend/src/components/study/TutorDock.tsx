@@ -312,7 +312,8 @@ export function TutorDock({
               </label>
             </div>
             {requiresWebPermission ? (
-              <div className="space-y-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm">
+              // v0.8.130 — status colours from theme tokens (UI audit Phase 1)
+              <div className="space-y-2 rounded-md border border-warning/40 bg-warning-soft p-3 text-sm">
                 <p className="font-medium">Web research is off until you request it.</p>
                 {!webPermissionRequested ? (
                   <Button type="button" variant="outline" onClick={() => setWebPermissionRequested(true)} disabled={invocation.isPending}>
@@ -408,7 +409,7 @@ export function TutorDock({
               <p className="font-medium">{proposal.label}</p>
               <p className="text-muted-foreground">Action: <code>{proposal.action}</code></p>
               {proposal.action !== 'plan.propose.syllabus' && !navigationTarget(proposal, planId, selectedSources[0]) ? (
-                <p className="text-amber-700">Unavailable until a later Study Workbench stage. Nothing will be changed.</p>
+                <p className="text-warning-ink">Unavailable until a later Study Workbench stage. Nothing will be changed.</p>
               ) : null}
             </div>
           ) : null}

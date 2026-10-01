@@ -63,43 +63,44 @@ const SOURCE_TYPE_ICONS = {
   deep_research_report: FileText,
 } as const
 
+// v0.8.130 — status colours from theme tokens: info for in-flight, success for done (UI audit Phase 1)
 const getStatusConfig = (t: TFunction) => ({
   new: {
     icon: Clock,
-    color: 'text-blue-700 dark:text-blue-300',
-    bgColor: 'bg-blue-50 dark:bg-blue-950/40',
-    borderColor: 'border-blue-200 dark:border-blue-900/50',
+    color: 'text-info-ink',
+    bgColor: 'bg-info-soft',
+    borderColor: 'border-info/30',
     label: t('sources.statusProcessing'),
     description: t('sources.statusPreparingDesc')
   },
   queued: {
     icon: Clock,
-    color: 'text-blue-700 dark:text-blue-300',
-    bgColor: 'bg-blue-50 dark:bg-blue-950/40',
-    borderColor: 'border-blue-200 dark:border-blue-900/50',
+    color: 'text-info-ink',
+    bgColor: 'bg-info-soft',
+    borderColor: 'border-info/30',
     label: t('sources.statusQueued'),
     description: t('sources.statusQueuedDesc')
   },
   running: {
     icon: Loader2,
-    color: 'text-blue-700 dark:text-blue-300',
-    bgColor: 'bg-blue-50 dark:bg-blue-950/40',
-    borderColor: 'border-blue-200 dark:border-blue-900/50',
+    color: 'text-info-ink',
+    bgColor: 'bg-info-soft',
+    borderColor: 'border-info/30',
     label: t('sources.statusProcessing'),
     description: t('sources.statusProcessingDesc')
   },
   completed: {
     icon: CheckCircle,
-    color: 'text-emerald-700 dark:text-emerald-300',
-    bgColor: 'bg-emerald-50 dark:bg-emerald-950/40',
-    borderColor: 'border-emerald-200 dark:border-emerald-900/50',
+    color: 'text-success-ink',
+    bgColor: 'bg-success-soft',
+    borderColor: 'border-success/30',
     label: t('sources.statusCompleted'),
     description: t('sources.statusCompletedDesc')
   },
   failed: {
     icon: AlertTriangle,
-    color: 'text-destructive',
-    bgColor: 'bg-destructive/10',
+    color: 'text-destructive-ink',
+    bgColor: 'bg-destructive-soft',
     borderColor: 'border-destructive/30',
     label: t('sources.statusFailed'),
     description: t('sources.statusFailedDesc')
@@ -344,8 +345,8 @@ export function SourceCard({
   return (
     <Card
       className={cn(
-        'group relative cursor-pointer rounded-xl border border-border/50 bg-card/95 transition-all duration-200 ease-out',
-        'ring-1 ring-border/30 hover:ring-primary/40 hover:border-border/80 hover:shadow-md active:scale-[0.99]',
+        'group relative cursor-pointer rounded-xl border border-border/50 bg-card/95 transition-[border-color,box-shadow] duration-200 ease-out',
+        'ring-1 ring-border/30 hover:ring-primary/40 hover:border-border/80 hover:shadow-md',
         'shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)] dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.03)]',
         className
       )}
@@ -403,20 +404,20 @@ export function SourceCard({
             {/* Metadata badges */}
             <div className="flex items-center gap-1.5 flex-wrap">
               {/* Source type badge */}
-              <Badge variant="secondary" className="text-[11px] rounded-full px-2 py-0.5 flex items-center gap-1">
+              <Badge variant="secondary" className="text-xs rounded-full px-2 py-0.5 flex items-center gap-1">
                 <SourceTypeIcon className="h-3 w-3" />
                 {getSourceTypeLabel(sourceType, t)}
               </Badge>
 
               {isShared && (
-                <Badge variant="outline" className="text-[11px] rounded-full px-2 py-0.5 flex items-center gap-1 border-border/60 bg-muted/20">
+                <Badge variant="outline" className="text-xs rounded-full px-2 py-0.5 flex items-center gap-1 border-border/60 bg-muted/20">
                   <Share2 className="h-3 w-3" />
                   {notebookCount > 1 ? `Shared with ${notebookCount}` : 'Shared'}
                 </Badge>
               )}
 
               {provenanceLabel && (
-                <Badge variant="outline" className="text-[11px] rounded-full px-2 py-0.5 max-w-[180px] truncate border-border/60 bg-muted/20">
+                <Badge variant="outline" className="text-xs rounded-full px-2 py-0.5 max-w-[180px] truncate border-border/60 bg-muted/20">
                   {provenanceLabel}
                 </Badge>
               )}
@@ -424,7 +425,7 @@ export function SourceCard({
               {isFileUnavailable && (
                 <Badge
                   variant="outline"
-                  className="text-[11px] rounded-full px-2 py-0.5 flex items-center gap-1 border-destructive/50 text-destructive bg-destructive/10"
+                  className="text-xs rounded-full px-2 py-0.5 flex items-center gap-1 border-transparent text-destructive-ink bg-destructive-soft"
                 >
                   <AlertTriangle className="h-3 w-3" />
                   {t('sources.fileUnavailable')}
@@ -434,7 +435,7 @@ export function SourceCard({
               {hasNoExtractedText && (
                 <Badge
                   variant="outline"
-                  className="text-[11px] rounded-full px-2 py-0.5 flex items-center gap-1 border-destructive/50 text-destructive bg-destructive/10"
+                  className="text-xs rounded-full px-2 py-0.5 flex items-center gap-1 border-transparent text-destructive-ink bg-destructive-soft"
                 >
                   <AlertTriangle className="h-3 w-3" />
                   {t('sources.noExtractedText')}
@@ -442,29 +443,26 @@ export function SourceCard({
               )}
 
               {hasLowExtractedText && (
-                <Badge
-                  variant="outline"
-                  className="text-[11px] rounded-full px-2 py-0.5 flex items-center gap-1 border-amber-500/60 text-amber-700 dark:text-amber-300 bg-amber-500/10"
-                >
+                <Badge variant="warning" className="text-xs rounded-full px-2 py-0.5 flex items-center gap-1">
                   <AlertTriangle className="h-3 w-3" />
                   {t('sources.lowExtractedText')}
                 </Badge>
               )}
 
               {isCompleted && source.insights_count > 0 && (
-                <Badge variant="outline" className="text-[11px] rounded-full px-2 py-0.5 border-border/60 bg-muted/20">
+                <Badge variant="outline" className="text-xs rounded-full px-2 py-0.5 border-border/60 bg-muted/20">
                   {t('sources.insightsCount').replace('{count}', source.insights_count.toString())}
                 </Badge>
               )}
               {source.topics && source.topics.length > 0 && isCompleted && (
                 <>
                   {source.topics.slice(0, 2).map((topic, index) => (
-                    <Badge key={index} variant="outline" className="text-[11px] rounded-full px-2 py-0.5 border-border/60 bg-muted/20">
+                    <Badge key={index} variant="outline" className="text-xs rounded-full px-2 py-0.5 border-border/60 bg-muted/20">
                       {topic}
                     </Badge>
                   ))}
                   {source.topics.length > 2 && (
-                    <Badge variant="outline" className="text-[11px] rounded-full px-2 py-0.5 border-border/60 bg-muted/20">
+                    <Badge variant="outline" className="text-xs rounded-full px-2 py-0.5 border-border/60 bg-muted/20">
                       +{source.topics.length - 2}
                     </Badge>
                   )}

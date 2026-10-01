@@ -216,7 +216,8 @@ export function VaultGitHistoryDialog({
                 variant="ghost"
                 size="sm"
                 onClick={() => setIsEditingRemote(!isEditingRemote)}
-                className="h-6 px-2 text-[11px]"
+                // v0.8.130 — 12px type floor (UI audit Phase 1)
+                className="h-6 px-2 text-xs"
               >
                 {isEditingRemote ? 'Cancel' : activeRemote ? 'Change' : 'Configure'}
               </Button>
@@ -228,7 +229,7 @@ export function VaultGitHistoryDialog({
                     size="sm"
                     onClick={handlePush}
                     disabled={isPushing}
-                    className="h-6 px-2 text-[11px] gap-1"
+                    className="h-6 px-2 text-xs gap-1"
                     title="Push commits to remote"
                   >
                     {isPushing ? <LoadingSpinner size="sm" /> : <CloudUpload className="h-3 w-3" />}
@@ -240,7 +241,7 @@ export function VaultGitHistoryDialog({
                     size="sm"
                     onClick={handlePull}
                     disabled={isPulling}
-                    className="h-6 px-2 text-[11px] gap-1"
+                    className="h-6 px-2 text-xs gap-1"
                     title="Pull latest changes from remote"
                   >
                     {isPulling ? <LoadingSpinner size="sm" /> : <CloudDownload className="h-3 w-3" />}
