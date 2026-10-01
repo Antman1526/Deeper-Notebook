@@ -145,6 +145,20 @@ Frontend UI audit (2026-09-30): the concrete defects behind the "unfinished" fee
 
 🛠 **The Luminous snapshot suites run again, in their own CI job.** `luminous-folio-visual` and `theme-gallery-visual` (21 tests) prove the pre-V2 presentation, which only renders in a build made with `NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2=0`; V2 became the default on 2026-08-14, so they had failed in every default build since. They now form a `rollback-visuals` Playwright project (`npm run test:e2e:rollback-visuals`), the `mocked-browser` project no longer runs them, and a new `rollback-visuals` CI job builds with V2 off inside the Playwright 1.61.1 image. Baselines were regenerated on purpose for macOS and Linux (the Linux set in that same image, so CI pixels match), after the Phase 0–1 token changes. The theme gallery spec opens "Show more themes" before asserting the catalog groups (curated away behind it on 2026-08-20), and the theme fixture models two endpoints added since it was written (`/api/features`, `/api/studio/retention/status`).
 
+**Phase 3a — page anatomy.**
+
+✨ **Each page names itself.** Every route shared the title "Deeper Notebook", so tabs, history and window lists could not tell pages apart. Routes now read "Notebooks · Deeper Notebook", "Ask and Search · Deeper Notebook" and so on (the home keeps the brand alone).
+
+🎨 **Home breathes.** The working-desk hero, the runtime status and the Today section touched (0px apart); they now share the page's spacing. In V2 the runtime status is a neutral card: its Context-lens tint made a healthy status look selected, or like an error.
+
+🎨 **Notebook cards read as one block.** A ~58px blank band sat between a card's title and its description (the hover-only actions button stretched the header row); the button is pinned to the corner. The source and note counts read "1 source", "0 notes" instead of a bare "1" and "0", and the notebook search shows a search icon.
+
+🎨 **Studio sits on the canvas.** In V2 the header is no longer a tinted block and the two columns are no longer tinted or paper panels around their own cards (card-in-card-in-card).
+
+🐛 **A lone source is a card.** The source gallery's `auto-fit` grid stretched a single source across the page as a ~500px-tall tile; it uses `auto-fill`.
+
+🛠 **Tests.** New `e2e/phase3-pages.spec.ts` (titles for 18 routes, home spacing and status surface, notebook card gap, labelled counts and search icon, Studio surfaces, gallery card width).
+
 ## v0.8.129 — 2026-09-12 — SurrealDB live integration suite, live service verification & test setting hardening
 
 🛠 **SurrealDB live integration test suite (132 passed).** Resolved a schema migration head stepping issue in `tests/integration/test_search_quality_benchmark.py`: migration 51 round-trip stepping now uses `runner.run_one_up()` against the migration 52 head. Full suite passed 100% against real SurrealDB 2.6.5.
