@@ -91,7 +91,8 @@
   border-radius: 0.5rem;
   background: var(--dn-selection);
   color: var(--dn-aurora-2);
-  font-size: 0.7rem;
+  /* v0.8.130 — 12px type floor (was 0.7rem). */
+  font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.08em;
 }
@@ -148,20 +149,17 @@
   min-height: 1.25rem;
 }
 
-.dn-command-shortcut {
-  border: 1px solid var(--border);
-  border-radius: 0.25rem;
-  background: var(--muted);
-  padding: 0.15rem 0.35rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.65rem;
-}
+/* v0.8.130 — the palette shortcut chip is the shared Kbd primitive; its own styling
+ * here (10.4px text) overrode it, as unlayered CSS beats utilities. */
 
+/* v0.8.130 — 12px type floor (was 10px monospace). The sans face keeps "v0.8.130"
+ * inside the 68px rail at 12px. */
 .dn-dock-version {
   justify-content: center;
   color: var(--muted-foreground);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.625rem;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .dn-luminous-workspace {
@@ -217,11 +215,12 @@
   letter-spacing: -0.015em;
 }
 
+/* v0.8.130 — 12px type floor (was 0.65rem). */
 .dn-command-kicker,
 .dn-navigator-section-title {
   margin: 0 0 0.15rem;
   color: var(--muted-foreground);
-  font-size: 0.65rem;
+  font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;

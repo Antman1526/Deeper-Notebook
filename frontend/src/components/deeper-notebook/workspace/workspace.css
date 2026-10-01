@@ -805,10 +805,13 @@
   outline-offset: 2px;
 }
 
+/* v0.8.130 — only what the hover state changes, on the standard easing. */
 .dn-visual-card-action,
 .dn-workspace-secondary-link,
 .dn-workspace-notebook-link {
-  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  transition-property: border-color, background-color, transform;
+  transition-duration: 0.18s;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
 }
 
 .dn-workspace-secondary-link:hover,
@@ -819,11 +822,7 @@
   transform: translateY(-1px);
 }
 
-.dn-workspace-secondary-link:active,
-.dn-workspace-notebook-link:active,
-.dn-visual-card-action:active {
-  transform: scale(0.98);
-}
+/* v0.8.130 — the press-scale is gone, as everywhere else (UI audit 4.2). */
 
 @media (max-width: 52rem) {
   .dn-workspace-hero {
