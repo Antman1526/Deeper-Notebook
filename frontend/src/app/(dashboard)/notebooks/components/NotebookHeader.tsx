@@ -4,7 +4,15 @@ import { useState } from 'react'
 import { NotebookResponse } from '@/lib/types/api'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Archive, ArchiveRestore, Download, Sparkles, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, Download, Info, MoreHorizontal, Sparkles, Trash2 } from 'lucide-react'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { useUpdateNotebook } from '@/lib/hooks/use-notebooks'
 import { NotebookDeleteDialog } from './NotebookDeleteDialog'
 import { ExportNotebookDialog } from './ExportNotebookDialog'
@@ -53,101 +61,92 @@ export function NotebookHeader({ notebook }: NotebookHeaderProps) {
     })
   }
 
+  const created = t('common.created').replace('{time}', formatDistanceToNow(new Date(notebook.created), { addSuffix: true, locale: dfLocale }))
+  const updated = t('common.updated').replace('{time}', formatDistanceToNow(new Date(notebook.updated), { addSuffix: true, locale: dfLocale }))
+
+  // v0.8.130 — Phase 2a: a 56px top bar instead of a ~200px header. The editable
+  // title is the page's single h1 (the workspace <main> is labelled by it); the
+  // description and dates moved behind "About this notebook"; Archive, Export and
+  // Delete moved into the "Notebook actions" menu (a red Delete pill sat among the
+  // primary actions). Synthesis and Mind map stay one click away.
   return (
     <>
-      <div className="pb-1">
-        <div className="space-y-2">
-          <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex min-w-0 flex-1 items-center gap-3">
-              <InlineEdit
-                id="notebook-name"
-                name="notebook-name"
-                value={notebook.name}
-                onSave={handleUpdateName}
-                // v0.7.180 — font-bold → font-semibold so the editable
-                // notebook title matches the v0.7.153 H1 weight standard
-                // and doesn't outweigh the dashboard H1s above it.
-                className="min-w-0 break-words text-2xl font-semibold"
-                inputClassName="text-2xl font-semibold"
-                placeholder={t('notebooks.namePlaceholder')}
-              />
-              {notebook.archived && (
-                <Badge variant="secondary">{t('notebooks.archived')}</Badge>
-              )}
-            </div>
-            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
-              {/* v0.8.130 — no press-scale, narrow transitions (UI audit Phase 1) */}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowSynthesisDialog(true)}
-                className="gap-1.5 rounded-full border-primary/40 bg-primary/[0.06] text-primary shadow-xs duration-200 hover:bg-primary/15 hover:border-primary/60"
-                data-testid="executive-synthesis-button"
-              >
-                <Sparkles className="h-4 w-4" />
-                Synthesis
-              </Button>
-              <MindMapButton notebookId={notebook.id} />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleArchiveToggle}
-                className="rounded-full shadow-xs duration-200"
-              >
-                {notebook.archived ? (
-                  <>
-                    <ArchiveRestore className="h-4 w-4 mr-2" />
-                    {t('notebooks.unarchive')}
-                  </>
-                ) : (
-                  <>
-                    <Archive className="h-4 w-4 mr-2" />
-                    {t('notebooks.archive')}
-                  </>
-                )}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowExportDialog(true)}
-                className="rounded-full shadow-xs duration-200"
-              >
-                <Download className="h-4 w-4 mr-2" />
-                {t('notebooks.export.button')}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowDeleteDialog(true)}
-                className="rounded-full border-destructive/30 text-destructive shadow-xs duration-200 hover:bg-destructive/10 hover:border-destructive/60"
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                {t('common.delete')}
-              </Button>
-            </div>
-          </div>
-          
+      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-1">
+        <h1 id="notebook-title" className="min-w-0 flex-1 text-xl font-semibold tracking-tight">
           <InlineEdit
-            id="notebook-description"
-            name="notebook-description"
-            value={notebook.description || ''}
-            onSave={handleUpdateDescription}
-            className="text-muted-foreground"
-            inputClassName="text-muted-foreground"
-            placeholder={t('notebooks.addDescription')}
-            multiline
-            emptyText={t('notebooks.addDescription')}
+            id="notebook-name"
+            name="notebook-name"
+            value={notebook.name}
+            onSave={handleUpdateName}
+            className="min-w-0 truncate text-xl font-semibold"
+            inputClassName="text-xl font-semibold"
+            placeholder={t('notebooks.namePlaceholder')}
           />
-          
-          <div className="text-sm text-muted-foreground">
-            {t('common.created').replace('{time}', formatDistanceToNow(new Date(notebook.created), { addSuffix: true, locale: dfLocale }))}
-            {/* v0.8.130 — explicit separator: JSX trims the space before a line break, which rendered
-                "ago •Updated". */}
-            {' • '}
-            {t('common.updated').replace('{time}', formatDistanceToNow(new Date(notebook.updated), { addSuffix: true, locale: dfLocale }))}
-          </div>
-        </div>
-      </div>
+        </h1>
+        {notebook.archived && (
+          <Badge variant="secondary">{t('notebooks.archived')}</Badge>
+        )}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowSynthesisDialog(true)}
+          className="gap-1.5"
+          data-testid="executive-synthesis-button"
+          aria-label="Synthesis"
+        >
+          <Sparkles className="h-4 w-4" />
+          {/* v0.8.130 — icon-only below 640px so the title keeps room. */}
+          <span className="hidden sm:inline">Synthesis</span>
+        </Button>
+        <MindMapButton notebookId={notebook.id} />
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="ghost" size="icon" aria-label={t('notebooks.aboutNotebook')} title={t('notebooks.aboutNotebook')}>
+              <Info className="h-4 w-4" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-80 space-y-3">
+            <InlineEdit
+              id="notebook-description"
+              name="notebook-description"
+              value={notebook.description || ''}
+              onSave={handleUpdateDescription}
+              className="text-sm text-muted-foreground"
+              inputClassName="text-sm text-muted-foreground"
+              placeholder={t('notebooks.addDescription')}
+              multiline
+              emptyText={t('notebooks.addDescription')}
+            />
+            <p className="text-xs text-muted-foreground">
+              {/* v0.8.130 — explicit separator: JSX trims the space before a line break, which rendered
+                  "ago •Updated". */}
+              {created}{' • '}{updated}
+            </p>
+          </PopoverContent>
+        </Popover>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" aria-label={t('notebooks.actions')} title={t('notebooks.actions')}>
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={handleArchiveToggle}>
+              {notebook.archived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
+              {notebook.archived ? t('notebooks.unarchive') : t('notebooks.archive')}
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setShowExportDialog(true)}>
+              <Download className="h-4 w-4" />
+              {t('notebooks.export.button')}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onSelect={() => setShowDeleteDialog(true)}>
+              <Trash2 className="h-4 w-4" />
+              {t('common.delete')}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </header>
 
       <NotebookDeleteDialog
         open={showDeleteDialog}

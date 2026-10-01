@@ -236,6 +236,8 @@ test.describe('copy and wrapping (T0-11, T0-12)', () => {
   test('the notebook header spaces its bullet and wraps words whole', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto(`/notebooks/${notebook.id}`)
+    // Phase 2a moved the description and dates behind "About this notebook".
+    await page.getByRole('button', { name: 'About this notebook' }).click()
 
     await expect(page.getByText(/ago • Updated /)).toBeVisible()
     // `break-all` split words mid-word; `overflow-wrap: anywhere` only splits a

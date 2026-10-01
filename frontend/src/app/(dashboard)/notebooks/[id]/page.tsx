@@ -8,15 +8,14 @@ import { NotebookHeader } from '../components/NotebookHeader'
 import { SourcesColumn } from '../components/SourcesColumn'
 import { NotesColumn } from '../components/NotesColumn'
 import { ChatColumn } from '../components/ChatColumn'
+import { StudioColumn } from '../components/StudioColumn'
 import { useNotebook } from '@/lib/hooks/use-notebooks'
 import { useNotebookSources } from '@/lib/hooks/use-sources'
 import { useNotes } from '@/lib/hooks/use-notes'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
-import { ArtifactRail } from '@/components/deeper-notebook'
 import { FolioRouteFrame } from '@/components/deeper-notebook/folio/FolioRouteFrame'
-import { ResearchRunWorkspace } from '@/components/research/ResearchRunWorkspace'
 import { useNotebookColumnsStore } from '@/lib/stores/notebook-columns-store'
-import { useIsDesktop } from '@/lib/hooks/use-media-query'
+import { useIsDesktop, useIsWideDesktop } from '@/lib/hooks/use-media-query'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import {
   ResizablePanelGroup,
@@ -24,7 +23,7 @@ import {
   ResizableHandle,
 } from '@/components/ui/resizable'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { FileText, StickyNote, MessageSquare } from 'lucide-react'
+import { FileText, StickyNote, MessageSquare, Sparkles } from 'lucide-react'
 import {
   applyBulkNoteContext,
   applyBulkSourceContext,
@@ -58,7 +57,7 @@ export default function NotebookPage() {
   const { data: notes, isLoading: notesLoading } = useNotes(notebookId)
 
   // Get collapse states for dynamic layout
-  const { sourcesCollapsed, notesCollapsed, setSources, setNotes } =
+  const { sourcesCollapsed, notesCollapsed, studioCollapsed, setSources, setNotes, setStudio } =
     useNotebookColumnsStore()
 
   // v0.8.85 — resizable workspace: imperative refs to the sources/notes panels
@@ -66,6 +65,7 @@ export default function NotebookPage() {
   // the React Flow… er, react-resizable-panels collapse state, and vice-versa.
   const sourcesPanelRef = useRef<ImperativePanelHandle>(null)
   const notesPanelRef = useRef<ImperativePanelHandle>(null)
+  const studioPanelRef = useRef<ImperativePanelHandle>(null)
 
   // Store → panel: when the column's collapse button toggles the store, drive
   // the panel. Guarded by isCollapsed() so the onCollapse/onExpand callbacks
@@ -82,12 +82,29 @@ export default function NotebookPage() {
     if (notesCollapsed && !p.isCollapsed()) p.collapse()
     else if (!notesCollapsed && p.isCollapsed()) p.expand()
   }, [notesCollapsed])
+  useEffect(() => {
+    const p = studioPanelRef.current
+    if (!p) return
+    if (studioCollapsed && !p.isCollapsed()) p.collapse()
+    else if (!studioCollapsed && p.isCollapsed()) p.expand()
+  }, [studioCollapsed])
 
   // Detect desktop to avoid double-mounting ChatColumn
   const isDesktop = useIsDesktop()
+  const isWideDesktop = useIsWideDesktop()
+  // Compact desktops (1024–1279px): Notes and Studio share one tabbed side panel.
+  const [sideTab, setSideTab] = useState<'notes' | 'studio'>('notes')
+  // v0.8.130 — useIsDesktop is false on the first render (SSR-safe), so a desktop
+  // load used to mount the mobile chat for one tick before the desktop one: a
+  // duplicate round of session, note and context requests whose firing depended on
+  // timing. Render the columns only once the viewport is known (the media-query
+  // effect above and this one commit together).
+  const [viewportKnown, setViewportKnown] = useState(false)
+  useEffect(() => setViewportKnown(true), [])
 
-  // Mobile tab state (Sources, Notes, or Chat)
-  const [mobileActiveTab, setMobileActiveTab] = useState<'sources' | 'notes' | 'chat'>('chat')
+  // Mobile tab state (Sources, Chat, Notes, or Studio)
+  type MobileTab = 'sources' | 'chat' | 'notes' | 'studio'
+  const [mobileActiveTab, setMobileActiveTab] = useState<MobileTab>('chat')
 
   // Context selection state
   const [contextSelections, setContextSelections] = useState<ContextSelections>({
@@ -190,175 +207,185 @@ export default function NotebookPage() {
     )
   }
 
+  const sourcesColumn = (
+    <SourcesColumn
+      sources={sources}
+      isLoading={sourcesLoading}
+      notebookId={notebookId}
+      notebookName={notebook?.name}
+      onRefresh={refetchSources}
+      contextSelections={contextSelections.sources}
+      onContextModeChange={(sourceId, mode) => handleContextModeChange(sourceId, mode, 'source')}
+      onBulkContextModeChange={handleBulkSourceContext}
+      hasNextPage={hasNextPage}
+      isFetchingNextPage={isFetchingNextPage}
+      fetchNextPage={fetchNextPage}
+    />
+  )
+  const notesColumn = (
+    <NotesColumn
+      notes={notes}
+      isLoading={notesLoading}
+      notebookId={notebookId}
+      contextSelections={contextSelections.notes}
+      onContextModeChange={(noteId, mode) => handleContextModeChange(noteId, mode, 'note')}
+      onBulkContextModeChange={handleBulkNoteContext}
+    />
+  )
+  const chatColumn = (
+    <ChatColumn
+      notebookId={notebookId}
+      contextSelections={contextSelections}
+      sources={sources}
+      sourcesLoading={sourcesLoading}
+    />
+  )
+  const studioColumn = (
+    <StudioColumn notebookId={notebookId} sources={sources} sourcesLoading={sourcesLoading} />
+  )
+
+  // v0.8.130 — Phase 2a: the workspace is its own bounded page. It used to sit in a
+  // folio titled "Notebook workspace" under ~1,000px of header, Guided research and
+  // the Evidence Studio band, with no height bound, so the panes never got a definite
+  // height and the chat's scroll-to-bottom scrolled the whole canvas on load. Now the
+  // notebook title (in NotebookHeader) is the page's single h1, the page fills the
+  // canvas (workspace.css), and only the columns scroll. Guided research and the
+  // Evidence Studio band moved into the Studio column.
   return (
     <AppShell>
-      <FolioRouteFrame section="Organize" title="Notebook workspace">
-      {/* v0.7.164 — Notebook detail page header gets a clean visual
-          break from the 3-column workspace below.
-          Before: header was `p-6 pb-0` (no bottom padding, no
-          divider) and the workspace was `p-6 pt-6`. The two regions
-          read as one blob — the user couldn't immediately see where
-          the metadata header ends and the source/notes/chat columns
-          begin.
-          After: header gets `pb-4` (real breathing room) plus a
-          hairline `border-b` divider; workspace re-balances to
-          `pt-8` so the columns "land" cleanly below the divider.
-          This is the most-visited screen in the app — worth the
-          polish to compete with NotebookLM's notebook view. */}
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex-shrink-0 px-6 pt-6 pb-4 border-b">
-          <NotebookHeader notebook={notebook} />
-        </div>
+      <main
+        aria-labelledby="notebook-title"
+        data-dn-notebook-workspace=""
+        className="flex h-full min-h-0 min-w-0 flex-col gap-3"
+      >
+        <NotebookHeader notebook={notebook} />
 
-        <div className="flex-1 px-6 pt-8 pb-6 overflow-x-auto flex flex-col">
-          <ResearchRunWorkspace notebookId={notebookId} />
-          <ArtifactRail
-            notebookId={notebookId}
-            sources={sources}
-            sourcesLoading={sourcesLoading}
-          />
+        {viewportKnown && !isDesktop && (
+          <div className="flex min-h-0 flex-1 flex-col gap-3 lg:hidden">
+            <Tabs value={mobileActiveTab} onValueChange={(value) => setMobileActiveTab(value as MobileTab)}>
+              <TabsList className="grid w-full grid-cols-4">
+                <TabsTrigger value="sources" className="gap-2">
+                  <FileText className="h-4 w-4" />
+                  {t('navigation.sources')}
+                </TabsTrigger>
+                <TabsTrigger value="chat" className="gap-2">
+                  <MessageSquare className="h-4 w-4" />
+                  {t('common.chat')}
+                </TabsTrigger>
+                <TabsTrigger value="notes" className="gap-2">
+                  <StickyNote className="h-4 w-4" />
+                  {t('common.notes')}
+                </TabsTrigger>
+                <TabsTrigger value="studio" className="gap-2">
+                  <Sparkles className="h-4 w-4" />
+                  {t('notebooks.studio')}
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <div className="min-h-0 flex-1 overflow-hidden">
+              {mobileActiveTab === 'sources' && sourcesColumn}
+              {mobileActiveTab === 'chat' && chatColumn}
+              {mobileActiveTab === 'notes' && notesColumn}
+              {mobileActiveTab === 'studio' && studioColumn}
+            </div>
+          </div>
+        )}
 
-          {/* Mobile: Tabbed interface - only render on mobile to avoid double-mounting */}
-          {!isDesktop && (
-            <>
-              <div className="lg:hidden mb-4">
-                <Tabs value={mobileActiveTab} onValueChange={(value) => setMobileActiveTab(value as 'sources' | 'notes' | 'chat')}>
-                  <TabsList className="grid w-full grid-cols-3">
-                    <TabsTrigger value="sources" className="gap-2">
-                      <FileText className="h-4 w-4" />
-                      {t('navigation.sources')}
-                    </TabsTrigger>
-                    <TabsTrigger value="notes" className="gap-2">
-                      <StickyNote className="h-4 w-4" />
-                      {t('common.notes')}
-                    </TabsTrigger>
-                    <TabsTrigger value="chat" className="gap-2">
-                      <MessageSquare className="h-4 w-4" />
-                      {t('common.chat')}
-                    </TabsTrigger>
-                  </TabsList>
-                </Tabs>
-              </div>
-
-              {/* Mobile: Show only active tab */}
-              <div className="flex-1 overflow-hidden lg:hidden">
-                {mobileActiveTab === 'sources' && (
-                  <SourcesColumn
-                    sources={sources}
-                    isLoading={sourcesLoading}
-                    notebookId={notebookId}
-                    notebookName={notebook?.name}
-                    onRefresh={refetchSources}
-                    contextSelections={contextSelections.sources}
-                    onContextModeChange={(sourceId, mode) => handleContextModeChange(sourceId, mode, 'source')}
-                    onBulkContextModeChange={handleBulkSourceContext}
-                    hasNextPage={hasNextPage}
-                    isFetchingNextPage={isFetchingNextPage}
-                    fetchNextPage={fetchNextPage}
-                  />
-                )}
-                {mobileActiveTab === 'notes' && (
-                  <NotesColumn
-                    notes={notes}
-                    isLoading={notesLoading}
-                    notebookId={notebookId}
-                    contextSelections={contextSelections.notes}
-                    onContextModeChange={(noteId, mode) => handleContextModeChange(noteId, mode, 'note')}
-                    onBulkContextModeChange={handleBulkNoteContext}
-                  />
-                )}
-                {mobileActiveTab === 'chat' && (
-                  <ChatColumn
-                    notebookId={notebookId}
-                    contextSelections={contextSelections}
-                    sources={sources}
-                    sourcesLoading={sourcesLoading}
-                  />
-                )}
-              </div>
-            </>
-          )}
-
-          {/* Desktop: resizable 3-pane workspace (v0.8.85 — roadmap Batch 3).
-              Draggable handles; widths remembered via autoSaveId (localStorage).
-              Sources/Notes panels are collapsible and stay in sync with the
-              notebook-columns store (the in-column collapse buttons still work;
-              dragging a pane shut also updates the store via onCollapse). */}
-          {isDesktop && <div className="hidden lg:flex h-full min-h-0 flex-1">
-            <ResizablePanelGroup
-              direction="horizontal"
-              autoSaveId="onp-notebook-workspace"
-              className="h-full"
-            >
+        {/* Desktop: Sources | Chat | Notes | Studio. Draggable handles; widths are
+            remembered under a new autoSaveId so the old 3-pane widths don't apply.
+            Sources, Notes and Studio collapse and stay in sync with the columns store. */}
+        {viewportKnown && isDesktop && isWideDesktop && (
+          <div className="hidden min-h-0 flex-1 lg:flex">
+            <ResizablePanelGroup direction="horizontal" autoSaveId="dn-notebook-workspace-v2" className="h-full">
               <ResizablePanel
                 ref={sourcesPanelRef}
                 collapsible
                 collapsedSize={4}
-                minSize={12}
-                defaultSize={28}
+                minSize={14}
+                defaultSize={20}
                 onCollapse={() => setSources(true)}
                 onExpand={() => setSources(false)}
                 className="min-w-0"
               >
-                <div className="h-full pr-3">
-                  <SourcesColumn
-                    sources={sources}
-                    isLoading={sourcesLoading}
-                    notebookId={notebookId}
-                    notebookName={notebook?.name}
-                    onRefresh={refetchSources}
-                    contextSelections={contextSelections.sources}
-                    onContextModeChange={(sourceId, mode) => handleContextModeChange(sourceId, mode, 'source')}
-                    onBulkContextModeChange={handleBulkSourceContext}
-                    hasNextPage={hasNextPage}
-                    isFetchingNextPage={isFetchingNextPage}
-                    fetchNextPage={fetchNextPage}
-                  />
-                </div>
+                <div className="h-full pr-1.5">{sourcesColumn}</div>
               </ResizablePanel>
-
               <ResizableHandle withHandle />
-
+              <ResizablePanel defaultSize={38} minSize={28} className="min-w-0">
+                <div className="h-full px-1.5">{chatColumn}</div>
+              </ResizablePanel>
+              <ResizableHandle withHandle />
               <ResizablePanel
                 ref={notesPanelRef}
                 collapsible
                 collapsedSize={4}
                 minSize={12}
-                defaultSize={28}
+                defaultSize={18}
                 onCollapse={() => setNotes(true)}
                 onExpand={() => setNotes(false)}
                 className="min-w-0"
               >
-                <div className="h-full px-3">
-                  <NotesColumn
-                    notes={notes}
-                    isLoading={notesLoading}
-                    notebookId={notebookId}
-                    contextSelections={contextSelections.notes}
-                    onContextModeChange={(noteId, mode) => handleContextModeChange(noteId, mode, 'note')}
-                    onBulkContextModeChange={handleBulkNoteContext}
-                  />
-                </div>
+                <div className="h-full px-1.5">{notesColumn}</div>
               </ResizablePanel>
-
               <ResizableHandle withHandle />
+              <ResizablePanel
+                ref={studioPanelRef}
+                collapsible
+                collapsedSize={4}
+                minSize={18}
+                defaultSize={24}
+                onCollapse={() => setStudio(true)}
+                onExpand={() => setStudio(false)}
+                className="min-w-0"
+              >
+                <div className="h-full pl-1.5">{studioColumn}</div>
+              </ResizablePanel>
+            </ResizablePanelGroup>
+          </div>
+        )}
 
-              {/* Chat — always expanded, takes the remaining space. */}
-              <ResizablePanel defaultSize={44} minSize={25} className="min-w-0">
-                <div className="h-full pl-3">
-                  <ChatColumn
-                    notebookId={notebookId}
-                    contextSelections={contextSelections}
-                    sources={sources}
-                    sourcesLoading={sourcesLoading}
-                  />
+        {/* v0.8.130 — compact desktops (1024–1279px): four columns left Notes and Studio
+            ~120px each and clipped their controls, so they share one side panel here. */}
+        {viewportKnown && isDesktop && !isWideDesktop && (
+          <div className="hidden min-h-0 flex-1 lg:flex">
+            <ResizablePanelGroup direction="horizontal" autoSaveId="dn-notebook-workspace-v2-compact" className="h-full">
+              <ResizablePanel
+                ref={sourcesPanelRef}
+                collapsible
+                collapsedSize={6}
+                minSize={18}
+                defaultSize={28}
+                onCollapse={() => setSources(true)}
+                onExpand={() => setSources(false)}
+                className="min-w-0"
+              >
+                <div className="h-full pr-1.5">{sourcesColumn}</div>
+              </ResizablePanel>
+              <ResizableHandle withHandle />
+              <ResizablePanel defaultSize={42} minSize={30} className="min-w-0">
+                <div className="h-full px-1.5">{chatColumn}</div>
+              </ResizablePanel>
+              <ResizableHandle withHandle />
+              <ResizablePanel defaultSize={30} minSize={22} className="min-w-0">
+                <div className="flex h-full min-h-0 flex-col gap-2 pl-1.5">
+                  <Tabs value={sideTab} onValueChange={(value) => setSideTab(value as 'notes' | 'studio')}>
+                    <TabsList aria-label={t('notebooks.notesAndStudio')} className="grid w-full grid-cols-2">
+                      <TabsTrigger value="notes" className="gap-2">
+                        <StickyNote className="h-4 w-4" />
+                        {t('common.notes')}
+                      </TabsTrigger>
+                      <TabsTrigger value="studio" className="gap-2">
+                        <Sparkles className="h-4 w-4" />
+                        {t('notebooks.studio')}
+                      </TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                  <div className="min-h-0 flex-1">{sideTab === 'notes' ? notesColumn : studioColumn}</div>
                 </div>
               </ResizablePanel>
             </ResizablePanelGroup>
-          </div>}
-        </div>
-      </div>
-      </FolioRouteFrame>
+          </div>
+        )}
+      </main>
     </AppShell>
   )
 }

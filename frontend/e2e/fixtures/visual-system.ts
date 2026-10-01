@@ -563,6 +563,12 @@ export const VISUAL_CELL_EXPECTED_REQUESTS: Readonly<Record<string, VisualReques
           if (route === '/notebooks/[id]' && viewport.name === 'large-desktop') {
             cellExpected['GET /api/sources'] = 2
           }
+          // v0.8.130 — Phase 2a: below 1024px the notebook workspace is tabbed and
+          // the Studio tab (which owns the Evidence Studio artifacts) only mounts
+          // when opened, so the initial load no longer fetches artifacts there.
+          if (route === '/notebooks/[id]' && viewport.width < 1024) {
+            delete cellExpected['GET /api/studio/notebooks/notebook-fixture-001/artifacts']
+          }
           return [
             `${route}|${theme}|${viewport.name}`,
             cellExpected,

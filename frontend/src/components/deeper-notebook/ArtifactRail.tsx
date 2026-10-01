@@ -463,7 +463,7 @@ export function ArtifactRail({
       aria-label="Evidence Studio artifacts"
       className="mb-5 overflow-hidden rounded-lg border border-[var(--dn-border-strong)] bg-card shadow-[var(--dn-elevation-md)]"
     >
-      <div className="flex flex-col gap-3 border-b bg-[var(--dn-surface-raised)] px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-col gap-3 border-b bg-[var(--dn-surface-raised)] px-4 py-3 @5xl:flex-row @5xl:items-center @5xl:justify-between">
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex h-10 w-10 flex-none items-center justify-center rounded-md border border-[var(--dn-border-strong)] bg-background text-primary shadow-[var(--dn-elevation-low)]">
             <Layers3 className="h-4 w-4" aria-hidden="true" />
@@ -556,7 +556,7 @@ export function ArtifactRail({
         </div>
 
         <div className="rounded-md border bg-background/70 p-3">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-3 @5xl:flex-row @5xl:items-center @5xl:justify-between">
             <div>
               <div className="text-sm font-semibold">App Mode templates</div>
               <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
@@ -575,7 +575,7 @@ export function ArtifactRail({
 
         {(workflowRunsLoading || workflowRuns.length > 0) && (
           <div className="rounded-md border bg-background/70 p-3">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-2 @2xl:flex-row @2xl:items-center @2xl:justify-between">
               <div className="flex items-center gap-2">
                 <Clock3 className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
                 <div className="text-sm font-semibold">Workflow runs</div>
@@ -600,7 +600,7 @@ export function ArtifactRail({
                       key={run.id}
                       className="rounded-md border bg-card px-3 py-2 shadow-[var(--dn-elevation-low)]"
                     >
-                      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                      <div className="flex flex-col gap-2 @3xl:flex-row @3xl:items-start @3xl:justify-between">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <div className="truncate text-sm font-medium">{run.title}</div>

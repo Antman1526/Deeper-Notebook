@@ -62,6 +62,18 @@
   padding: var(--dn-space-6);
 }
 
+/* v0.8.130 — Phase 2a: the notebook workspace fills the canvas instead of scrolling
+   inside it. Its columns scroll; the canvas does not, so nothing (the chat's
+   scroll-to-bottom included) can scroll the page away from the title bar. */
+.dn-workspace-canvas:has([data-dn-notebook-workspace]) {
+  overflow: hidden;
+  padding: var(--dn-space-3) var(--dn-space-4);
+}
+
+.dn-workspace-canvas > [data-dn-notebook-workspace] {
+  height: 100%;
+}
+
 .dn-workspace-shell > .dn-shell-utilities {
   grid-area: body;
 }

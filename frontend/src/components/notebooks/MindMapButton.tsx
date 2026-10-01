@@ -36,11 +36,13 @@ export function MindMapButton({ notebookId }: { notebookId: string }) {
         variant="outline"
         size="sm"
         onClick={() => setOpen(true)}
-        // v0.8.130 — named transition, no press-scale (UI audit Phase 1)
+        // v0.8.130 — named transition, no press-scale (UI audit Phase 1). Icon-only
+        // below 640px so the notebook title keeps room in the 56px top bar.
         className="rounded-full duration-200 shadow-xs"
+        aria-label={t('mindMap.button', { defaultValue: 'Mind map' })}
       >
-        <Network className="mr-2 h-4 w-4" />
-        {t('mindMap.button', { defaultValue: 'Mind map' })}
+        <Network className="h-4 w-4" />
+        <span className="hidden sm:inline">{t('mindMap.button', { defaultValue: 'Mind map' })}</span>
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>

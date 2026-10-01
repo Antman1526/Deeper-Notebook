@@ -216,9 +216,11 @@ export function SourcesColumn({
             </div>
           )}
           <CardHeader className="pb-3 flex-shrink-0">
-            <div className="flex items-center justify-between gap-2">
+            {/* v0.8.130 — wrap instead of clipping: in the 1024–1279px side panel the
+                header actions ran off the card. */}
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <CardTitle className="text-lg">{t('navigation.sources')}</CardTitle>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {onBulkContextModeChange && sources && sources.length > 0 && (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>

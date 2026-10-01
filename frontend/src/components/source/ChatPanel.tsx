@@ -252,10 +252,15 @@ export function ChatPanel({
     return () => viewport.removeEventListener('scroll', onScroll)
   }, [])
 
+  // v0.8.130 — Phase 2a: scroll the chat's own viewport. `scrollIntoView` on the end
+  // sentinel also scrolled every scrollable ancestor, which on the notebook page
+  // scrolled the whole canvas ~936px on load, past the title bar.
   useEffect(() => {
-    if (stickToBottomRef.current) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
-    }
+    if (!stickToBottomRef.current) return
+    const viewport = scrollAreaRef.current?.querySelector<HTMLElement>(
+      '[data-radix-scroll-area-viewport]',
+    )
+    if (viewport) viewport.scrollTop = viewport.scrollHeight
   }, [messages])
 
   const handleSend = () => {
