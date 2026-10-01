@@ -318,3 +318,78 @@ test.describe('2c — chat column', () => {
     await expect.poll(() => sends.length).toBe(1)
   })
 })
+
+// v0.8.130 — Phase 2d: the Sources column lists flat rows, not stacked cards.
+const sourceRows = [
+  {
+    id: 'source:2d-pdf', title: 'Quarterly field research report', asset: { file_path: '/uploads/field-report.pdf' },
+    embedded: true, embedded_chunks: 12, insights_count: 3, created: '2026-01-01T00:00:00Z', updated: '2026-01-01T00:00:00Z',
+    status: 'completed', topics: ['training', 'policy', 'safety'], provenance: { original_filename: 'field-report.pdf' },
+    notebook_count: 2, is_shared: true,
+  },
+  {
+    id: 'source:2d-url', title: 'Deterministic source', asset: { url: 'https://academy.example.com/notes' },
+    embedded: true, embedded_chunks: 4, insights_count: 0, created: '2026-01-01T00:00:00Z', updated: '2026-01-01T00:00:00Z',
+    status: 'completed', provenance: { domain: 'academy.example.com' },
+  },
+  {
+    id: 'source:2d-long', title: 'A very long source title that keeps going well past the width of a narrow Sources column',
+    asset: { url: 'https://example.com/long' }, embedded: true, embedded_chunks: 2, insights_count: 1,
+    created: '2026-01-01T00:00:00Z', updated: '2026-01-01T00:00:00Z', status: 'completed',
+  },
+]
+
+async function mockSources(page: Page) {
+  await page.route('**/api/sources**', async (route) => {
+    const request = route.request()
+    if (request.method() !== 'GET' || new URL(request.url()).pathname !== '/api/sources') return route.fallback()
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify(sourceRows) })
+  })
+}
+
+test.describe('2d — source rows', () => {
+  for (const viewport of [
+    { label: 'wide', width: 1440, height: 900 },
+    { label: 'compact', width: 1024, height: 768 },
+  ]) {
+    test(`sources are flat one-line rows (${viewport.label})`, async ({ page }) => {
+      await mockSources(page)
+      await page.setViewportSize({ width: viewport.width, height: viewport.height })
+      await page.goto(`/notebooks/${notebook.id}`)
+      const rows = page.locator('[data-dn-source-row]')
+      await expect(rows).toHaveCount(sourceRows.length)
+
+      const measured = await rows.evaluateAll((elements) => elements.map((el) => {
+        const style = getComputedStyle(el)
+        const title = el.querySelector('h4') as HTMLElement
+        return {
+          border: parseFloat(style.borderTopWidth),
+          shadow: style.boxShadow,
+          background: style.backgroundColor,
+          height: el.getBoundingClientRect().height,
+          titleHeight: title.getBoundingClientRect().height,
+          rowOverflow: el.scrollWidth - el.clientWidth,
+        }
+      }))
+      for (const row of measured) {
+        // The old cards were bordered, shadowed and ~110px tall, each tag a pill.
+        expect(row).toEqual(expect.objectContaining({ border: 0, shadow: 'none', background: 'rgba(0, 0, 0, 0)' }))
+        expect(row.height).toBeLessThanOrEqual(72)
+        expect(row.titleHeight).toBeLessThanOrEqual(24)
+        expect(row.rowOverflow).toBeLessThanOrEqual(1)
+      }
+      await expect(rows.first().locator('[data-slot="badge"]')).toHaveCount(0)
+    })
+  }
+
+  test('each row keeps its actions and context toggle', async ({ page }) => {
+    await mockSources(page)
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto(`/notebooks/${notebook.id}`)
+    const row = page.locator('[data-dn-source-row]').first()
+    await expect(row).toBeVisible()
+    await row.hover()
+    await expect(row.getByRole('button', { name: 'Source actions' })).toBeVisible()
+    await expect(row.getByRole('button', { name: /click to cycle/i })).toBeVisible()
+  })
+})

@@ -195,6 +195,32 @@ describe('SourceCard', () => {
     expect(screen.getByText('sources.noExtractedText')).toBeInTheDocument()
   })
 
+  // v0.8.130 — Phase 2d: a flat row (NotebookLM's source list), metadata as quiet text.
+  it('renders a flat row whose metadata is text, not pills', () => {
+    mockUseSourceStatus.mockReturnValue({ data: undefined, isLoading: false })
+
+    const { container } = render(
+      <SourceCard
+        source={source({
+          command_id: undefined,
+          status: 'completed',
+          insights_count: 2,
+          topics: ['training', 'policy'],
+          provenance: { domain: 'academy.example.com' },
+          notebook_count: 3,
+          is_shared: true,
+        })}
+      />
+    )
+
+    const row = container.querySelector('[data-dn-source-row]')
+    expect(row).not.toBeNull()
+    expect(row).not.toHaveAttribute('data-slot', 'card')
+    expect(container.querySelector('[data-slot="badge"]')).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Research source' })).toHaveClass('truncate')
+    expect(screen.getByText('training')).toBeInTheDocument()
+  })
+
   it('shows source labels, provenance, and shared notebook state', () => {
     mockUseSourceStatus.mockReturnValue({
       data: undefined,
@@ -326,6 +352,20 @@ describe('SourceCard', () => {
 
     expect(screen.getByText('sources.fileUnavailable')).toBeInTheDocument()
     expect(onRetry).not.toHaveBeenCalled()
+  })
+
+  // v0.8.130 — Phase 2d: with neither an image nor a visual status, the fallback cover only
+  // repeated the title above the row (and tripled its height).
+  it('skips the cover when a source has no visual and no visual status', () => {
+    mockVisualSystemEnabled.mockReturnValue(true)
+    mockSourceVisualsEnabled.mockReturnValue(true)
+    mockUseSourceStatus.mockReturnValue({ data: undefined, isLoading: false })
+
+    const { container } = render(
+      <SourceCard source={source({ command_id: undefined, status: 'completed', visual: null, visual_status: null })} />
+    )
+
+    expect(container.querySelector('[data-dn-source-cover]')).toBeNull()
   })
 
   it('renders a compact source-derived cover only when both visual gates are enabled, without nested cover actions', () => {
