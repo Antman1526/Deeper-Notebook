@@ -139,7 +139,7 @@ describe('design token scale', () => {
     expect(css).not.toMatch(/--motion-spring/)
   })
 
-  it('defines --font-serif (three stylesheets use it and fell back to Palatino/Georgia)', () => {
+  it('defines --font-serif (the note editor uses it and fell back to Palatino/Georgia)', () => {
     expect(block(css, '@theme inline')).toMatch(/--font-serif:\s*var\(--font-dn-editorial\)/)
   })
 })
@@ -163,6 +163,43 @@ describe('focus ring', () => {
   it('draws the ring inside menu rows and options, where an outer ring is clipped', () => {
     expect(css).toMatch(/\[role='option'\]:focus-visible[\s\S]*?outline-offset:\s*-3px/)
     expect(css).toMatch(/\[role='menuitem'\]:focus-visible/)
+  })
+})
+
+// Decisions of 2026-09-30: indigo (Gemini-Forward) is the one brand, and headings
+// are sans. The serif stays only on the note editor's writing surface.
+const stylesheets = (dir: string): string[] =>
+  fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name)
+    if (entry.isDirectory()) return stylesheets(full)
+    return entry.name.endsWith('.css') ? [full] : []
+  })
+
+describe('brand and heading decisions', () => {
+  it('sets no serif face on anything but the note editor writing surface', () => {
+    const offenders: string[] = []
+    for (const file of stylesheets(path.resolve(__dirname, '..'))) {
+      const source = fs.readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+      for (const match of source.matchAll(/([^{}]+)\{[^{}]*font-family:\s*var\(--font-(?:serif|dn-editorial)\)/g)) {
+        const selectors = match[1].trim()
+        if (!/\.cm-scroller/.test(selectors)) offenders.push(`${path.basename(file)}: ${selectors.replace(/\s+/g, ' ')}`)
+      }
+    }
+    expect(offenders).toEqual([])
+  })
+
+  it('retires the unused font-editorial utility', () => {
+    expect(block(css, '@theme inline')).not.toMatch(/--font-editorial:/)
+  })
+
+  // Charts were fixed Research Core teal/cyan (--dn-teal, --dn-cyan, a near-white
+  // --dn-light) in every theme, because no theme block set them.
+  it('derives chart colours from the active theme, once', () => {
+    const root = block(css, ':root')
+    expect(root).toMatch(/--chart-1:\s*var\(--primary\);/)
+    expect(root).toMatch(/--chart-2:\s*var\(--brand-accent\);/)
+    expect(root).not.toMatch(/--chart-\d:\s*var\(--dn-(teal|cyan|light|dark-teal)\)/)
+    expect(block(css, '.dark')).not.toMatch(/--chart-\d:/)
   })
 })
 

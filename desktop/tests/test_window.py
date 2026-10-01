@@ -17,6 +17,10 @@ import desktop.window as window_module
 from desktop.window import _THEMES, _theme_injection_js, _theme_tokens
 
 EXPECTED_THEME_IDS = {
+    # v0.8.130 — the indigo brand pair. Without them the desktop bridge reset a
+    # Gemini-Forward choice to Research Core Dark on every page load.
+    "gemini-forward-light",
+    "gemini-forward-dark",
     "research-core-dark",
     "research-core-light",
     "deep-ocean",
@@ -226,6 +230,25 @@ def test_theme_ids_are_in_lockstep_with_api_allowlist():
         "desktop _THEMES and api _VALID_THEMES are out of sync: "
         f"{set(_THEMES) ^ set(_VALID_THEMES)}"
     )
+
+
+def test_injection_falls_back_to_the_indigo_default():
+    # v0.8.130 — an unknown or missing theme lands on DEFAULT_THEME, in the
+    # baked initial theme, the JS applyTheme guard, and the base :root block.
+    from desktop.config import DEFAULT_THEME
+
+    js = _theme_injection_js("no-such-theme")
+    assert f'var INITIAL_THEME = "{DEFAULT_THEME}";' in js
+    assert f'if (!IS_DARK.hasOwnProperty(theme)) theme = "{DEFAULT_THEME}";' in js
+    assert f':root, :root[data-theme="{DEFAULT_THEME}"]' in js
+    assert "research-core-dark\";" not in js.split("var IS_DARK")[0]
+
+
+def test_injection_accepts_the_indigo_themes():
+    js = _theme_injection_js("gemini-forward-dark")
+    assert 'var INITIAL_THEME = "gemini-forward-dark";' in js
+    assert '"gemini-forward-light": false' in js
+    assert '"gemini-forward-dark": true' in js
 
 
 def test_injection_exposes_canonical_theme_bridge_and_legacy_alias():

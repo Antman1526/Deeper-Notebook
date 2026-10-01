@@ -1,7 +1,8 @@
 (() => {
   const THEMES = window.DN_THEME_CATALOG;
 
-  let chosenTheme = 'research-core-dark';
+  // v0.8.130 — indigo is the one brand; the wizard used to preselect teal Research Core Dark.
+  let chosenTheme = 'gemini-forward-light';
   let openchronicleChoice = 'skip';
   const html = document.documentElement;
 
@@ -37,7 +38,7 @@
     const selectedTheme = THEMES.find(theme => theme.id === chosenTheme);
     setTheme(selectedTheme && selectedTheme.dark
       ? 'research-core-light'
-      : 'research-core-dark');
+      : 'gemini-forward-light');
   });
 
   // Pre-fill model dir

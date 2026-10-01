@@ -158,6 +158,38 @@ test.describe('theme colour contract', () => {
     expect(focused?.boxShadow, 'no second, box-shadow focus ring').not.toMatch(/0px 0px 0px 3px/)
   })
 
+  // Decision of 2026-09-30: headings are sans, in the body face.
+  test('page headings use the sans body face, not the serif', async ({ page }) => {
+    await installLuminousFolioFixture(page, { theme: 'gemini-forward-light' })
+    await page.goto('/notebooks')
+    const heading = page.getByRole('heading', { name: 'Notebooks', level: 1 })
+    await expect(heading).toBeVisible()
+    const fonts = await heading.evaluate((el) => ({
+      heading: getComputedStyle(el).fontFamily,
+      body: getComputedStyle(document.body).fontFamily,
+    }))
+    expect(fonts.heading).not.toMatch(/Newsreader|Georgia|Palatino|Iowan/)
+    expect(fonts.heading).toBe(fonts.body)
+  })
+
+  test('chart colours follow the theme', async ({ page }) => {
+    await installLuminousFolioFixture(page, { theme: 'gemini-forward-light' })
+    await page.goto('/notebooks')
+    const colours = await page.evaluate(() => {
+      const probe = (name: string) => {
+        const el = document.createElement('span')
+        el.style.color = `var(${name})`
+        document.body.appendChild(el)
+        const value = getComputedStyle(el).color
+        el.remove()
+        return value
+      }
+      return { chart1: probe('--chart-1'), primary: probe('--primary'), chart2: probe('--chart-2'), brand: probe('--brand-accent') }
+    })
+    expect(colours.chart1).toBe(colours.primary)
+    expect(colours.chart2).toBe(colours.brand)
+  })
+
   // Status hues are fixed: a catalog theme may pick the light or the dark set,
   // but never its own. Before Phase 1 `html[data-theme]` rewired success to the
   // theme's primary and warning/info to its accent, so "warning" was pink in

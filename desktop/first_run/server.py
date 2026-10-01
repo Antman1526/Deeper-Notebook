@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Callable
 
 from aiohttp import web
 
-from desktop.config import Config
+from desktop.config import DEFAULT_THEME, Config
 
 if TYPE_CHECKING:
     from desktop.progress import ProgressBus
@@ -57,7 +57,7 @@ def build_app(
             default_model=body.get("default_model", ""),
             surreal_user="root",
             surreal_password=secrets.token_urlsafe(24),
-            theme=body.get("theme", "research-core-dark"),
+            theme=body.get("theme", DEFAULT_THEME),
             openchronicle_choice=body.get("openchronicle_choice", "skip"),
             encryption_key=secrets.token_urlsafe(32),
         )

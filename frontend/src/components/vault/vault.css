@@ -20,7 +20,8 @@
 .dn-vault-live-preview { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--background); }
 .dn-vault-live-preview .cm-scroller { font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif; line-height: 1.65; }
 .dn-vault-live-preview .cm-content { padding: 1.25rem 1.5rem 2rem; }
-.dn-vault-live-preview .dn-live-preview-heading { color: var(--foreground); font-family: var(--font-serif), Georgia, serif; font-weight: 700; }
+/* v0.8.130 — sans headings (decision of 2026-09-30); body text on the writing surface keeps the serif. */
+.dn-vault-live-preview .dn-live-preview-heading { color: var(--foreground); font-weight: 700; }
 .dn-vault-live-preview .dn-live-preview-emphasis { font-style: italic; }
 .dn-vault-live-preview .dn-live-preview-strong { font-weight: 700; }
 .dn-vault-live-preview .dn-live-preview-strikethrough { text-decoration: line-through; color: var(--muted-foreground); }

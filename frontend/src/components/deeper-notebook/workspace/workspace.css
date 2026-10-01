@@ -456,9 +456,10 @@
   overflow-wrap: anywhere;
 }
 
+/* v0.8.130 — display step of the type scale (32/40); 44px was sized for the serif. */
 .dn-workspace-page-title {
-  font-size: clamp(1.75rem, 4cqi, 2.75rem);
-  line-height: 1.08;
+  font-size: clamp(1.75rem, 4cqi, 2rem);
+  line-height: 1.25;
 }
 
 .dn-workspace-page-description,
@@ -633,9 +634,10 @@
   z-index: 1;
 }
 
+/* v0.8.130 — headline step of the type scale (24/32). */
 .dn-workspace-hero-title {
-  font-size: clamp(1.5rem, 3cqi, 2.25rem);
-  line-height: 1.12;
+  font-size: clamp(1.375rem, 3cqi, 1.5rem);
+  line-height: 1.33;
 }
 
 .dn-visual-card-grid {
@@ -954,15 +956,15 @@
   --dn-write-leading: 1.7;
 }
 
-/* The written voice: titles read as penned headings, not UI labels. Chrome
-   (nav, buttons, badges) deliberately stays sans — the notebook is the page,
-   not the desk around it. */
+/* v0.8.130 — sans headings (decision of 2026-09-30). Titles were set in a serif
+   "written voice"; they now use the body face, semibold, slightly tightened. The
+   serif remains only on the note editor's writing surface (vault.css). */
 .dn-workspace-shell .dn-workspace-page-title,
 .dn-workspace-shell .dn-workspace-hero-title,
 .dn-workspace-shell .dn-visual-card-title,
 .dn-workspace-shell .dn-state-panel-title {
-  font-family: var(--font-serif), 'Iowan Old Style', 'Palatino', Georgia, serif;
-  letter-spacing: -0.012em;
+  font-weight: 600;
+  letter-spacing: -0.02em;
 }
 
 .dn-workspace-shell .dn-workspace-canvas {

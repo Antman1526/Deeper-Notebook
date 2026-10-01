@@ -177,13 +177,9 @@ html[data-dn-motion="reduced"] .dn-aurora-bg::before {
   transform: translate3d(0, 0, 0) scale(1.1);
 }
 
-/* Serif is reserved for authored folio hierarchy, never compact controls or
- * source/code text. */
-.dn-folio-title,
-.dn-folio-quote,
-.dn-editorial-summary {
-  font-family: var(--font-dn-editorial), Georgia, serif;
-}
+/* v0.8.130 — sans headings (decision of 2026-09-30): the folio title no longer
+ * switches to the serif, and the unused .dn-folio-quote / .dn-editorial-summary
+ * hooks are gone. */
 
 @media (prefers-reduced-motion: reduce) {
   .dn-aurora-bg::before {
