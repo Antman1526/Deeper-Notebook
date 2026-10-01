@@ -210,3 +210,48 @@ jobs:
 
       - name: Run mocked browser baseline
         run: npm run test:e2e:mocked
+
+  # v0.8.130 — the Luminous (pre-V2) snapshot suites. V2 is a build-time flag and the
+  # default since 2026-08-14, so the mocked-browser job above cannot render these; this
+  # job builds with it off. It runs in the Playwright image the Linux baselines were
+  # generated in (same browser and fonts), so pixels match. Regenerate them with the same
+  # image: see playwright.config.ts (rollback-visuals project).
+  rollback-visuals:
+    name: Rollback Visual Snapshots (V2 off)
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.61.1-noble
+    env:
+      NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2: '0'
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build with V2 off
+        run: npm run build
+
+      - name: Run rollback visual snapshots
+        run: npm run test:e2e:rollback-visuals
+        env:
+          PLAYWRIGHT_PREBUILT: '1'
+
+      - name: Upload snapshot diffs
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: rollback-visuals-results
+          path: frontend/test-results
+          retention-days: 7

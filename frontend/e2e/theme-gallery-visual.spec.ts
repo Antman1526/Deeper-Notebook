@@ -74,6 +74,10 @@ for (const capture of captures) {
     await page.goto('/settings')
     await expect(page.getByRole('heading', { name: 'Choose your research environment' })).toBeVisible()
     await expect(page.locator('html')).toHaveAttribute('data-theme', capture.theme)
+    // Since the 2026-08-20 curation (e76ece66) the catalog groups sit behind "Show more
+    // themes" unless the current theme lives in them; open it so every group is captured.
+    const moreThemes = page.getByRole('button', { name: /more themes/ })
+    if ((await moreThemes.getAttribute('aria-expanded')) === 'false') await moreThemes.click()
     await unclipSettingsViewport(page)
     await expect(page.getByRole('heading', { name: 'Classics', level: 3 })).toBeVisible()
     await expect(page.getByRole('article', { name: 'Midnight Aurora theme' })).toBeVisible()
