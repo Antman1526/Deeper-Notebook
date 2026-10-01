@@ -42,6 +42,16 @@ describe('GuidedTipsProvider', () => {
     expect(screen.queryByRole('note', { name: 'Notebook Index tip' })).not.toBeInTheDocument()
   })
 
+  // v0.8.130 — rendered inside the shell, the tip's z-index only counted within the
+  // navigator's stacking context, so page controls (the notebook card's z-10 actions)
+  // painted over its "Got it" button at 1440px. It is portalled to <body>.
+  it('renders the tip at the document root, above every shell stacking context', async () => {
+    const { container } = renderTip()
+    const tip = await screen.findByRole('note', { name: 'Notebook Index tip' })
+    expect(tip.parentElement).toBe(document.body)
+    expect(container.contains(tip)).toBe(false)
+  })
+
   it('suppresses the tip while a modal is open', async () => {
     const modal = document.createElement('div')
     modal.setAttribute('aria-modal', 'true')

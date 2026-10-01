@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { usePathname } from 'next/navigation'
 
 import { getGuidedTipForPath } from '@/lib/guided-tips/catalog'
@@ -122,7 +123,9 @@ export function GuidedTipsProvider() {
     setPosition(null)
   }
 
-  return (
+  // v0.8.130 — portalled to <body>: inside the shell its z-index only counted within the
+  // navigator's stacking context, so page controls painted over the buttons.
+  return createPortal(
     <aside
       ref={calloutRef}
       role="note"
@@ -140,6 +143,7 @@ export function GuidedTipsProvider() {
           Got it
         </Button>
       </div>
-    </aside>
+    </aside>,
+    document.body,
   )
 }
