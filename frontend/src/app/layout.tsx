@@ -22,7 +22,9 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-dn-sans" });
 const newsreader = Newsreader({ subsets: ["latin"], variable: "--font-dn-editorial" });
 
 export const metadata: Metadata = {
-  title: "Deeper Notebook",
+  // v0.8.130 — Phase 3a: each route segment sets its own title (a metadata-only
+  // layout.tsx, since the pages are client components); the home keeps the brand.
+  title: { default: "Deeper Notebook", template: "%s · Deeper Notebook" },
   description: "Local-first research and knowledge workspace",
 };
 

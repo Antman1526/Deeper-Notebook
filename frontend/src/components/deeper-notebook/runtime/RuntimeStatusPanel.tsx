@@ -77,6 +77,7 @@ export function RuntimeStatusPanel({ snapshot, isLoading, onRefresh, compact = f
         role="status"
         aria-label="Runtime status loading"
         data-testid="runtime-status-panel"
+        data-dn-runtime-status=""
         className="grid gap-3 rounded-xl border border-[var(--dn-paper-edge)] bg-[var(--dn-lens)] p-4 motion-reduce:transition-none"
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -103,6 +104,7 @@ export function RuntimeStatusPanel({ snapshot, isLoading, onRefresh, compact = f
       role={role}
       aria-label={`Runtime status ${overallLabel}`}
       data-testid="runtime-status-panel"
+      data-dn-runtime-status=""
       className="grid gap-4 rounded-xl border border-[var(--dn-paper-edge)] bg-[var(--dn-lens)] p-4 motion-reduce:transition-none"
     >
       <header className="flex flex-wrap items-start justify-between gap-3">

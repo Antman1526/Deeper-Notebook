@@ -47,6 +47,7 @@ export function NotebookCard({ notebook }: NotebookCardProps) {
           link inside the title would also stop the title truncating. Controls that
           must stay independently clickable sit above it with `relative z-10`. */}
       <div
+        data-dn-notebook-card=""
         className="group relative rounded-2xl p-1 bg-gradient-to-b from-border/40 via-border/10 to-transparent ring-1 ring-border/30 transition-shadow duration-300 hover:ring-primary/40 hover:shadow-md"
       >
         <Link
@@ -55,11 +56,13 @@ export function NotebookCard({ notebook }: NotebookCardProps) {
           className="absolute inset-0 z-[1] rounded-2xl"
         />
         <Card 
-          className="border-0 rounded-[calc(1rem-2px)] bg-card/95 py-3 transition-colors group-hover:bg-card shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)]"
+          // v0.8.130 — Phase 3a: gap-1.5 (the default 24px gap plus the header's 44px action
+          // row left a ~58px blank band between the title and the description).
+          className="gap-1.5 border-0 rounded-[calc(1rem-2px)] bg-card/95 py-3 transition-colors group-hover:bg-card shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)]"
         >
-          <CardHeader className="pb-2">
+          <CardHeader className="pb-0">
             <div className="flex min-w-0 items-start justify-between">
-              <div className="flex-1 min-w-0">
+              <div className="flex-1 min-w-0 pr-9">
                 <CardTitle className="text-base truncate group-hover:text-primary transition-colors">
                   {notebook.name}
                 </CardTitle>
@@ -70,40 +73,43 @@ export function NotebookCard({ notebook }: NotebookCardProps) {
                 )}
               </div>
               
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="relative z-10 h-8 w-8 p-0 rounded-full opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-[opacity,background-color] duration-200 hover:bg-muted/80"
-                    aria-label={`Actions for ${notebook.name}`}
-                  >
-                    <MoreHorizontal className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={handleArchiveToggle}>
-                    {notebook.archived ? (
-                      <>
-                        <ArchiveRestore className="h-4 w-4 mr-2" />
-                        {t('notebooks.unarchive')}
-                      </>
-                    ) : (
-                      <>
-                        <Archive className="h-4 w-4 mr-2" />
-                        {t('notebooks.archive')}
-                      </>
-                    )}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => setShowDeleteDialog(true)}
-                    className="text-destructive"
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    {t('common.delete')}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              {/* v0.8.130 — pinned to the corner, out of the header row it used to stretch. */}
+              <div className="absolute right-2 top-2 z-10">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="relative z-10 h-8 w-8 p-0 rounded-full opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-[opacity,background-color] duration-200 hover:bg-muted/80"
+                      aria-label={`Actions for ${notebook.name}`}
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={handleArchiveToggle}>
+                      {notebook.archived ? (
+                        <>
+                          <ArchiveRestore className="h-4 w-4 mr-2" />
+                          {t('notebooks.unarchive')}
+                        </>
+                      ) : (
+                        <>
+                          <Archive className="h-4 w-4 mr-2" />
+                          {t('notebooks.archive')}
+                        </>
+                      )}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setShowDeleteDialog(true)}
+                      className="text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      {t('common.delete')}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </div>
           </CardHeader>
           
@@ -140,7 +146,8 @@ export function NotebookCard({ notebook }: NotebookCardProps) {
                 title={`${notebook.source_count} sources`}
               >
                 <FileText className={`h-3 w-3 ${notebook.source_count > 0 ? 'text-primary' : 'text-muted-foreground/60'}`} />
-                <span>{notebook.source_count}</span>
+                {/* v0.8.130 — Phase 3a: labelled; the chips read as a bare "1" and "0". */}
+                <span>{notebook.source_count === 1 ? t('notebooks.sourceCountOne') : t('notebooks.sourceCount').replace('{count}', String(notebook.source_count))}</span>
               </Badge>
               <Badge
                 variant="outline"
@@ -153,7 +160,7 @@ export function NotebookCard({ notebook }: NotebookCardProps) {
               >
                 {/* v0.8.130 — status colours from theme tokens (UI audit Phase 1) */}
                 <StickyNote className={`h-3 w-3 ${notebook.note_count > 0 ? 'text-warning-ink' : 'text-muted-foreground/60'}`} />
-                <span>{notebook.note_count}</span>
+                <span>{notebook.note_count === 1 ? t('notebooks.noteCountOne') : t('notebooks.noteCount').replace('{count}', String(notebook.note_count))}</span>
               </Badge>
             </div>
           </CardContent>

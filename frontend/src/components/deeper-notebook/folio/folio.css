@@ -307,3 +307,14 @@
     transition: none;
   }
 }
+
+/* v0.8.130 — Phase 3a (V2 only): Studio's header and its two columns sit on the canvas.
+   The header was a tinted margin-note block and each column a tinted or paper panel
+   holding its own cards (card-in-card-in-card). The pre-V2 folio keeps its panels. */
+[data-dn-visual-system='v2'] [data-dn-studio-header],
+[data-dn-visual-system='v2'] [data-dn-folio-variant='evidence-studio'] > [data-dn-folio-primary],
+[data-dn-visual-system='v2'] [data-dn-folio-variant='evidence-studio'] > [data-dn-folio-secondary] {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}

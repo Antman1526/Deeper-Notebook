@@ -15,7 +15,9 @@
 
 .dn-source-gallery__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  /* v0.8.130 — Phase 3a: auto-fill, not auto-fit. auto-fit collapsed the empty tracks,
+     so a lone source stretched across the row as a ~500px-tall 16:9 tile. */
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr));
   gap: clamp(.75rem, 2cqi, 1.25rem);
   min-width: 0;
 }

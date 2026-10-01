@@ -7,7 +7,7 @@ import { NotebookList } from './components/NotebookList'
 import { NotebookViewToggle } from './components/NotebookViewToggle'
 import { Button } from '@/components/ui/button'
 import { useRouter } from 'next/navigation'
-import { Download, Plus, RefreshCw, Sparkles, Loader2 } from 'lucide-react'
+import { Download, Plus, RefreshCw, Sparkles, Loader2, Search } from 'lucide-react'
 import { useNotebooks } from '@/lib/hooks/use-notebooks'
 import { useCreateSampleNotebook } from '@/lib/hooks/use-sample-notebook'
 import { CreateNotebookDialog } from '@/components/notebooks/CreateNotebookDialog'
@@ -87,16 +87,23 @@ export default function NotebooksPage() {
             </Button>
             {/* v0.8.130 — the list layout existed but had no control to reach it. */}
             <NotebookViewToggle />
-            <Input
-              id="notebook-search"
-              name="notebook-search"
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder={t('notebooks.searchPlaceholder')}
-              autoComplete="off"
-              aria-label={t('common.accessibility.searchNotebooks') || "Search notebooks"}
-              className="w-full sm:w-64"
-            />
+            {/* v0.8.130 — Phase 3a: a search icon, as in the theme gallery's search. */}
+            <div className="relative w-full sm:w-64">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <Input
+                id="notebook-search"
+                name="notebook-search"
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder={t('notebooks.searchPlaceholder')}
+                autoComplete="off"
+                aria-label={t('common.accessibility.searchNotebooks') || "Search notebooks"}
+                className="w-full pl-9"
+              />
+            </div>
             <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
               <Download className="h-4 w-4 mr-2" />
               {t('notebooks.import.button')}

@@ -472,6 +472,23 @@
   min-inline-size: 0;
 }
 
+/* v0.8.130 — Phase 3a: the page grid's gap only separated the header from this
+   wrapper, so the hero, runtime status and Today sections touched (0px apart).
+   Home only: on the setup wizard the grid shifted its reserved loading layout
+   (CLS 0.066 against the matrix's 0.05). */
+.dn-workspace-home .dn-workspace-page-content {
+  display: grid;
+  align-content: start;
+  gap: clamp(1.25rem, 3cqi, 2rem);
+}
+
+/* v0.8.130 — Phase 3a: in V2 the runtime status is a neutral card; the Context-lens
+   tint made a healthy status read as a selected (or error) block. The pre-V2
+   presentation keeps its tint. */
+[data-dn-visual-system='v2'] [data-dn-runtime-status] {
+  background: var(--card);
+}
+
 .dn-workspace-page-eyebrow,
 .dn-workspace-hero-eyebrow,
 .dn-state-panel-kind {

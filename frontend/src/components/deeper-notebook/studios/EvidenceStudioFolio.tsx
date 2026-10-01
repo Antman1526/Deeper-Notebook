@@ -18,7 +18,9 @@ export function EvidenceStudioFolio({
 }: EvidenceStudioFolioProps) {
   return (
     <main aria-label="Evidence Studio folio" data-dn-folio-page>
-      {status ? <div data-dn-folio-margin-note>{status}</div> : null}
+      {/* v0.8.130 — Phase 3a: data-dn-studio-header lets V2 drop the margin-note panel
+          from the page header (it read as a heavy tinted block). */}
+      {status ? <div data-dn-folio-margin-note data-dn-studio-header>{status}</div> : null}
       {/* v0.8.98 — `evidence-studio` widens only THIS spread's secondary column.
           The shared 15rem minimum clamped the "Pick output mode" rail to 240px;
           after card padding the mode descriptions wrapped to one or two words a

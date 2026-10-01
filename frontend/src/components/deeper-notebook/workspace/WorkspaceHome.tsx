@@ -102,6 +102,8 @@ export function WorkspaceHome({
       title="Deeper Notebook"
       eyebrow="Intelligence workspace"
       description="Think further with every source in one quiet, local-first desk."
+      // v0.8.130 — Phase 3a: scopes the section spacing (workspace.css) to the home.
+      className="dn-workspace-home"
       data-testid="visual-system-v2-home"
       data-dn-visual-system="v2"
     >

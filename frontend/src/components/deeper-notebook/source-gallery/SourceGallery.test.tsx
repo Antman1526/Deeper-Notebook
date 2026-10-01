@@ -65,7 +65,9 @@ describe('SourceGallery', () => {
 
   it('provides the bounded container, compact reflow, target, contrast, and no-motion CSS contract', () => {
     expect(css).toContain('container: source-gallery / inline-size')
-    expect(css).toContain('repeat(auto-fit, minmax(min(100%, 14rem), 1fr))')
+    // v0.8.130 — Phase 3a: auto-fill keeps a lone source card-sized (auto-fit stretched it
+    // across the row); the bounded, reflowing track itself is unchanged.
+    expect(css).toContain('repeat(auto-fill, minmax(min(100%, 14rem), 1fr))')
     expect(css).toContain('@container source-gallery (max-width: 34rem)')
     expect(css).toMatch(
       /@container source-gallery \(max-width: 34rem\)[\s\S]*?\.dn-source-cover \{[\s\S]*?grid-column: 1 \/ -1/,
