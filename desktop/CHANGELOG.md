@@ -131,6 +131,12 @@ Frontend UI audit (2026-09-30): the concrete defects behind the "unfinished" fee
 
 🛠 **Tests.** `e2e/phase2-workspace.spec.ts` checks the empty chat has no run panel, Run details sits collapsed under the answer, answers are flat and questions tinted, the opened details come into view, the evidence caption is at most 12px, the textarea owns a one-row pill at 1440 and 1024px, and the Enter/Shift+Enter keys; the RunTimeline unit tests keep every fact assertion behind the disclosure.
 
+**Phase 2d — source rows.**
+
+🎨 **Sources are flat rows.** Each source was a bordered, shadowed card ~110px tall whose type, insight count, sharing, origin and topics were separate pills that wrapped in a 20% column. Now a row leads with its context toggle, shows a one-line title (full title on hover) over one quiet line of the same metadata, and tints on hover; the actions button floats over the row's end on hover or focus (inline on touch screens). Warnings, the processing message, Retry and progress stay. With source visuals on, a row shows its cover only when there is an image or a visual status; the bare fallback repeated the title above every row.
+
+🛠 **Tests.** `e2e/phase2-workspace.spec.ts` checks at 1440 and 1024px that rows are borderless and shadowless, at most 72px tall, with one-line titles, no overflow and no pills, and that each row keeps its actions and context toggle; a SourceCard unit test covers the row and its text metadata.
+
 ## v0.8.129 — 2026-09-12 — SurrealDB live integration suite, live service verification & test setting hardening
 
 🛠 **SurrealDB live integration test suite (132 passed).** Resolved a schema migration head stepping issue in `tests/integration/test_search_quality_benchmark.py`: migration 51 round-trip stepping now uses `runner.run_one_up()` against the migration 52 head. Full suite passed 100% against real SurrealDB 2.6.5.
