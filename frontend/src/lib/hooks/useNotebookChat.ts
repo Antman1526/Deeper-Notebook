@@ -121,6 +121,7 @@ export function useNotebookChat({
   // Fetch current session with messages
   const {
     data: currentSession,
+    isSuccess: currentSessionLoaded,
     refetch: refetchCurrentSession
   } = useQuery({
     queryKey: QUERY_KEYS.notebookChatSession(currentSessionId!),
@@ -815,6 +816,9 @@ export function useNotebookChat({
     messages,
     isSending,
     loadingSessions,
+    // v0.8.130 — true once we know what the chat history is: the session list has
+    // loaded and there is either no session or the current one has been fetched.
+    historyLoaded: !loadingSessions && (sessions.length === 0 || currentSessionLoaded),
     tokenCount,
     charCount,
     pendingModelOverride,

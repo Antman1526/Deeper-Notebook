@@ -230,6 +230,9 @@ test('renders notebook Chat and selected Studio evidence review with keyboard ac
 
     if (pathname === '/api/config') return json({ version: 'fixture', latestVersion: null, hasUpdate: false, dbStatus: 'healthy' })
     if (pathname === '/api/auth/status') return json({ auth_required: false })
+    // v0.8.130 — the dashboard reads runtime feature flags once per load
+    // (useRuntimeFeatures, fail-soft). An empty map keeps the built-in defaults.
+    if (pathname === '/api/features') return json({ features: {} })
     if (pathname === '/api/notebooks') return json([{
       id: notebookId,
       name: 'Deterministic Research Notebook',
@@ -371,10 +374,15 @@ test('renders notebook Chat and selected Studio evidence review with keyboard ac
   const chatContextRequests = expectedBackgroundRequests.filter(
     (request) => request === 'POST /api/chat/context'
   )
+  // v0.8.130 — this chat already has history, so starter questions (an empty-chat
+  // feature) are never requested: the fetch now waits until the saved session is
+  // known. It used to fire whenever sources answered before the session did. The
+  // second context build came from a transient mobile mount on desktop loads,
+  // which no longer happens (the columns render once the viewport is known).
   expect(expectedBackgroundRequests.filter(
     (request) => request === 'GET /api/notebooks/notebook-fixture-001/suggested-questions',
-  )).toHaveLength(1)
-  expect(chatContextRequests.length).toBeGreaterThanOrEqual(2)
+  )).toHaveLength(0)
+  expect(chatContextRequests.length).toBeGreaterThanOrEqual(1)
   expect(expectedBackgroundRequests.every((request) => (
     request === 'GET /api/notebooks/notebook-fixture-001/suggested-questions'
       || request === 'POST /api/chat/context'

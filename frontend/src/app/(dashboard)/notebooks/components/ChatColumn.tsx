@@ -43,7 +43,16 @@ export function ChatColumn({ notebookId, contextSelections, sources, sourcesLoad
   // (improvement roadmap, Batch 1). Only fetched when there are sources and no
   // messages yet; the endpoint is best-effort (returns [] on any failure), so a
   // failed query simply shows no chips. retry:false keeps it cheap/quiet.
-  const showSuggestions = sources.length > 0 && chat.messages.length === 0
+  //
+  // v0.8.130 — wait until the chat history is known. The fetch used to fire as soon
+  // as sources arrived, before the saved session loaded, so a chat WITH history
+  // requested starter questions whenever its sources answered first (and could
+  // flash the chips). The loaded session's own messages are checked too, because
+  // they reach `chat.messages` one effect later.
+  const session = chat.currentSession
+  const sessionMessages = session && 'messages' in session && Array.isArray(session.messages) ? session.messages.length : 0
+  const historyLength = Math.max(chat.messages.length, sessionMessages)
+  const showSuggestions = sources.length > 0 && Boolean(chat.historyLoaded) && historyLength === 0
   const { data: suggestedQuestions = [] } = useQuery({
     queryKey: ['suggested-questions', notebookId],
     queryFn: () => notebooksApi.suggestedQuestions(notebookId, 4),
