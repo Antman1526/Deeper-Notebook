@@ -137,6 +137,12 @@ Frontend UI audit (2026-09-30): the concrete defects behind the "unfinished" fee
 
 🛠 **Tests.** `e2e/phase2-workspace.spec.ts` checks at 1440 and 1024px that rows are borderless and shadowless, at most 72px tall, with one-line titles, no overflow and no pills, and that each row keeps its actions and context toggle; a SourceCard unit test covers the row and its text metadata.
 
+**Phase 2 exit gate.**
+
+🐛 **The notebook's tabs control real panels.** On phones (Sources/Chat/Notes/Studio) and in the 1024–1279px Notes/Studio panel the content was swapped into a plain container, so each tab's `aria-controls` pointed at a panel that did not exist and screen readers could not tie a tab to its content. The columns now sit in tab panels named by their tab; only the active one mounts, so the chat still mounts once.
+
+🛠 **Tests.** `e2e/phase2-workspace.spec.ts` adds the audit's Phase 2 gate: a keyboard pass (every Tab stop in the workspace draws the 3px ring; Add Source, the chat input, Add note and the Report tile are reachable) and a phone pass on all four tabs (no horizontal overflow, every control at least 44px, nothing clipped or off-screen); unit tests check each tab's `aria-controls` names its panel.
+
 ## v0.8.129 — 2026-09-12 — SurrealDB live integration suite, live service verification & test setting hardening
 
 🛠 **SurrealDB live integration test suite (132 passed).** Resolved a schema migration head stepping issue in `tests/integration/test_search_quality_benchmark.py`: migration 51 round-trip stepping now uses `runner.run_one_up()` against the migration 52 head. Full suite passed 100% against real SurrealDB 2.6.5.
