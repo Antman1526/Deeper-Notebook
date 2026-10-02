@@ -159,3 +159,20 @@ describe('v0.7.196 — no bare getApiErrorKey in toast descriptions', () => {
     }
   })
 })
+
+// v0.8.130 — with no `detail` from the server, the only text left was axios's own
+// "Request failed with status code 500", which reached toasts verbatim.
+describe('getApiErrorMessage — axios status text', () => {
+  const t = (key: string) => `t:${key}`
+
+  it('falls back to the translated message instead of axios status text', () => {
+    const bare500 = { isAxiosError: true, message: 'Request failed with status code 500', response: { status: 500, data: {} } }
+    expect(getApiErrorMessage(bare500, t)).toBe('t:apiErrors.genericError')
+    expect(getApiErrorMessage(bare500, t, 'podcasts.tryAgainMoment')).toBe('t:podcasts.tryAgainMoment')
+  })
+
+  it('still prefers the server’s detail when there is one', () => {
+    const withDetail = { message: 'Request failed with status code 500', response: { status: 500, data: { detail: 'Benchmark worker crashed' } } }
+    expect(getApiErrorMessage(withDetail, t)).toBe('Benchmark worker crashed')
+  })
+})

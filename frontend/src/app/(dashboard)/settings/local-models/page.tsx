@@ -1,5 +1,6 @@
 'use client'
 
+import { benchmarkActionError } from './benchmark-errors'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { getApiErrorMessage } from '@/lib/utils/error-handler'
 import React from 'react'
@@ -111,14 +112,20 @@ function LocalModelsWorkspace() {
   const cancel = useMutation({
     // v0.8.130 — reported here, not per call: a per-call onError is skipped if the page
     // has unmounted by the time the request fails, and the error would go unreported.
-    onError: () => toast.error('This desktop runtime cannot cancel the running benchmark.'),
+    onError: (error) => {
+      const { title, description } = benchmarkActionError('cancel', error, t)
+      toast.error(title, { description })
+    },
     mutationFn: async (jobId: string) => (await apiClient.post<BenchmarkJob>(`/local-models/benchmarks/${jobId}/cancel`)).data,
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['local-models', 'benchmarks'] }),
   })
   const reset = useMutation({
     // v0.8.130 — reported here, not per call: a per-call onError is skipped if the page
     // has unmounted by the time the request fails, and the error would go unreported.
-    onError: () => toast.error('This desktop runtime cannot reset benchmark history.'),
+    onError: (error) => {
+      const { title, description } = benchmarkActionError('reset', error, t)
+      toast.error(title, { description })
+    },
     mutationFn: async () => apiClient.delete('/local-models/benchmarks'),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['local-models', 'benchmarks'] }),
   })
