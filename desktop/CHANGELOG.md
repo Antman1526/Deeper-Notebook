@@ -217,6 +217,18 @@ Frontend UI audit (2026-09-30): the concrete defects behind the "unfinished" fee
 
 🛠 **The axe gate.** New `e2e/phase4-a11y.spec.ts` runs axe-core 4.10.3 (WCAG 2.1 A/AA and best practices) on 12 routes, light and dark, at 1440 and 390: no violations, and nothing undecided except a closed Radix trigger's `aria-controls`, which axe cannot resolve. The faint paper textures are switched off for the check so axe can measure contrast; where an overlay still hides the background, the test measures contrast itself. `axe-core` becomes a declared dev dependency (it was already installed through the lint plugin).
 
+**Phase 4c — dialogs, toasts, tooltips and route names.**
+
+🎨 **The app's own confirmations.** Deleting a source, an artifact or an MCP server, disconnecting Gmail and forgetting its credentials used the browser's native confirm() box, unstyled and in English; they use the app's confirm dialog (a new `useConfirm()` hook), with a destructive button whose label now takes the destructive foreground (it kept the primary button's, dark on red in dark themes).
+
+🎨 **Toasts follow the theme.** They read the old light/dark setting, so a dark catalog theme could show light toasts; they follow the active theme now. Errors, warnings and notices are styled from the theme's tokens (soft fill, ink text) instead of the library defaults, which 74 error toasts were using.
+
+🎨 **Tooltips wait a moment.** They opened instantly and each made its own provider; the app has one provider with a 400ms delay, so moving along a row of icons does not flash every tooltip.
+
+🌐 **The crumb names the route.** The V2 command bar's crumb printed the URL segment ("Setup wizard", English in every language); it shows the route's name the way the rail does, translated ("Getting ready", "MCP servers", "Home"). The import dialog's 📋 is an icon.
+
+🛠 **Tests.** New `use-confirm.test.tsx` (resolves on confirm and cancel; destructive styling) and `ui-audit-4c.test.tsx`, which fails on any native confirm(), the emoji, a zero tooltip delay or a missing app provider, unstyled toast kinds or a theme mismatch, and an untranslated crumb. The MCP and artifact delete tests confirm through the dialog.
+
 🐛 **Knowledge's utility rail shrank by itself.** The rail saved its measured width as if the user had resized it, but it measured the content box, which is narrower than the rail by its padding; each save triggered another measurement, so an untouched rail could shrink from 320px to 240px on load, at a timing-dependent pace. It measures the border box now. This was the Luminous knowledge snapshot's flake (it failed about one run in three on both platforms); the Linux baseline, captured mid-shrink at 240px, is regenerated.
 
 ## v0.8.129 — 2026-09-12 — SurrealDB live integration suite, live service verification & test setting hardening
