@@ -169,6 +169,16 @@ Frontend UI audit (2026-09-30): the concrete defects behind the "unfinished" fee
 
 🛠 **Tests.** New `e2e/premium-pass.spec.ts` on Home, Notebooks, Sources, Studio and Settings: no blur, gradient (other than the dotted desk and ruled Notes) or inset shine; buttons at most 10px (card-sized choices 12px) and cards at most 12px; grey sentence-case eyebrows; a warm, never blue-cast flagship palette. The token, button and serif contract tests now pin the new decisions; the pre-V2 rollback baselines are regenerated for the new corners and buttons.
 
+**Phase 3b — the shell.**
+
+🎨 **One rail.** A 68px instrument dock beside a 272px "Notebook index" took 340px of chrome at every width; one 240px rail replaces both. It lists eight destinations (Notebooks, Sources, Capture, Knowledge, Ask and Search, Studio, Podcasts, Study) instead of fourteen; Settings sits in the rail footer, and Models, Transformations, MCP Servers, Launch Preferences and Advanced appear under it while you are in Settings. Theme, language, Gmail, model health and the version sit in the footer too. The command bar is a quiet breadcrumb with one keyboard hint (Quick actions); the Focus button keeps its shortcut in the tooltip.
+
+✨ **The shell is mounted once.** Each page mounted its own shell, so the rail (and its scroll) reset on every navigation; `(dashboard)/layout.tsx` now mounts it.
+
+♿ **Sign out asks first, and there is a skip link.** Sign out was one click with no confirmation; it opens a confirm dialog. "Skip to content" is the first Tab stop. Below 1024px the rail is a sheet behind a Menu button, with a scrim; Escape, the scrim or a link closes it. In Focus mode the rail folds to a strip that opens on keyboard focus.
+
+🛠 **Tests.** New `e2e/phase3-shell.spec.ts` (one rail at most 256px wide, eight destinations with the settings family under Settings, the rail persisting across a navigation, one keyboard hint, the skip link, the sign-out confirm, the phone sheet and Escape). The shell unit contracts describe the rail; a layout test pins the single shell. The Luminous and legacy shells keep their dock and navigator.
+
 ## v0.8.129 — 2026-09-12 — SurrealDB live integration suite, live service verification & test setting hardening
 
 🛠 **SurrealDB live integration test suite (132 passed).** Resolved a schema migration head stepping issue in `tests/integration/test_search_quality_benchmark.py`: migration 51 round-trip stepping now uses `runner.run_one_up()` against the migration 52 head. Full suite passed 100% against real SurrealDB 2.6.5.
