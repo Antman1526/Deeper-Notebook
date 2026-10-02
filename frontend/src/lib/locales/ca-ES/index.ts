@@ -226,6 +226,7 @@ export const caES = {
     connectErrorHint: "No es pot connectar al servidor. Comprova si l'API s'està executant.",
   },
   navigation: {
+    home: "Inici",
     primary: "Principal",
     destinations: "Seccions",
     settingsPages: "Pàgines de configuració",

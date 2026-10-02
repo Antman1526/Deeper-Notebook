@@ -12,6 +12,7 @@
  */
 'use client'
 
+import { useConfirm } from '@/components/common/use-confirm'
 import { useEffect, useRef, useState } from 'react'
 
 import { deeperNotebookFetch } from '@/lib/api/deeper-notebook'
@@ -44,6 +45,8 @@ interface GmailStatus {
 
 export function GmailIntegration() {
   const { language } = useTranslation()  // v0.7.189 — locale-aware date format
+  // v0.8.130 — Phase 4c: the app's confirm dialog, not the browser's confirm().
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const [status, setStatus] = useState<GmailStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -195,7 +198,12 @@ export function GmailIntegration() {
   }
 
   async function disconnect() {
-    if (!confirm('Disconnect Gmail? You can reconnect anytime.')) return
+    if (!(await confirm({
+      title: 'Disconnect Gmail?',
+      description: 'You can reconnect anytime.',
+      confirmText: 'Disconnect',
+      destructive: true,
+    }))) return
     setBusy(true)
     setError(null)
     setMessage(null)
@@ -221,10 +229,12 @@ export function GmailIntegration() {
   // 'Forget credentials' button toggled `enabled=false`, which was a no-op
   // when credentials existed but the user wasn't connected yet.
   async function forgetCredentials() {
-    if (!confirm(
-      'Forget the saved Google OAuth client_id / client_secret? You\'ll ' +
-      'need to paste them again next time.'
-    )) return
+    if (!(await confirm({
+      title: 'Forget the saved Google credentials?',
+      description: 'You will need to paste the OAuth client ID and secret again next time.',
+      confirmText: 'Forget',
+      destructive: true,
+    }))) return
     setBusy(true)
     setError(null)
     setMessage(null)
@@ -291,6 +301,7 @@ export function GmailIntegration() {
 
   return (
     <Card>
+      {confirmDialog}
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Mail className="h-4 w-4" />

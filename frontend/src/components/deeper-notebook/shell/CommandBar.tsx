@@ -1,5 +1,6 @@
 'use client'
 
+import { getNavigation } from '@/components/layout/AppSidebar'
 import { Menu, Search } from 'lucide-react'
 import { usePathname } from 'next/navigation'
 
@@ -31,6 +32,17 @@ export function CommandBar({ showBrand = true, onMenu, menuOpen = false, focusSh
   // v0.8.130 — premium pass: sentence case ("Setup wizard"); the uppercase style
   // that used to hide the raw path segment is gone.
   const routeLabel = routeSegment.charAt(0).toUpperCase() + routeSegment.slice(1).replace(/-/g, ' ')
+  // v0.8.130 — Phase 4c: the V2 crumb names the route the way the rail does, translated
+  // (it printed the URL segment: "Setup wizard", and English in every language).
+  const navItems = getNavigation(t).flatMap((section) => section.items)
+  const navMatch = navItems
+    .filter((item) => item.href !== '/' && pathname && (pathname === item.href || pathname.startsWith(`${item.href}/`)))
+    .sort((a, b) => b.href.length - a.href.length)[0]
+  const routeName = pathname === '/'
+    ? t('navigation.home')
+    : pathname?.startsWith('/setup-wizard')
+      ? t('setupWizard.firstRun.title')
+      : navMatch?.name ?? routeLabel
 
   return (
     <header className="dn-command-bar" aria-label="Command bar">
@@ -65,7 +77,7 @@ export function CommandBar({ showBrand = true, onMenu, menuOpen = false, focusSh
             <p className="dn-command-title dn-command-title--compact font-semibold tracking-tight text-foreground">Deeper Notebook</p>
             {/* A quiet breadcrumb; the home route reads "Home" (the chip's "Notebook"
                 default named nothing). */}
-            <span className="dn-command-kicker m-0 leading-none">{pathname === '/' ? 'Home' : routeLabel}</span>
+            <span className="dn-command-kicker m-0 leading-none">{routeName}</span>
           </>
         )}
       </div>

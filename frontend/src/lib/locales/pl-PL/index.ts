@@ -226,6 +226,7 @@ export const plPL = {
     connectErrorHint: "Nie można połączyć się z serwerem. Sprawdź, czy API jest uruchomione.",
   },
   navigation: {
+    home: "Strona główna",
     primary: "Główna",
     destinations: "Sekcje",
     settingsPages: "Strony ustawień",

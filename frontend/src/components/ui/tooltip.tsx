@@ -5,27 +5,32 @@ import * as TooltipPrimitive from "@radix-ui/react-tooltip"
 
 import { cn } from "@/lib/utils"
 
+// v0.8.130 — Phase 4c of the 2026-09-30 UI audit: tooltips opened instantly (delay 0)
+// and each one made its own provider, so moving along a row of icons re-waited on
+// every one. The app mounts one provider (app/layout.tsx) with a short delay; a
+// tooltip outside it (an isolated test, a portal) still gets its own.
+const InsideTooltipProvider = React.createContext(false)
+
 function TooltipProvider({
-  delayDuration = 0,
+  delayDuration = 400,
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Provider>) {
   return (
-    <TooltipPrimitive.Provider
-      data-slot="tooltip-provider"
-      delayDuration={delayDuration}
-      {...props}
-    />
+    <InsideTooltipProvider.Provider value>
+      <TooltipPrimitive.Provider
+        data-slot="tooltip-provider"
+        delayDuration={delayDuration}
+        {...props}
+      />
+    </InsideTooltipProvider.Provider>
   )
 }
 
 function Tooltip({
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Root>) {
-  return (
-    <TooltipProvider>
-      <TooltipPrimitive.Root data-slot="tooltip" {...props} />
-    </TooltipProvider>
-  )
+  const root = <TooltipPrimitive.Root data-slot="tooltip" {...props} />
+  return React.useContext(InsideTooltipProvider) ? root : <TooltipProvider>{root}</TooltipProvider>
 }
 
 function TooltipTrigger({

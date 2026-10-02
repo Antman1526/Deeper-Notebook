@@ -223,6 +223,7 @@ export const jaJP = {
     connectErrorHint: "サーバーに接続できません。APIが起動しているか確認してください。",
   },
   navigation: {
+    home: "ホーム",
     primary: "メインナビゲーション",
     destinations: "セクション",
     settingsPages: "設定ページ",

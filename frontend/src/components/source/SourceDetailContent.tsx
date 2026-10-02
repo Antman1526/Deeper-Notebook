@@ -1,5 +1,6 @@
 'use client'
 
+import { useConfirm } from '@/components/common/use-confirm'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { isAxiosError } from 'axios'
@@ -179,6 +180,8 @@ export function SourceDetailContent({
   notebookId,
 }: SourceDetailContentProps) {
   const { t, language } = useTranslation()
+  // v0.8.130 — Phase 4c: the app's confirm dialog, not the browser's confirm().
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const queryClient = useQueryClient()
   const openPodcastReview = usePodcastStudioStore((state) => state.open)
   const [source, setSource] = useState<SourceDetailResponse | null>(null)
@@ -596,7 +599,12 @@ export function SourceDetailContent({
   const handleDelete = async () => {
     if (!source) return
 
-    if (confirm(t('sources.deleteSourceConfirm') || t('common.confirm'))) {
+    if (await confirm({
+      title: t('sources.delete'),
+      description: t('sources.deleteSourceConfirm'),
+      confirmText: t('common.delete'),
+      destructive: true,
+    })) {
       try {
         await sourcesApi.delete(source.id)
         toast.success(t('common.success'))
@@ -630,6 +638,7 @@ export function SourceDetailContent({
 
   return (
     <div className="flex flex-col h-full">
+      {confirmDialog}
       {/* Header */}
       <div className="pb-4 px-2">
         <div className="flex items-start justify-between">

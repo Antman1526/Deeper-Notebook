@@ -12,7 +12,7 @@
 //   - The DirectoryPicker is opened in `selectionMode='any'` so the
 //     user can pick a file (.zip or .md) as well as a folder.
 //   - Warnings from preview surface as a yellow Alert.
-//   - Overview notes (📋) are flagged in the lists per the v0.7.89
+//   - Overview notes (clipboard icon) are flagged in the lists per the v0.7.89
 //     manifest convention.
 //   - On success we navigate to the new/target notebook so the user
 //     can immediately see the imported content.
@@ -44,7 +44,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import { AlertTriangle, FolderOpen } from 'lucide-react'
+import { AlertTriangle, ClipboardList, FolderOpen } from 'lucide-react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useFsHome } from '@/lib/hooks/use-fs'
 import {
@@ -76,9 +76,8 @@ function ItemRow({ item }: { item: NotebookImportPreviewItem }) {
     <div className="flex items-center justify-between gap-2 py-1 px-2 text-sm rounded hover:bg-accent/40">
       <div className="flex items-center gap-2 min-w-0">
         {item.is_overview ? (
-          <span aria-hidden className="text-base leading-none">
-            📋
-          </span>
+          // v0.8.130 — Phase 4c: an icon, not an emoji.
+          <ClipboardList aria-hidden className="h-4 w-4 shrink-0 text-muted-foreground" />
         ) : null}
         <span className="truncate">{item.title}</span>
       </div>

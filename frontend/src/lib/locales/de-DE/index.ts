@@ -226,6 +226,7 @@ export const deDE = {
     connectErrorHint: "Keine Verbindung zum Server möglich. Bitte prüfe, ob die API läuft.",
   },
   navigation: {
+    home: "Startseite",
     primary: "Hauptnavigation",
     destinations: "Bereiche",
     settingsPages: "Einstellungsseiten",

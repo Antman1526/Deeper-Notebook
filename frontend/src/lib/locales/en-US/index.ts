@@ -227,6 +227,7 @@ export const enUS = {
     connectErrorHint: "Unable to connect to server. Please check if the API is running.",
   },
   navigation: {
+    home: "Home",
     primary: "Primary",
     destinations: "Destinations",
     settingsPages: "Settings pages",

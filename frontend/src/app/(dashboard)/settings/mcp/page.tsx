@@ -12,6 +12,7 @@
 //     so this page stays clean).
 //   - Inline URL validation: http(s):// prefix check + trim before submit.
 
+import { useConfirm } from '@/components/common/use-confirm'
 import { useState } from 'react'
 import { ChevronUp, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -38,6 +39,8 @@ function isValidUrl(url: string): boolean {
 
 export default function MCPServersPage() {
   const { t } = useTranslation()
+  // v0.8.130 — Phase 4c: the app's confirm dialog, not the browser's confirm().
+  const { confirm, dialog: confirmDialog } = useConfirm()
 
   const { data: rawServers = [], isLoading } = useMCPServers()
   const create = useCreateMCPServer()
@@ -72,10 +75,13 @@ export default function MCPServersPage() {
     )
   }
 
-  const handleDelete = (id: string, serverName: string) => {
-    const confirmed = window.confirm(
-      t('settings.mcp.deleteConfirm').replace('{name}', serverName),
-    )
+  const handleDelete = async (id: string, serverName: string) => {
+    const confirmed = await confirm({
+      title: t('settings.mcp.deleteConfirm').replace('{name}', serverName),
+      description: '',
+      confirmText: t('common.delete'),
+      destructive: true,
+    })
     if (!confirmed) return
     del.mutate(id)
   }
@@ -109,6 +115,7 @@ export default function MCPServersPage() {
 
   return (
     <>
+      {confirmDialog}
       <SystemRouteFrame route="/settings/mcp" title={t('settings.mcp.title')} description={t('settings.mcp.description')}>
           <div className="mx-auto max-w-3xl space-y-10 rounded-lg bg-[var(--dn-folio-paper)] p-4 sm:p-6">
 

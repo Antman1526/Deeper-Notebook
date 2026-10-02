@@ -223,6 +223,7 @@ export const bnIN = {
     connectErrorHint: "সার্ভারে সংযোগ করতে অক্ষম। API চালু আছে কিনা চেক করুন।",
   },
   navigation: {
+    home: "হোম",
     primary: "প্রধান নেভিগেশন",
     destinations: "বিভাগ",
     settingsPages: "সেটিংস পৃষ্ঠা",

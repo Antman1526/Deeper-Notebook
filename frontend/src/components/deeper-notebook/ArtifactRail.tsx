@@ -1,5 +1,6 @@
 'use client'
 
+import { useConfirm } from '@/components/common/use-confirm'
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertCircle, ArrowRight, BookOpenCheck, CheckCircle2, Clock3, Cpu, Download, FileQuestion, GraduationCap, Layers3, ListChecks, Loader2, Map as MapIcon, Mic2, Newspaper, Play, Presentation, RefreshCw, Search, SlidersHorizontal, Table2, Trash2, Video } from 'lucide-react'
@@ -240,6 +241,8 @@ export function ArtifactRail({
   const [selectedCitation, setSelectedCitation] = useState<CitationEvidence | null>(null)
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([])
   const { t } = useTranslation()
+  // v0.8.130 — Phase 4c: the app's confirm dialog, not the browser's confirm().
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const [videoDialogOpen, setVideoDialogOpen] = useState(false)
   // v0.8.130 — the App Mode explainer is a collapsed disclosure in the Studio column.
   const [explainerOpen, setExplainerOpen] = useState(false)
@@ -408,7 +411,12 @@ export function ArtifactRail({
   }
 
   async function deleteSelectedArtifact(artifact: StudioArtifact) {
-    if (!window.confirm(`Delete "${artifact.title}"?`)) return
+    if (!(await confirm({
+      title: `Delete "${artifact.title}"?`,
+      description: 'This cannot be undone.',
+      confirmText: t('common.delete'),
+      destructive: true,
+    }))) return
     await deleteArtifact.mutateAsync(artifact.id)
     setSelectedArtifact(null)
     setSelectedCitation(null)
@@ -466,6 +474,7 @@ export function ArtifactRail({
   // explainer moved into a closed disclosure instead of a permanent box.
   return (
     <section aria-label="Evidence Studio artifacts" className="space-y-5">
+      {confirmDialog}
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-medium">Generate</h3>

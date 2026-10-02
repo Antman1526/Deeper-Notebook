@@ -223,6 +223,7 @@ export const zhCN = {
     connectErrorHint: "无法连接到服务器。请检查 API 是否正在运行。",
   },
   navigation: {
+    home: "首页",
     primary: "主导航",
     destinations: "栏目",
     settingsPages: "设置页面",

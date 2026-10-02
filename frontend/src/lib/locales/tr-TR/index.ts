@@ -226,6 +226,7 @@ export const trTR = {
     connectErrorHint: "Sunucuya bağlanılamıyor. API'nin çalışıp çalışmadığını kontrol edin.",
   },
   navigation: {
+    home: "Ana sayfa",
     primary: "Ana gezinme",
     destinations: "Bölümler",
     settingsPages: "Ayar sayfaları",

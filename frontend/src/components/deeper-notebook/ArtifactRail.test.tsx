@@ -1830,7 +1830,11 @@ describe('ArtifactRail', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open Old Quiz' }))
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
 
-    expect(window.confirm).toHaveBeenCalledWith('Delete "Old Quiz"?')
+    // v0.8.130 — Phase 4c: confirmed in the app's dialog, not window.confirm.
+    const dialog = await screen.findByRole('alertdialog', { name: 'Delete "Old Quiz"?' })
+    expect(deleteArtifact).not.toHaveBeenCalled()
+    // Scoped to the dialog: the viewer behind it has its own Delete button.
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
     await waitFor(() => {
       expect(deleteArtifact).toHaveBeenCalledWith('studio_artifact:delete-me')
     })

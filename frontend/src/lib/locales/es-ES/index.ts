@@ -223,6 +223,7 @@ export const esES = {
     connectErrorHint: "No se puede conectar al servidor. Por favor, verifica si la API está funcionando.",
   },
   navigation: {
+    home: "Inicio",
     primary: "Principal",
     destinations: "Secciones",
     settingsPages: "Páginas de configuración",

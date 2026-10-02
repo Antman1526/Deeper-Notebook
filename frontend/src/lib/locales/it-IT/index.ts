@@ -223,6 +223,7 @@ export const itIT = {
     connectErrorHint: "Impossibile connettersi al server. Verifica che l'API sia in esecuzione.",
   },
   navigation: {
+    home: "Home",
     primary: "Principale",
     destinations: "Sezioni",
     settingsPages: "Pagine delle impostazioni",

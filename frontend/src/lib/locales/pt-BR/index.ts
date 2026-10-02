@@ -223,6 +223,7 @@ export const ptBR = {
     connectErrorHint: "Não foi possível conectar ao servidor. Verifique se a API está rodando.",
   },
   navigation: {
+    home: "Início",
     primary: "Principal",
     destinations: "Seções",
     settingsPages: "Páginas de configurações",
