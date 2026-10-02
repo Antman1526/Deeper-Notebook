@@ -159,6 +159,16 @@ Frontend UI audit (2026-09-30): the concrete defects behind the "unfinished" fee
 
 🛠 **Tests.** New `e2e/phase3-pages.spec.ts` (titles for 18 routes, home spacing and status surface, notebook card gap, labelled counts and search icon, Studio surfaces, gallery card width).
 
+**Premium pass and notebook layer** (user decisions of 2026-10-01: "not glossy, more modern and premium", then "make it feel like a notebook").
+
+🎨 **No gloss.** The frosted-glass shell (blur + saturate), the hero's radial glow, the cards' springy lift and indigo hover glow, gradient "bezel" borders, inset white highlights and white edge rings are gone; surfaces are solid with hairline borders, and hover only darkens the hairline.
+
+🎨 **Tighter and rectangular.** Corners run 6–16px (buttons and controls 8px, cards 12px, dialogs 16px; cards were 24–28px), and buttons are rectangles instead of pills. Eyebrows ("Index", "Organize", "Runtime status"…) are quiet grey sentence case instead of indigo or brass tracked uppercase; the breadcrumb chip reads "Notebooks" instead of the raw "notebooks". The selected navigator item is the neutral state layer with the indigo indicator, not a lavender block.
+
+🎨 **Paper and ink.** The indigo pair is a notebook: a warm paper desk (#F5F3EE) with a faint dot grid, off-white pages, ink text, warm hairlines, and a deeper indigo as the pen; Gemini-Forward Dark is a warm "night notebook". Answers and note previews are set in the book serif; the Notes column is ruled with an indigo margin rule. The textures drop out in the high-contrast themes. The desktop window and the first-run, model-manager and memory-dashboard themes carry the same values.
+
+🛠 **Tests.** New `e2e/premium-pass.spec.ts` on Home, Notebooks, Sources, Studio and Settings: no blur, gradient (other than the dotted desk and ruled Notes) or inset shine; buttons at most 10px (card-sized choices 12px) and cards at most 12px; grey sentence-case eyebrows; a warm, never blue-cast flagship palette. The token, button and serif contract tests now pin the new decisions; the pre-V2 rollback baselines are regenerated for the new corners and buttons.
+
 ## v0.8.129 — 2026-09-12 — SurrealDB live integration suite, live service verification & test setting hardening
 
 🛠 **SurrealDB live integration test suite (132 passed).** Resolved a schema migration head stepping issue in `tests/integration/test_search_quality_benchmark.py`: migration 51 round-trip stepping now uses `runner.run_one_up()` against the migration 52 head. Full suite passed 100% against real SurrealDB 2.6.5.
