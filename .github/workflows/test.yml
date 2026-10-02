@@ -210,6 +210,11 @@ jobs:
 
       - name: Run mocked browser baseline
         run: npm run test:e2e:mocked
+        # v0.8.130 — both default on in the build; the source-gallery spec only runs its
+        # enabled-build contract (39 tests) when they are set explicitly, so it never ran.
+        env:
+          NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2: '1'
+          NEXT_PUBLIC_DN_SOURCE_VISUALS: '1'
 
   # v0.8.130 — the Luminous (pre-V2) snapshot suites. V2 is a build-time flag and the
   # default since 2026-08-14, so the mocked-browser job above cannot render these; this

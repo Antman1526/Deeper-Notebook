@@ -25,7 +25,8 @@ const studyWorkbenchEnabledBuild = !studyWorkbenchRollbackBuild
 
 function expectedStateCalls(state: StudyFixtureState): string[] {
   if (state === 'empty' || state === 'loading') {
-    return ['GET /api/study/cards/due', 'GET /api/study/plans']
+    // v0.8.130 — /study also mounts ExamLab (v0.8.97), which lists recent attempts.
+    return ['GET /api/study/cards/due', 'GET /api/study/plans', 'GET /api/study/exams/attempts']
   }
   if (state === 'error-retry') {
     return [
@@ -236,7 +237,17 @@ for (const state of STUDY_STATES) {
       if (state === 'approved' || state === 'generating' || state === 'active') {
         await expect(page.locator('main').getByText(state, { exact: true }).first()).toBeVisible()
       }
-      if (state === 'degraded-model') await expect(page.getByText(/degraded/i).first()).toBeVisible()
+      if (state === 'degraded-model') {
+        // v0.8.130 — Phase 3b: model health sits in the rail footer; below 1024px the
+        // rail is a sheet behind the Menu button.
+        const sheet = viewport.width < 1024
+        if (sheet) await page.getByRole('button', { name: 'Menu' }).click()
+        await expect(page.getByRole('navigation', { name: 'Primary' }).getByText(/degraded/i).first()).toBeVisible()
+        if (sheet) {
+          await page.keyboard.press('Escape')
+          await expect(page.getByRole('button', { name: 'Menu' })).toHaveAttribute('aria-expanded', 'false')
+        }
+      }
       if (state === 'offline') await expect(page.getByTestId('network-status-badge').getByText(/offline/i)).toBeVisible()
       if (state === 'error-retry') {
         await expect(page.getByRole('alert')).toBeVisible()
@@ -249,6 +260,12 @@ for (const state of STUDY_STATES) {
         await expect(page.locator('h1')).toBeVisible()
         const planCallsAfterRetry = ledger.seen.filter((call) => call === `GET ${'/api/study/plans/' + STUDY_PLAN_ID}`).length
         expect(planCallsAfterRetry).toBeGreaterThan(planCallsBeforeRetry)
+        // v0.8.130 — settle the retried plan requests before the next width navigates;
+        // under load the navigation aborted them and the ledger recorded them as failed.
+        const width = String(viewport.width)
+        await expect.poll(() => callCounts(ledger.seenByViewport?.[width] ?? []))
+          .toEqual(callCounts(ledger.expectedByViewport?.[width] ?? []))
+        await page.waitForLoadState('networkidle')
       }
       if (state === 'tutor') {
         await expect(page.getByRole('region', { name: 'Tutor dock' })).toBeVisible()

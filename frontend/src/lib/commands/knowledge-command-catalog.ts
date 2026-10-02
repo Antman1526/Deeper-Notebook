@@ -128,7 +128,9 @@ export function searchResultToOpenTab(
     || !provenance.vault_id
     || !result.id
     || !relativePath.success
-    || !/^[0-9a-f]{64}$/iu.test(provenance.source_hash)
+    // v0.8.130 — the backend sends `sha256:<hex>` (what decodeSearchResponse requires);
+    // bare hex alone dropped every vault result.
+    || !/^(?:sha256:)?[0-9a-f]{64}$/iu.test(provenance.source_hash)
   ) return null
   return {
     vaultId: provenance.vault_id,

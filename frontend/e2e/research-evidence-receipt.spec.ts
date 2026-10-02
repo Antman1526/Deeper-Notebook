@@ -1,3 +1,4 @@
+import { installVisualSystemFixture } from './fixtures/visual-system'
 import { expect, test } from './fixtures/research-workbench'
 
 const researchRun = {
@@ -40,6 +41,14 @@ const researchRun = {
 test('renders immutable evidence provenance in the approval step', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.emulateMedia({ reducedMotion: 'reduce' })
+  // v0.8.130 — the spec mocked only its own routes, so ~20 shell requests answered 500
+  // and a "Server error" toast landed on the receipt. The visual-system fixture serves
+  // this notebook hermetically; the routes below are registered later and win.
+  await installVisualSystemFixture(page, { theme: 'research-core-dark' })
+  const serverErrors: string[] = []
+  page.on('response', (response) => {
+    if (response.status() >= 500) serverErrors.push(`${response.status()} ${new URL(response.url()).pathname}`)
+  })
   await page.route(/\/config$/, async (route) => {
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ apiUrl: '' }) })
   })
@@ -128,7 +137,13 @@ test('renders immutable evidence provenance in the approval step', async ({ page
     'title',
     researchRun.candidates[0].evidence.evidence_id,
   )
-  await expect(workspace).toHaveScreenshot('research-evidence-receipt.png', {
+  expect(serverErrors).toEqual([])
+  // v0.8.130 — the region now sits in a scrolling Studio column (274px at 1440, four
+  // columns) and is taller than the viewport, so an element screenshot of it stitched
+  // in page chrome. The receipt itself fits on screen and is what this test is about.
+  const receipt = workspace.getByRole('group', { name: 'Evidence receipt' })
+  await receipt.scrollIntoViewIfNeeded()
+  await expect(receipt).toHaveScreenshot('research-evidence-receipt-group.png', {
     animations: 'disabled',
     caret: 'hide',
   })

@@ -4,6 +4,7 @@ import type { OpenKnowledgeTab } from '@/lib/api/knowledge-workspace'
 import type { OverlayNote } from '@/lib/api/overlay'
 import type { VaultFile, VaultMount } from '@/lib/api/vault'
 import type { SearchResult } from '@/lib/types/search'
+import { decodeSearchResponse } from '@/lib/types/source-visuals'
 import {
   buildKnowledgeCatalog,
   candidateToOpenTab,
@@ -187,5 +188,32 @@ describe('knowledge command catalog', () => {
         source_hash: 'not-a-hash',
       },
     })).toBeNull()
+  })
+
+  // v0.8.130 — the backend sends `sha256:<hex>` (deeper_notebook/domain/notebook.py) and
+  // decodeSearchResponse requires that form, but this check required bare hex, so every
+  // vault result the palette received was silently dropped.
+  it('opens a vault result in the shape the backend sends', () => {
+    const decoded = decodeSearchResponse({
+      results: [{
+        id: 'note:plan',
+        title: 'Plan',
+        vault_provenance: {
+          canonical_external: true,
+          vault_id: 'vault:research',
+          relative_path: 'Plan.md',
+          source_hash: `sha256:${'b'.repeat(64)}`,
+        },
+      }],
+      total_count: 1,
+      search_type: 'text',
+    })
+
+    expect(searchResultToOpenTab(decoded.results[0] as SearchResult)).toEqual({
+      vaultId: 'vault:research',
+      noteId: 'note:plan',
+      title: 'Plan',
+      relativePath: 'Plan.md',
+    })
   })
 })

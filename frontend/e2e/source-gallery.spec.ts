@@ -383,7 +383,8 @@ async function inspectSourceGalleryGeometry(page: import('@playwright/test').Pag
       }
       for (const action of Array.from(root.querySelectorAll('button')).filter(visible)) {
         const rect = action.getBoundingClientRect()
-        if (rect.width < 44 || rect.height < 44) {
+        // 0.01px tolerance: sub-pixel layout reports a 44px button as 43.99997px.
+        if (rect.width < 43.99 || rect.height < 43.99) {
           undersizedActions.push(`${describe(action)}:${rect.width}x${rect.height}`)
         }
       }

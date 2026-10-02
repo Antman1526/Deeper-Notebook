@@ -1093,7 +1093,8 @@ export async function fulfillKnowledgeSearchRequest(
             canonical_external: true,
             vault_id: "vault:fixture",
             relative_path: "pages/plan.md",
-            source_hash: planFile.content_hash,
+            // The backend normalizes to `sha256:<hex>` (deeper_notebook/domain/notebook.py).
+            source_hash: `sha256:${planFile.content_hash}`,
           },
         },
       ],
