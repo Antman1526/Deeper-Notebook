@@ -143,6 +143,8 @@ export function ThemeSwitcher({ iconOnly = false }: ThemeSwitcherProps) {
               : 'w-full justify-start gap-2 sidebar-menu-item'
           }
           aria-label="Switch theme"
+          // v0.8.130 — Phase 4b: icon-only buttons carry a tooltip.
+          title={iconOnly ? 'Switch theme' : undefined}
         >
           <Palette className="h-[1.2rem] w-[1.2rem]" aria-hidden="true" />
           {!iconOnly && <span>Theme</span>}

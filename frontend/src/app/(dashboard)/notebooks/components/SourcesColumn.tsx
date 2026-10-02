@@ -222,7 +222,8 @@ export function SourcesColumn({
             {/* v0.8.130 — Phase 2b: the header holds the title and collapse only. With the
                 actions beside it, "Sources" truncated to "So…" (1440px) or "S" (1024px). */}
             <div className="flex items-center gap-1">
-              <CardTitle className="min-w-0 flex-1 truncate text-base font-medium">{t('navigation.sources')}</CardTitle>
+              {/* v0.8.130 — Phase 4b: the column title is the h2 its cards sit under. */}
+              <CardTitle role="heading" aria-level={2} className="min-w-0 flex-1 truncate text-base font-medium">{t('navigation.sources')}</CardTitle>
               {collapseButton}
             </div>
           </CardHeader>

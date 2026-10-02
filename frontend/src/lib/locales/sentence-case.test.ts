@@ -9,7 +9,7 @@ import { enUS } from './en-US'
 
 // Words (or phrases) that keep their capitals anywhere in a string.
 const PROPER_NOUNS = [
-  'Deeper Notebook', 'Open Notebook', 'Evidence Studio', 'Research Core', 'Study Workbench',
+  'Deeper Notebook', 'Evidence Studio', 'Research Core', 'Study Workbench',
   'ExamLab', 'Cornell Notes', 'Course Pack', 'Episode Lab', 'Gemini-Forward', 'Luminous Folio',
   'Obsidian', 'Docker', 'Gmail', 'Google', 'GitHub', 'YouTube', 'Ollama', 'OpenAI', 'Anthropic',
   'Anki', 'Tavily', 'Markdown', 'SurrealDB', 'Apple', 'Silicon', 'Metal', 'FlashAttention', 'Mac',

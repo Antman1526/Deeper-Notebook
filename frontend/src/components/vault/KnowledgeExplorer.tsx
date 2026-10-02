@@ -1029,7 +1029,7 @@ export function KnowledgeExplorer() {
           onActivateTab={activateTab}
           onOpenMode={openResearchMode}
         />
-        <div className="research-core-drawer-triggers" aria-label={t('knowledge.researchDrawers')}>
+        <div className="research-core-drawer-triggers" role="group" aria-label={t('knowledge.researchDrawers')}>
           <Button
             ref={utilityDrawerTriggerRef}
             type="button"

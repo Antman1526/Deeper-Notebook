@@ -122,7 +122,7 @@ export default function SourcesPage() {
     // The legacy table and enabled gallery use different selectable elements,
     // but keyboard navigation keeps their shared source-index ordering.
     const selectedElement = visualGalleryEnabled
-      ? scrollContainer.querySelectorAll('[data-dn-source-gallery] [role="listitem"]')[index] as HTMLElement
+      ? scrollContainer.querySelectorAll('[data-dn-source-gallery] .dn-source-gallery__card')[index] as HTMLElement
       : scrollContainer.querySelectorAll('tbody tr')[index] as HTMLElement
     if (!selectedElement) return
 

@@ -361,7 +361,8 @@ test.describe('2d — source rows', () => {
 
       const measured = await rows.evaluateAll((elements) => elements.map((el) => {
         const style = getComputedStyle(el)
-        const title = el.querySelector('h4') as HTMLElement
+        // v0.8.130 — Phase 4b: the title is an h3 under the column's h2.
+        const title = el.querySelector('h3') as HTMLElement
         return {
           border: parseFloat(style.borderTopWidth),
           shadow: style.boxShadow,

@@ -505,8 +505,11 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     expect(screen.getByTestId('research-core-folio')).toBeInTheDocument()
     expect(screen.getByTestId('research-core-folio-index')).toHaveTextContent('knowledge.readOnly')
     expect(screen.getByTestId('research-core-folio-workspace')).toHaveTextContent('One')
-    expect(screen.getByRole('banner', { name: 'Research Core workspace' })).toBeInTheDocument()
-    expect(screen.getAllByRole('main')).toHaveLength(1)
+    expect(screen.getByRole('group', { name: 'Research Core workspace' })).toBeInTheDocument()
+    // v0.8.130 — Phase 4b: the Knowledge page is the main landmark; the explorer's pane
+    // workspace is a named region inside it.
+    expect(screen.queryAllByRole('main')).toHaveLength(0)
+    expect(screen.getByRole('region', { name: 'knowledge.knowledgeWorkspace' })).toBeInTheDocument()
     expect(screen.getByRole('complementary', { name: 'knowledge.intelligenceDrawer' })).toBeInTheDocument()
     const launcher = screen.getByRole('toolbar', { name: 'Research modes' })
     expect(screen.getByRole('tab', { name: 'Read: One' })).toBeInTheDocument()

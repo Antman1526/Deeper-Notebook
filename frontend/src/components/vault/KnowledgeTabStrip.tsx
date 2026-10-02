@@ -120,10 +120,11 @@ export function KnowledgeTabStrip({
   }
 
   return (
+    // v0.8.130 — Phase 4b: a tablist only when there are tabs (an empty one is invalid).
     <div
-      role="tablist"
-      aria-label={t('knowledge.openTabs')}
-      aria-orientation="horizontal"
+      role={pane.tabs.length > 0 ? 'tablist' : undefined}
+      aria-label={pane.tabs.length > 0 ? t('knowledge.openTabs') : undefined}
+      aria-orientation={pane.tabs.length > 0 ? 'horizontal' : undefined}
       className="flex min-w-0 flex-1 items-stretch overflow-x-auto border-b bg-muted/30"
     >
       {pane.tabs.map((tab, index) => {

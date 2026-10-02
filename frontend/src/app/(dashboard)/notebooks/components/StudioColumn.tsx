@@ -40,7 +40,8 @@ export function StudioColumn({ notebookId, sources, sourcesLoading }: StudioColu
         <Card data-dn-column="" className="flex h-full flex-1 flex-col overflow-hidden">
           <CardHeader className="flex-shrink-0">
             <div className="flex items-center gap-1">
-              <CardTitle className="min-w-0 flex-1 truncate text-base font-medium">{studioLabel}</CardTitle>
+              {/* v0.8.130 — Phase 4b: the column title is the h2 its cards sit under. */}
+              <CardTitle role="heading" aria-level={2} className="min-w-0 flex-1 truncate text-base font-medium">{studioLabel}</CardTitle>
               {collapseButton}
             </div>
           </CardHeader>

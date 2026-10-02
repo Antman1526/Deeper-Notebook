@@ -64,7 +64,6 @@ export function ThemePreviewCard({
               // v0.8.130 — 12px type floor (UI audit Phase 1)
               <span
                 className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-primary"
-                aria-label="Current theme"
               >
                 Current
               </span>

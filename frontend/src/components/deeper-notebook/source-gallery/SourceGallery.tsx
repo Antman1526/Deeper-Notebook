@@ -29,17 +29,19 @@ export function SourceGallery({
   return (
     <section className="dn-source-gallery" data-dn-source-gallery="true" aria-label="Source gallery">
       {filters ? <div className="dn-source-gallery__filters">{filters}</div> : null}
-      <div className="dn-source-gallery__grid" role="list">
+      {/* v0.8.130 — Phase 4b: a list of li (an article may not take role=listitem). The
+          explicit roles keep list semantics in Safari, which drops them for unstyled lists. */}
+      <ul className="dn-source-gallery__grid" role="list">
         {sources.map(source => {
           const title = source.title?.trim() || 'Untitled source'
           const featured = source.id === featuredId
           return (
-            <article
+            <li
+              role="listitem"
               className="dn-source-gallery__card"
               data-featured={featured}
               data-testid={`source-gallery-card-${source.id}`}
               key={source.id}
-              role="listitem"
             >
               <button
                 type="button"
@@ -57,10 +59,10 @@ export function SourceGallery({
                 onRemove={onRemove}
                 onDelete={onDelete}
               />
-            </article>
+            </li>
           )
         })}
-      </div>
+      </ul>
     </section>
   )
 }

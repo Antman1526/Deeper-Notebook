@@ -133,7 +133,7 @@ export function WorkspaceHome({
           </div>
         </div>
 
-        <VisualCardGrid minimum="compact" aria-label="Workspace actions">
+        <VisualCardGrid minimum="compact" role="group" aria-label="Workspace actions">
           <VisualCard
             title="Studio"
             description="Drop files into a notebook or podcast brief."

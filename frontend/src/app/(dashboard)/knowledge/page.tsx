@@ -5,15 +5,18 @@ import { KnowledgeExplorer } from '@/components/vault/KnowledgeExplorer'
 import { isVisualSystemV2Enabled } from '@/lib/features'
 import { useSourceVisualsEnabled } from '@/lib/features-client'
 import { useRecentVisualSources } from '@/lib/hooks/use-source-visuals'
+import { useTranslation } from '@/lib/hooks/use-translation'
 
 export default function KnowledgePage() {
   const recentSources = useRecentVisualSources(4)
   const sourceVisualsEnabled = useSourceVisualsEnabled()
   const visualGalleryEnabled = isVisualSystemV2Enabled() && sourceVisualsEnabled
+  const { t } = useTranslation()
 
   return (
     <>
-      <div className="min-w-0 space-y-6">
+      {/* v0.8.130 — Phase 4b: the page's main landmark (other routes get one from WorkspacePage). */}
+      <main aria-label={t('navigation.knowledge')} className="min-w-0 space-y-6">
         {visualGalleryEnabled ? (
           <div
             className="min-h-[15rem] min-w-0 sm:min-h-[12rem]"
@@ -23,7 +26,7 @@ export default function KnowledgePage() {
           </div>
         ) : null}
         <KnowledgeExplorer />
-      </div>
+      </main>
     </>
   )
 }

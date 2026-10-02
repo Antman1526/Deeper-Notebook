@@ -64,13 +64,13 @@ describe('Luminous Folio navigation parity contract', () => {
 
     // v0.8.130 — Phase 3b: the rail lists eight destinations and Settings (the settings
     // family nests under Settings on its own routes; the e2e shell spec covers that).
-    // The skip link comes first.
+    // The skip link comes first, then the logo (Phase 4b: a link home).
     const expectedRoutes = [
       '/', '/notebooks', '/sources', '/capture', '/knowledge', '/search',
       '/studio', '/podcasts', '/study', '/settings',
     ]
     expect(screen.getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual(
-      ['#dn-main', ...expectedRoutes.slice(1)],
+      ['#dn-main', ...expectedRoutes],
     )
     const guidedDestinations = [...expectedRoutes, '/settings/local-models']
     expect(guidedDestinations.map((href) => document.querySelectorAll(`[data-guided-tip-anchor="${href}"]`).length))

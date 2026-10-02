@@ -118,10 +118,11 @@ export function WorkspaceRail({ open, onClose }: WorkspaceRailProps) {
     <>
       {open ? <div data-dn-rail-scrim="" className="dn-rail-scrim" aria-hidden="true" onClick={onClose} /> : null}
       <nav id="dn-rail" aria-label={t('navigation.primary')} className={cn('dn-rail', open && 'is-open')}>
-        <div className="dn-rail-brand" data-guided-tip-anchor="/">
+        {/* v0.8.130 — Phase 4b: the logo is a link home. */}
+        <Link href="/" className="dn-rail-brand" data-guided-tip-anchor="/">
           <span className="dn-rail-brand-mark" aria-hidden="true">DN</span>
           <span className="dn-rail-brand-name">Deeper Notebook</span>
-        </div>
+        </Link>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

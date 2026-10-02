@@ -395,12 +395,13 @@ export function SourceCard({
           </span>
         )}
         <div className="min-w-0 flex-1">
-          <h4
+          {/* v0.8.130 — Phase 4b: h3 under the column's h2 (h4 skipped a level). */}
+          <h3
             className="truncate text-sm font-medium leading-5 transition-colors group-hover:text-primary"
             title={title}
           >
             {title}
-          </h4>
+          </h3>
           <p className="truncate text-xs leading-5 text-muted-foreground">
             {!isCompleted && (
               <StatusIcon className={cn('mr-1 inline h-3 w-3 align-[-2px]', statusConfig.color, isProcessing && 'animate-spin')} />

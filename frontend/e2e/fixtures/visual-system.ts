@@ -580,7 +580,8 @@ export const VISUAL_CELL_EXPECTED_REQUESTS: Readonly<Record<string, VisualReques
 )
 
 export interface VisualSystemFixtureOptions {
-  theme: VisualMatrixTheme
+  // Any theme; the matrix itself iterates VISUAL_MATRIX_THEMES.
+  theme: ThemeId
   route?: string
   viewport?: VisualMatrixViewport
   ledger?: VisualRequestLedger
@@ -598,7 +599,7 @@ export interface VisualSystemFixtureHandle {
 
 export function visualCellKey(
   route: string,
-  theme: VisualMatrixTheme,
+  theme: ThemeId,
   viewport: VisualMatrixViewport,
 ): string {
   return `${route}|${theme}|${viewport.name}`
@@ -606,7 +607,7 @@ export function visualCellKey(
 
 export function expectedVisualRequestFrequency(
   route: string,
-  theme: VisualMatrixTheme,
+  theme: ThemeId,
   viewport: VisualMatrixViewport,
 ): VisualRequestFrequencyMap {
   const key = visualCellKey(route, theme, viewport)

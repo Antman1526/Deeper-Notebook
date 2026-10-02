@@ -94,7 +94,8 @@ export function NotesColumn({
             {/* v0.8.130 — Phase 2b: the header holds the title and collapse only; with the
                 actions beside it the title truncated to "N…" at 1280px. */}
             <div className="flex items-center gap-1">
-              <CardTitle className="min-w-0 flex-1 truncate text-base font-medium">{notesLabel}</CardTitle>
+              {/* v0.8.130 — Phase 4b: the column title is the h2 its cards sit under. */}
+              <CardTitle role="heading" aria-level={2} className="min-w-0 flex-1 truncate text-base font-medium">{notesLabel}</CardTitle>
               {collapseButton}
             </div>
           </CardHeader>

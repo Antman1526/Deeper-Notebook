@@ -20,7 +20,7 @@ describe('ResearchCoreHeader', () => {
       />,
     )
 
-    const header = screen.getByRole('banner', { name: 'Research Core workspace' })
+    const header = screen.getByRole('group', { name: 'Research Core workspace' })
     expect(header).toHaveTextContent('Research Core')
     expect(header).toHaveTextContent('2 app-owned')
     expect(header).toHaveTextContent('4 external read-only')

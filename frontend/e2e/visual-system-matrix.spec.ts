@@ -491,7 +491,7 @@ test.describe('visual system matrix contract', () => {
       'main [aria-label$="Archived notebooks"]',
     )
     expect(LOWER_CONTENT_SELECTOR_BY_ROUTE['/knowledge']).toBe(
-      'main.research-core-editorial-workspace [role="tabpanel"][aria-label^="Knowledge pane"]',
+      'section.research-core-editorial-workspace [role="tabpanel"][aria-label^="Knowledge pane"]',
     )
     expect(LOWER_CONTENT_SELECTOR_BY_ROUTE['/sources']).toBe(
       'main [data-dn-source-gallery="true"] [role="listitem"]:last-child button:last-child',
@@ -554,7 +554,7 @@ const LOWER_CONTENT_SELECTOR_BY_ROUTE = {
   '/notebooks/[id]': 'main textarea[name="chat-message"]:visible',
   '/sources': 'main [data-dn-source-gallery="true"] [role="listitem"]:last-child button:last-child',
   '/sources/[id]': 'main textarea[name="chat-message"]',
-  '/knowledge': 'main.research-core-editorial-workspace [role="tabpanel"][aria-label^="Knowledge pane"]',
+  '/knowledge': 'section.research-core-editorial-workspace [role="tabpanel"][aria-label^="Knowledge pane"]',
   '/search': 'main #ask-question',
   '/capture': 'main input[aria-label="Capture folder path"]',
   '/studio': 'main #studio-links',
