@@ -199,6 +199,14 @@ Frontend UI audit (2026-09-30): the concrete defects behind the "unfinished" fee
 
 🛠 **The source-gallery contract runs in CI.** Its 39 enabled-build tests only run when `NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2` and `NEXT_PUBLIC_DN_SOURCE_VISUALS` are set, which the mocked-browser job never did; it sets both (they are the build defaults). Its 44px target check allows 0.01px of sub-pixel error.
 
+**Phase 4a — copy and translation.**
+
+🎨 **Sentence case.** 218 en-US strings (207 distinct) were Title Case ("Create New Notebook", "Sign In", "Save Current As"); they read "Create new notebook", "Sign in", "Save current as", matching the rest of the premium pass. Proper nouns and product names keep their capitals (Deeper Notebook, Evidence Studio, Obsidian, Gmail, Studio…), as do acronyms and keyboard shortcuts. Other locales keep their own rules.
+
+🌐 **The new screens are translated.** The skip link, the Menu button, the rail's landmark labels, the sign-out confirmation, the login frame ("Welcome back", "Connection details") and the whole first-run screen were English in every language; they read from 26 new keys, translated into all 14 locales. Counts use a form that reads correctly for any number in languages with complex plurals.
+
+🛠 **Tests.** New `sentence-case.test.ts` fails on any Title Case en-US value outside an allowlist of proper nouns, acronyms and new-sentence starts. New `ui-audit-copy.test.ts` fails if those components carry the English again or a key goes missing; the locale parity and placeholder tests cover the translations. Unit tests read keys and the browser specs read the new English. The pre-V2 rollback baselines (16 per platform) are regenerated for the recased labels; their diffs were text only.
+
 ## v0.8.129 — 2026-09-12 — SurrealDB live integration suite, live service verification & test setting hardening
 
 🛠 **SurrealDB live integration test suite (132 passed).** Resolved a schema migration head stepping issue in `tests/integration/test_search_quality_benchmark.py`: migration 51 round-trip stepping now uses `runner.run_one_up()` against the migration 52 head. Full suite passed 100% against real SurrealDB 2.6.5.
