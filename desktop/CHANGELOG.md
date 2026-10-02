@@ -179,6 +179,16 @@ Frontend UI audit (2026-09-30): the concrete defects behind the "unfinished" fee
 
 🛠 **Tests.** New `e2e/phase3-shell.spec.ts` (one rail at most 256px wide, eight destinations with the settings family under Settings, the rail persisting across a navigation, one keyboard hint, the skip link, the sign-out confirm, the phone sheet and Escape). The shell unit contracts describe the rail; a layout test pins the single shell. The Luminous and legacy shells keep their dock and navigator.
 
+**Phase 3c — the first run.**
+
+🎨 **"Getting ready" instead of a health table.** A new user landed on a developer table: red "offline / error / missing" pills, "Database migrations", "Command registry" and a raw shell command. The first run now says what is happening in plain words — "Waiting for the database", "Almost ready" (you can start; some features wait on a check) or "Checking your setup" — with how many checks need attention, Continue, and Re-check. The per-check diagnostics sit behind "Show details", as plain "Ready" / "Needs attention" rows with the fix links and the worker command in a code block. The summary card keeps its height when the check returns, so the old 55rem reservation for the table is gone. The pre-V2 route keeps the table.
+
+🎨 **Login names the product once.** The eyebrow "Deeper Notebook", the "Welcome back" heading and a second "Deeper Notebook" heading inside the card repeated the brand; now a brand mark sits above "Welcome back", and the form is embedded in the frame (no inner card or heading). The version and API address moved from a footer ("Version fixture" in the fixture) to a "Connection details" disclosure.
+
+♿ **The password field is labelled.** It has a real label (visible in the frame, screen-reader only on the pre-V2 card) and `autocomplete="current-password"`, so password managers fill it; sign-in errors are announced (`role="alert"`).
+
+🛠 **Tests.** New `e2e/phase3-firstrun.spec.ts`: "Getting ready" with the checks closed by default and no pills; every check behind the disclosure; the degraded count; the summary height across the check at 1440 and 390; no sideways scroll on a phone; the login brand once with one heading, the version behind the disclosure, the labelled field and the announced error. The setup and login unit tests cover the V2 first run and the embedded form; the auth-geometry test uses the embedded form's 190px. The new copy is English until the Phase 4 i18n pass.
+
 ## v0.8.129 — 2026-09-12 — SurrealDB live integration suite, live service verification & test setting hardening
 
 🛠 **SurrealDB live integration test suite (132 passed).** Resolved a schema migration head stepping issue in `tests/integration/test_search_quality_benchmark.py`: migration 51 round-trip stepping now uses `runner.run_one_up()` against the migration 52 head. Full suite passed 100% against real SurrealDB 2.6.5.
