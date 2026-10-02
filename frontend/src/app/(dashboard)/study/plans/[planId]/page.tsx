@@ -3,7 +3,6 @@
 import { useParams } from 'next/navigation'
 
 import { KnowledgeRouteFrame } from '@/components/deeper-notebook/route-frames/KnowledgeRouteFrames'
-import { AppShell } from '@/components/layout/AppShell'
 import { StudyPlanWorkspace } from '@/components/study/StudyPlanWorkspace'
 import { isStudyWorkbenchEnabled } from '@/lib/features'
 
@@ -14,7 +13,7 @@ export default function StudyPlanPage() {
   const studyWorkbenchEnabled = isStudyWorkbenchEnabled()
 
   return (
-    <AppShell>
+    <>
       <KnowledgeRouteFrame
         route="/study"
         title="Study"
@@ -34,6 +33,6 @@ export default function StudyPlanPage() {
           )}
         </div>
       </KnowledgeRouteFrame>
-    </AppShell>
+    </>
   )
 }

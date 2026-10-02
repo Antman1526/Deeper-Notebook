@@ -3,7 +3,6 @@
 import { useMemo, useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
 
-import { AppShell } from '@/components/layout/AppShell'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { EpisodesTab } from '@/components/podcasts/EpisodesTab'
@@ -39,7 +38,7 @@ export default function PodcastsPage() {
   //   - Tabs inner space-y-6 → space-y-8 (more room between the tab
   //     toggle and the active panel)
   return (
-    <AppShell>
+    <>
       <SystemRouteFrame route="/podcasts" title={t('podcasts.listTitle')} description={t('podcasts.listDesc')}>
         <div className="space-y-10">
 
@@ -80,6 +79,6 @@ export default function PodcastsPage() {
           </Tabs>
         </div>
       </SystemRouteFrame>
-    </AppShell>
+    </>
   )
 }

@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { AppShell } from '@/components/layout/AppShell'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DefaultPromptEditor } from './components/DefaultPromptEditor'
@@ -25,7 +24,7 @@ export default function TransformationsPage() {
   }
 
   return (
-    <AppShell>
+    <>
       <SystemRouteFrame
         route="/transformations"
         description={t('transformations.desc')}
@@ -80,6 +79,6 @@ export default function TransformationsPage() {
         </Tabs>
         </div>
       </SystemRouteFrame>
-    </AppShell>
+    </>
   )
 }

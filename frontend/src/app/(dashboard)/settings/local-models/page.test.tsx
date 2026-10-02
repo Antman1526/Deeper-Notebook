@@ -158,9 +158,10 @@ beforeEach(resetState)
 
 describe('LocalModelsPage', () => {
   it('composes the role workspace from inventory, benchmarks, and local-only receipts', () => {
-    render(<LocalModelsPage />)
+    const { container } = render(<LocalModelsPage />)
 
-    expect(screen.getByTestId('app-shell')).toHaveTextContent('Local model roles')
+    // v0.8.130 — Phase 3b: the shell is mounted by (dashboard)/layout.tsx, not the page.
+    expect(container).toHaveTextContent('Local model roles')
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
     expect(screen.getByRole('heading', { level: 2, name: 'Local model roles' })).toBeInTheDocument()
     expect(screen.getByTestId('model-inventory')).toHaveAttribute('data-models', '1')

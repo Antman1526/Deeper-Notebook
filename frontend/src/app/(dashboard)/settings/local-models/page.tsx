@@ -16,7 +16,6 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { AppShell } from '@/components/layout/AppShell'
 import type {
   BenchmarkJob,
   BenchmarkListResponse,
@@ -232,5 +231,5 @@ function SettingsReadinessPanels({ inventory, readiness, readinessError, setting
 }
 
 export default function LocalModelsPage() {
-  return <AppShell><SystemRouteFrame route="/settings/local-models"><LocalModelsWorkspace /></SystemRouteFrame></AppShell>
+  return <><SystemRouteFrame route="/settings/local-models"><LocalModelsWorkspace /></SystemRouteFrame></>
 }

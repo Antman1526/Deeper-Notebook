@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useTranslation } from '@/lib/hooks/use-translation'
-import { AppShell } from '@/components/layout/AppShell'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -253,7 +252,7 @@ export default function SearchPage() {
   }, [searchParams])
 
   return (
-    <AppShell>
+    <>
       {/* v0.7.164 — Visual sweep. Was `p-4 md:p-6` (smaller than every
           other dashboard page) + `text-xl md:text-2xl font-bold`
           (smaller H1). The Ask & Search page is a flagship feature
@@ -470,6 +469,6 @@ export default function SearchPage() {
         </Tabs>
       </div>
       </KnowledgeRouteFrame>
-    </AppShell>
+    </>
   )
 }

@@ -15,7 +15,10 @@ function isEditableTarget(target: EventTarget | null): boolean {
   return Boolean(target.closest('[contenteditable="true"]'))
 }
 
-export function FocusModeControl() {
+// v0.8.130 — Phase 3b: the V2 command bar shows one keyboard hint (on Quick actions);
+// its Focus button keeps the shortcut in the tooltip only. The Luminous and legacy
+// shells keep the chip.
+export function FocusModeControl({ showShortcut = true }: { showShortcut?: boolean } = {}) {
   const focusMode = useDisplayPreferencesStore((state) => state.focusMode)
   const setFocusMode = useDisplayPreferencesStore((state) => state.setFocusMode)
   const toggleFocusMode = useDisplayPreferencesStore((state) => state.toggleFocusMode)
@@ -67,7 +70,7 @@ export function FocusModeControl() {
         <Focus aria-hidden="true" className="h-4 w-4" />
       )}
       <span className="dn-focus-mode-label">{label}</span>
-      {!focusMode && shortcut ? (
+      {!focusMode && shortcut && showShortcut ? (
         // v0.8.130 — the shared key chip.
         <Kbd className="dn-focus-mode-shortcut" aria-hidden="true">{shortcut}</Kbd>
       ) : null}

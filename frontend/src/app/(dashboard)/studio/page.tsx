@@ -27,7 +27,6 @@ import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { Upload, FileText, X, Loader2, AlertCircle, BookOpen, Mic, ArrowLeft, Sparkles, Link2, GraduationCap } from 'lucide-react'
 
-import { AppShell } from '@/components/layout/AppShell'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -336,13 +335,14 @@ export default function StudioPage() {
   }
 
   // ----- Render -----
-  // v0.7.23 — wrap in AppShell so the persistent left sidebar is visible
+  // v0.7.23 — the persistent left sidebar is visible here (since v0.8.130 the shell is
+  // mounted once by (dashboard)/layout.tsx rather than by each page)
   // (matches every other dashboard page). Studio previously rendered a
   // bare <div> with no nav — users had no way back to the main page short
   // of the browser back button. Also adds an explicit "Back to Notebooks"
   // header link as a one-click escape hatch independent of the sidebar.
   return (
-    <AppShell>
+    <>
       <div className="flex-1 overflow-y-auto">
         <EvidenceStudioFolio status={<>
           <div className="mb-4">
@@ -634,6 +634,6 @@ export default function StudioPage() {
           </div>
         </>} trustMargin={<p>{t('studio.trustMargin')}</p>} />
       </div>
-    </AppShell>
+    </>
   )
 }

@@ -930,7 +930,8 @@ html[data-theme^='high-contrast'] [data-dn-ruled] {
 }
 
 /* V2 presentation raises reachable controls without changing legacy or disabled behavior. */
-[data-dn-visual-system='v2'] a[href]:not([aria-disabled='true']):not(.dn-navigator-link) {
+/* v0.8.130 — Phase 3b: rail links fill their row like navigator links did. */
+[data-dn-visual-system='v2'] a[href]:not([aria-disabled='true']):not(.dn-navigator-link):not(.dn-rail-link) {
   display: inline-flex;
   max-inline-size: 100%;
   align-items: center;
@@ -1132,4 +1133,248 @@ html[data-theme^='high-contrast'] [data-dn-ruled] {
 
 :root[data-dn-density='compact'] .dn-workspace-shell .dn-workspace-canvas {
   padding: var(--dn-space-4);
+}
+
+/* v0.8.130 — Phase 3b: one rail. The V2 shell is "rail | body"; the body is the command
+   bar over the canvas. These rules come last so they replace the dock and navigator
+   grids above (those classes are only rendered by the Luminous and legacy shells now). */
+.dn-workspace-shell {
+  grid-template-areas: "rail body";
+  grid-template-columns: 15rem minmax(0, 1fr);
+}
+
+.dn-workspace-shell-body {
+  grid-template-areas:
+    "command"
+    "canvas";
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.dn-rail {
+  grid-area: rail;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--dn-space-3);
+  min-width: 0;
+  height: 100dvh;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  background: var(--background);
+  padding: var(--dn-space-4) var(--dn-space-3);
+}
+
+.dn-rail-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-height: 2.75rem;
+  padding-inline: 0.25rem;
+}
+
+.dn-rail-brand-mark {
+  display: inline-flex;
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: var(--dn-text-xs);
+  font-weight: 700;
+}
+
+.dn-rail-brand-name {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dn-rail-list,
+.dn-rail-sublist {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dn-rail-sublist {
+  margin-top: 2px;
+  padding-left: 1.85rem;
+}
+
+.dn-rail-link {
+  position: relative;
+  display: flex;
+  min-height: 2.5rem;
+  align-items: center;
+  gap: 0.65rem;
+  border-radius: var(--radius-md);
+  color: var(--muted-foreground);
+  padding: 0.45rem 0.6rem;
+  text-decoration: none;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.dn-rail-link:hover,
+.dn-rail-link.is-active {
+  background: var(--accent);
+  color: var(--foreground);
+}
+
+.dn-rail-link.is-active {
+  font-weight: 600;
+}
+
+.dn-rail-link.is-active::before {
+  content: "";
+  position: absolute;
+  inset: 0.5rem auto 0.5rem 0;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--primary);
+}
+
+.dn-rail-link--nested {
+  min-height: 2.25rem;
+  font-size: var(--dn-text-sm);
+}
+
+.dn-rail-footer {
+  display: grid;
+  gap: var(--dn-space-3);
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+  padding-top: var(--dn-space-3);
+}
+
+.dn-rail-utilities {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* The theme, language and Gmail controls bring full-width roots; one row of icons here. */
+.dn-rail-utilities > * {
+  flex: none;
+  width: auto;
+}
+
+.dn-rail-version {
+  margin: 0;
+  padding-inline: 0.25rem;
+  color: var(--muted-foreground);
+  font-size: var(--dn-text-xs);
+}
+
+.dn-skip-link {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 60;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  color: var(--foreground);
+  padding: 0.5rem 0.75rem;
+  /* Transparent and click-through until focused (not moved off-screen, which read as a
+     clipped control); still in the Tab order and the accessibility tree. */
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dn-skip-link:focus {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.dn-command-menu,
+.dn-rail-scrim,
+.dn-command-bar .dn-command-title--compact {
+  display: none;
+}
+
+/* Below 1024px the rail is a sheet behind the command bar's Menu button. */
+@media (max-width: 1023px) {
+  .dn-workspace-shell {
+    grid-template-areas: "body";
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dn-rail {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 50;
+    width: min(17rem, 85vw);
+    visibility: hidden;
+    transform: translateX(-100%);
+    box-shadow: var(--elevation-lg);
+    transition: transform 0.2s ease, visibility 0s linear 0.2s;
+  }
+
+  .dn-rail.is-open {
+    visibility: visible;
+    transform: none;
+    transition: transform 0.2s ease;
+  }
+
+  .dn-rail-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 49;
+    display: block;
+    background: color-mix(in oklab, var(--foreground) 32%, transparent);
+  }
+
+  .dn-command-menu {
+    display: inline-flex;
+  }
+
+  .dn-command-bar .dn-command-title--compact {
+    display: block;
+  }
+}
+
+/* On phones the product name keeps the room; the page title already says where you are. */
+@media (max-width: 767px) {
+  .dn-command-bar .dn-command-title--compact + .dn-command-kicker {
+    display: none;
+  }
+}
+
+/* Focus mode: the rail folds to a strip and opens again on keyboard focus. */
+@media (min-width: 1024px) {
+  html[data-dn-focus-mode="true"] .dn-workspace-shell-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  html[data-dn-focus-mode="true"] .dn-rail {
+    width: var(--dn-focus-rail);
+    overflow: hidden;
+    padding-inline: 0.25rem;
+    opacity: 0.78;
+  }
+
+  html[data-dn-focus-mode="true"] .dn-rail:focus-within {
+    position: relative;
+    z-index: 5;
+    width: var(--dn-focus-reveal);
+    overflow: auto;
+    opacity: 1;
+    box-shadow: var(--elevation-md);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dn-rail,
+  .dn-rail.is-open {
+    transition: none;
+  }
 }

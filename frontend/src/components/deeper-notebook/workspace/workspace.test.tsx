@@ -201,8 +201,10 @@ describe('shared workspace primitives', () => {
 
     expect(screen.getAllByTestId('v2-page-slot')).toHaveLength(1)
     expect(screen.getAllByTestId('focus-mode-control')).toHaveLength(1)
-    expect(screen.getAllByRole('navigation', { name: 'Primary tools' })).toHaveLength(1)
-    expect(screen.getAllByRole('navigation', { name: 'Notebook index' })).toHaveLength(1)
+    // v0.8.130 — Phase 3b: one rail replaces the instrument dock and the notebook index.
+    expect(screen.getAllByRole('navigation', { name: 'Primary' })).toHaveLength(1)
+    expect(screen.queryByRole('navigation', { name: 'Primary tools' })).toBeNull()
+    expect(screen.queryByRole('navigation', { name: 'Notebook index' })).toBeNull()
     expect(document.querySelectorAll('.dn-workspace-canvas')).toHaveLength(1)
   })
 
@@ -567,14 +569,15 @@ describe('shared workspace primitives', () => {
     expect(screen.queryByRole('complementary', { name: 'Context lens' })).toBeNull()
   })
 
-  it('gives the canvas all the space beside the navigator: two columns, no lens rail', async () => {
+  // v0.8.130 — Phase 3b: the shell is "rail | body" and the body is the command bar over
+  // the canvas, so the canvas still takes all the space beside the chrome (no lens rail).
+  it('gives the canvas all the space beside the rail: one body column, no lens rail', async () => {
     const browser = await chromium.launch({ headless: true })
     const shell = `
       <div class="dn-workspace-shell">
-        <div class="dn-instrument-dock"></div>
+        <nav class="dn-rail"></nav>
         <div class="dn-workspace-shell-body">
           <header class="dn-command-bar"></header>
-          <nav class="dn-adaptive-navigator"></nav>
           <main class="dn-workspace-canvas">Canvas</main>
         </div>
       </div>
@@ -590,17 +593,19 @@ describe('shared workspace primitives', () => {
         </style></head><body>${shell}</body></html>`)
 
         const layout = await page.evaluate(() => {
+          const shellEl = document.querySelector('.dn-workspace-shell')!
           const body = document.querySelector('.dn-workspace-shell-body')!
-          const nav = document.querySelector('.dn-adaptive-navigator')!.getBoundingClientRect()
+          const rail = document.querySelector('.dn-rail')!.getBoundingClientRect()
           const canvas = document.querySelector('.dn-workspace-canvas')!.getBoundingClientRect()
           return {
-            tracks: getComputedStyle(body).gridTemplateColumns.trim().split(/\s+/).length,
+            shellTracks: getComputedStyle(shellEl).gridTemplateColumns.trim().split(/\s+/).length,
+            bodyTracks: getComputedStyle(body).gridTemplateColumns.trim().split(/\s+/).length,
             canvasEndsAtBodyEdge: Math.abs(canvas.right - body.getBoundingClientRect().right) < 1,
-            canvasStartsAfterNav: Math.abs(canvas.left - nav.right) < 1,
+            canvasStartsAfterRail: Math.abs(canvas.left - rail.right) < 1,
           }
         })
 
-        expect(layout, `${width}px`).toEqual({ tracks: 2, canvasEndsAtBodyEdge: true, canvasStartsAfterNav: true })
+        expect(layout, `${width}px`).toEqual({ shellTracks: 2, bodyTracks: 1, canvasEndsAtBodyEdge: true, canvasStartsAfterRail: true })
         await page.close()
       }
     } finally {
@@ -608,7 +613,7 @@ describe('shared workspace primitives', () => {
     }
   })
 
-  it('keeps two columns in Focus mode too, instead of reserving an empty right rail', async () => {
+  it('folds the rail to a strip in Focus mode and still reserves no right rail', async () => {
     const browser = await chromium.launch({ headless: true })
 
     try {
@@ -619,19 +624,20 @@ describe('shared workspace primitives', () => {
         ${workspaceStyles}
       </style></head><body>
         <div class="dn-workspace-shell">
-          <div class="dn-instrument-dock"></div>
+          <nav class="dn-rail"></nav>
           <div class="dn-workspace-shell-body">
             <header class="dn-command-bar"></header>
-            <nav class="dn-adaptive-navigator"></nav>
             <main class="dn-workspace-canvas">Canvas</main>
           </div>
         </div>
       </body></html>`)
 
-      const tracks = await page.locator('.dn-workspace-shell-body').evaluate(
-        (element) => getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/).length,
-      )
-      expect(tracks).toBe(2)
+      const layout = await page.evaluate(() => ({
+        bodyTracks: getComputedStyle(document.querySelector('.dn-workspace-shell-body')!).gridTemplateColumns.trim().split(/\s+/).length,
+        railWidth: Math.round(document.querySelector('.dn-rail')!.getBoundingClientRect().width),
+      }))
+      // The rail folds to the 3rem Focus strip; the body stays one column.
+      expect(layout).toEqual({ bodyTracks: 1, railWidth: 48 })
     } finally {
       await browser.close()
     }

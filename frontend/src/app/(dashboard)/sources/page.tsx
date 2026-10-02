@@ -6,7 +6,6 @@ import { sourcesApi } from '@/lib/api/sources'
 import { SourceListResponse } from '@/lib/types/api'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { EmptyState } from '@/components/common/EmptyState'
-import { AppShell } from '@/components/layout/AppShell'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { FileText, Link as LinkIcon, Upload, AlignLeft, Trash2, ArrowUpDown, Plus, Share2 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
@@ -349,7 +348,7 @@ export default function SourcesPage() {
 
   if (loading) {
     return (
-      <AppShell>
+      <>
         <KnowledgeRouteFrame
           route="/sources"
           description={t('sources.allSourcesDesc')}
@@ -359,13 +358,13 @@ export default function SourcesPage() {
             <LoadingSpinner />
           </div>
         </KnowledgeRouteFrame>
-      </AppShell>
+      </>
     )
   }
 
   if (error) {
     return (
-      <AppShell>
+      <>
         <KnowledgeRouteFrame
           route="/sources"
           description={t('sources.allSourcesDesc')}
@@ -378,13 +377,13 @@ export default function SourcesPage() {
             <p className="text-destructive">{error}</p>
           </div>
         </KnowledgeRouteFrame>
-      </AppShell>
+      </>
     )
   }
 
   if (sources.length === 0) {
     return (
-      <AppShell>
+      <>
         <KnowledgeRouteFrame
           route="/sources"
           description={t('sources.allSourcesDesc')}
@@ -396,12 +395,12 @@ export default function SourcesPage() {
             description={t('sources.allSourcesDescShort')}
           />
         </KnowledgeRouteFrame>
-      </AppShell>
+      </>
     )
   }
 
   return (
-    <AppShell>
+    <>
       <KnowledgeRouteFrame
         route="/sources"
         description={t('sources.allSourcesDesc')}
@@ -618,6 +617,6 @@ export default function SourcesPage() {
           />
         </div>
       </KnowledgeRouteFrame>
-    </AppShell>
+    </>
   )
 }

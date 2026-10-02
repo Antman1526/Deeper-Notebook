@@ -14,7 +14,6 @@
 
 import { useState } from 'react'
 import { ChevronUp, ChevronDown } from 'lucide-react'
-import { AppShell } from '@/components/layout/AppShell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -109,7 +108,7 @@ export default function MCPServersPage() {
   }
 
   return (
-    <AppShell>
+    <>
       <SystemRouteFrame route="/settings/mcp" title={t('settings.mcp.title')} description={t('settings.mcp.description')}>
           <div className="mx-auto max-w-3xl space-y-10 rounded-lg bg-[var(--dn-folio-paper)] p-4 sm:p-6">
 
@@ -261,6 +260,6 @@ export default function MCPServersPage() {
             </section>
           </div>
       </SystemRouteFrame>
-    </AppShell>
+    </>
   )
 }

@@ -1,6 +1,5 @@
 'use client'
 
-import { AppShell } from '@/components/layout/AppShell'
 import { StudyDashboard } from '@/components/study/StudyDashboard'
 import { StudySession } from '@/components/study/StudySession'
 import { StudyWorkbench } from '@/components/study/StudyWorkbench'
@@ -14,7 +13,7 @@ export default function StudyPage() {
   const cards = due.data ?? []
 
   return (
-    <AppShell>
+    <>
       <KnowledgeRouteFrame
         route="/study"
         description="Review source-grounded cards locally. Scheduling stays on this device."
@@ -35,6 +34,6 @@ export default function StudyPage() {
           )}
         </div>
       </KnowledgeRouteFrame>
-    </AppShell>
+    </>
   )
 }

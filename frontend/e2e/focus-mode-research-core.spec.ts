@@ -15,7 +15,9 @@ test('Research Core retains the outer navigator while Focus is active at compact
   await page.getByRole('button', { name: 'Enter Focus mode' }).click()
 
   await expect(page.locator('html')).toHaveAttribute('data-dn-focus-mode', 'true')
-  const notebookIndex = page.getByRole('navigation', { name: 'Notebook index' })
+  // v0.8.130 — Phase 3b: the rail replaces the notebook index; in Focus it folds to a
+  // strip that stays reachable by keyboard.
+  const notebookIndex = page.getByRole('navigation', { name: 'Primary' })
   await expect(notebookIndex).toBeVisible()
   const sourceLink = notebookIndex.getByRole('link', { name: /Sources/ }).first()
   await sourceLink.focus()

@@ -8,7 +8,7 @@ export interface GuidedTipDefinition {
 }
 
 export const GUIDED_TIPS = [
-  { id: 'dashboard-overview', version: 2, pathPrefix: '/', anchor: '/', title: 'Instrument Dock', body: 'Use the Instrument Dock to orient yourself, create a source, notebook, or podcast, and reach the tools that stay close at hand.' },
+  { id: 'dashboard-overview', version: 2, pathPrefix: '/', anchor: '/', title: 'The rail', body: 'Use the rail to move between your work, create a source, notebook, or podcast, and reach Settings and the tools that stay close at hand.' },
   { id: 'sources-overview', version: 1, pathPrefix: '/sources', anchor: '/sources', title: 'Sources', body: 'Add and organize the material Deeper Notebook can cite in answers and outputs.' },
   { id: 'capture-overview', version: 1, pathPrefix: '/capture', anchor: '/capture', title: 'Capture', body: 'Collect a quick idea or reference now, then organize it when you are ready.' },
   { id: 'notebooks-overview', version: 1, pathPrefix: '/notebooks', anchor: '/notebooks', title: 'Notebooks', body: 'Group sources, notes, grounded conversations, and generated research artifacts by project.' },

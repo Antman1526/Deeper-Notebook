@@ -103,7 +103,8 @@ test.describe('shell (T0-3, T0-4, T0-9)', () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.goto('/notebooks')
 
-    const icon = page.locator('.dn-dock-create > button svg').first()
+    // v0.8.130 — Phase 3b: Create is the rail's New button (the dock is gone from V2).
+    const icon = page.locator('.dn-rail-create svg').first()
     await expect(icon).toBeVisible()
     const box = await icon.boundingBox()
     expect(box?.width ?? 0).toBeGreaterThan(8)
@@ -113,7 +114,8 @@ test.describe('shell (T0-3, T0-4, T0-9)', () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.goto('/notebooks')
 
-    const link = page.locator('.dn-navigator-link.is-active')
+    // v0.8.130 — Phase 3b: the rail's links (the notebook index is gone from V2).
+    const link = page.locator('.dn-rail-link.is-active')
     await expect(link).toBeVisible()
     const linkWidth = (await link.boundingBox())?.width ?? 0
     const rowWidth = (await link.locator('xpath=..').boundingBox())?.width ?? Infinity
@@ -226,7 +228,7 @@ test.describe('copy and wrapping (T0-11, T0-12)', () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.goto('/notebooks')
 
-    await page.locator('.dn-dock-create > button').click()
+    await page.locator('.dn-rail-create').click() // v0.8.130 — the rail's New button
     await page.getByRole('menuitem', { name: /source/i }).click()
     await expect(page.getByRole('dialog')).toBeVisible()
 

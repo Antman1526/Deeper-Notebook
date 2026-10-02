@@ -20,7 +20,6 @@
 
 import { useState, useEffect } from 'react'
 import { AlertTriangle, Cpu, Sparkles, Zap } from 'lucide-react'
-import { AppShell } from '@/components/layout/AppShell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -148,7 +147,7 @@ export default function LauncherPrefsPage() {
   const isDirty = Object.keys(buildDiff()).length > 0
 
   return (
-    <AppShell>
+    <>
       <SystemRouteFrame route="/settings/launcher-prefs" title={t('settings.launcherPrefs.title')} description={t('settings.launcherPrefs.description')}>
           <div className="mx-auto max-w-3xl space-y-10 rounded-lg bg-[var(--dn-folio-paper)] p-4 sm:p-6">
 
@@ -449,6 +448,6 @@ export default function LauncherPrefsPage() {
             )}
           </div>
       </SystemRouteFrame>
-    </AppShell>
+    </>
   )
 }

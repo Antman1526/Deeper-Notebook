@@ -2,7 +2,6 @@
 
 import { useRouter } from 'next/navigation'
 
-import { AppShell } from '@/components/layout/AppShell'
 import { PodcastStudio } from '@/components/podcasts/PodcastStudio'
 import { Button } from '@/components/ui/button'
 import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
@@ -22,7 +21,7 @@ export default function PodcastStudioPage() {
   ))
 
   return (
-    <AppShell>
+    <>
       <main className="flex-1 overflow-y-auto px-6 py-10 sm:px-8">
         <div className="mb-4 flex justify-end">
           <Button
@@ -38,6 +37,6 @@ export default function PodcastStudioPage() {
         </div>
         <PodcastStudio headingLevel={1} seedDocumentIds={[...new Set(seedDocumentIds)]} selections={selections} notebookId={notebookId} />
       </main>
-    </AppShell>
+    </>
   )
 }

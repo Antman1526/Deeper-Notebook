@@ -190,7 +190,7 @@ describe('DashboardPage active product identity', () => {
     process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2 = '0'
     render(<DashboardPage />)
 
-    expect(screen.getByTestId('app-shell')).toBeInTheDocument()
+    // v0.8.130 — Phase 3b: the shell is mounted by (dashboard)/layout.tsx, not the page.
     expect(screen.getByRole('main', { name: 'Deeper Notebook' })).toHaveAttribute(
       'data-dn-horizon-page',
       'true',

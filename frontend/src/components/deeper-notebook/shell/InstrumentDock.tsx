@@ -1,6 +1,5 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { Book, FileText, LogOut, Mic, Plus } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -17,7 +16,7 @@ import { LanguageToggle } from '@/components/common/LanguageToggle'
 import { useAuth } from '@/lib/hooks/use-auth'
 import { useCreateDialogs } from '@/lib/hooks/use-create-dialogs'
 import { CREATE_TARGETS, type CreateTarget } from '@/components/layout/AppSidebar'
-import { readDesktopVersion } from '@/lib/desktop-version'
+import { useDesktopVersion } from './use-desktop-version'
 import { useTranslation } from '@/lib/hooks/use-translation'
 
 export function InstrumentDock() {
@@ -25,26 +24,7 @@ export function InstrumentDock() {
   const { logout } = useAuth()
   const { openSourceDialog, openNotebookDialog, openPodcastDialog } = useCreateDialogs()
 
-  // v0.8.130 — Only the packaged desktop app exposes a version. In a plain browser there is
-  // nothing to show, so render nothing instead of a `v—` placeholder. The desktop
-  // shell injects the value from its `loaded` handler, after React has hydrated,
-  // so a single read at mount would miss it: look again for a few seconds.
-  const [version, setVersion] = useState('')
-  useEffect(() => {
-    const read = () => {
-      const found = readDesktopVersion(window)
-      if (found) setVersion(found)
-      return Boolean(found)
-    }
-    if (read()) return undefined
-
-    let attempts = 0
-    const timer = window.setInterval(() => {
-      attempts += 1
-      if (read() || attempts >= 40) window.clearInterval(timer)
-    }, 500)
-    return () => window.clearInterval(timer)
-  }, [])
+  const version = useDesktopVersion()
 
   const handleCreateSelection = (target: CreateTarget) => {
     if (target === 'source') openSourceDialog()

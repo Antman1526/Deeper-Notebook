@@ -20,7 +20,9 @@ test('compact shell keeps the focus control clear of the command title', async (
     return
   }
 
-  const title = page.locator('.dn-command-title')
+  // v0.8.130 — Phase 3b: the V2 bar has no brand title (the rail carries it), so compare
+  // the whole left group (Menu button and breadcrumb), which both shells render.
+  const title = page.locator('.dn-command-breadcrumb')
   await expect(title).toBeVisible()
   await expect(focusControl).toBeVisible()
 

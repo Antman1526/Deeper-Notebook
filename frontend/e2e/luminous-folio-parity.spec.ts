@@ -2,9 +2,8 @@ import { expect, test } from './fixtures/research-workbench'
 
 const viewports = [
   { label: 'mobile', width: 390, height: 844, compact: true },
-  // v0.8.130 — the V2 shell keeps the navigator as a permanent rail from 768px, with no
-  // "Notebook index" toggle button, so this width is not "compact" (the click waited forever).
-  { label: 'tablet', width: 768, height: 1024, compact: false },
+  // v0.8.130 — Phase 3b: below 1024px the V2 rail is a sheet behind the Menu button.
+  { label: 'tablet', width: 768, height: 1024, compact: true },
   { label: 'laptop', width: 1280, height: 800, compact: false },
   { label: 'desktop', width: 1440, height: 900, compact: false },
 ] as const
@@ -32,13 +31,14 @@ for (const viewport of viewports) {
     const dismissTip = page.getByRole('button', { name: 'Got it' })
     if (await dismissTip.isVisible()) await dismissTip.click()
 
-    const notebookIndex = page.getByRole('navigation', { name: 'Notebook index' })
+    // v0.8.130 — Phase 3b: one rail replaces the notebook index.
+    const notebookIndex = page.getByRole('navigation', { name: 'Primary' })
     // v0.8.130 — the placeholder Context lens is no longer mounted in the V2 shell (it
     // was static copy that reserved a 320px rail, or floated a button over content).
     await expect(page.getByRole('complementary', { name: 'Context lens' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Context lens' })).toHaveCount(0)
     if (viewport.compact) {
-      await page.getByRole('button', { name: 'Notebook index' }).click()
+      await page.getByRole('button', { name: 'Menu' }).click()
       await expect(notebookIndex).toBeVisible()
     } else {
       await expect(notebookIndex).toBeVisible()

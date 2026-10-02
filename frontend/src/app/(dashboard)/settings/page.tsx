@@ -1,6 +1,5 @@
 'use client'
 
-import { AppShell } from '@/components/layout/AppShell'
 import { SettingsForm } from './components/SettingsForm'
 // v0.7.136 — Read-only ObservabilityCard renders the GET /settings/observability
 // snapshot below the writable settings form. The two surfaces are
@@ -47,7 +46,7 @@ export default function SettingsPage() {
   // Container width: max-w-4xl (896px) → max-w-3xl (768px) feels less
   // sparse on wide monitors while still hitting the "roomy" target.
   return (
-    <AppShell>
+    <>
       <SystemRouteFrame
         route="/settings"
         actions={<Button variant="outline" size="sm" aria-label="Refresh settings" onClick={() => refetch()}><RefreshCw className="h-4 w-4" /></Button>}
@@ -107,6 +106,6 @@ export default function SettingsPage() {
             <ObservabilityCard />
         </div>
       </SystemRouteFrame>
-    </AppShell>
+    </>
   )
 }

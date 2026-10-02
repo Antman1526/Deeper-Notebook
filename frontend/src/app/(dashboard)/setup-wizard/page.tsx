@@ -22,7 +22,6 @@ import {
   Loader2,
 } from 'lucide-react'
 
-import { AppShell } from '@/components/layout/AppShell'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -317,7 +316,7 @@ export default function SetupWizardPage() {
   )
 
   return (
-    <AppShell>
+    <>
       {isVisualSystemV2Enabled() ? (
         <WorkspacePage
           title={t('setupWizard.title')}
@@ -337,6 +336,6 @@ export default function SetupWizardPage() {
           {wizardContent}
         </SystemRouteFrame>
       )}
-    </AppShell>
+    </>
   )
 }

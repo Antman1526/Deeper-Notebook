@@ -12,7 +12,6 @@ import { useRouter } from 'next/navigation'
 import { IntelligenceHorizon } from '@/components/deeper-notebook/horizon/IntelligenceHorizon'
 import type { HorizonNotebook } from '@/components/deeper-notebook/horizon/IntelligenceHorizon'
 import { WorkspaceHome } from '@/components/deeper-notebook/workspace/WorkspaceHome'
-import { AppShell } from '@/components/layout/AppShell'
 import { isVisualSystemV2Enabled } from '@/lib/features'
 import { useCreateDialogs } from '@/lib/hooks/use-create-dialogs'
 import { useNotebooks } from '@/lib/hooks/use-notebooks'
@@ -58,8 +57,8 @@ export default function DashboardPage() {
   const Presentation = isVisualSystemV2Enabled() ? WorkspaceHome : IntelligenceHorizon
 
   return (
-    <AppShell>
+    <>
       <Presentation {...presentationProps} />
-    </AppShell>
+    </>
   )
 }

@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from 'react'
 import type { ImperativePanelHandle } from 'react-resizable-panels'
 import { useParams } from 'next/navigation'
-import { AppShell } from '@/components/layout/AppShell'
 import { NotebookHeader } from '../components/NotebookHeader'
 import { SourcesColumn } from '../components/SourcesColumn'
 import { NotesColumn } from '../components/NotesColumn'
@@ -184,26 +183,26 @@ export default function NotebookPage() {
     // bare <div>, causing a visible layout flash on every navigation
     // and a UX dead-end if the request hung.
     return (
-      <AppShell>
+      <>
         <FolioRouteFrame section="Organize" title="Notebook workspace">
           <div className="flex flex-1 items-center justify-center">
             <LoadingSpinner size="lg" />
           </div>
         </FolioRouteFrame>
-      </AppShell>
+      </>
     )
   }
 
   if (!notebook) {
     return (
-      <AppShell>
+      <>
         <FolioRouteFrame section="Organize" title="Notebook workspace">
           <div>
             <h2 className="mb-4 text-2xl font-semibold">{t('notebooks.notFound')}</h2>
             <p className="text-muted-foreground">{t('notebooks.notFoundDesc')}</p>
           </div>
         </FolioRouteFrame>
-      </AppShell>
+      </>
     )
   }
 
@@ -252,7 +251,7 @@ export default function NotebookPage() {
   // canvas (workspace.css), and only the columns scroll. Guided research and the
   // Evidence Studio band moved into the Studio column.
   return (
-    <AppShell>
+    <>
       <main
         aria-labelledby="notebook-title"
         data-dn-notebook-workspace=""
@@ -393,6 +392,6 @@ export default function NotebookPage() {
           </div>
         )}
       </main>
-    </AppShell>
+    </>
   )
 }

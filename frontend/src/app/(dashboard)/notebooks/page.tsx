@@ -2,7 +2,6 @@
 
 import { useMemo, useRef, useState } from 'react'
 
-import { AppShell } from '@/components/layout/AppShell'
 import { NotebookList } from './components/NotebookList'
 import { NotebookViewToggle } from './components/NotebookViewToggle'
 import { Button } from '@/components/ui/button'
@@ -72,7 +71,7 @@ export default function NotebooksPage() {
   }
 
   return (
-    <AppShell>
+    <>
       <KnowledgeRouteFrame
         route="/notebooks"
         actions={
@@ -166,6 +165,6 @@ export default function NotebooksPage() {
         open={importDialogOpen}
         onOpenChange={setImportDialogOpen}
       />
-    </AppShell>
+    </>
   )
 }

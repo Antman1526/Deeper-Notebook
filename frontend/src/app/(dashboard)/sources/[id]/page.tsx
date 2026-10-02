@@ -5,7 +5,6 @@ import { useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft } from 'lucide-react'
 import { FolioRouteFrame } from '@/components/deeper-notebook/folio/FolioRouteFrame'
-import { AppShell } from '@/components/layout/AppShell'
 import { useSourceChat } from '@/lib/hooks/useSourceChat'
 import { ChatPanel } from '@/components/source/ChatPanel'
 import { useNavigation } from '@/lib/hooks/use-navigation'
@@ -27,7 +26,7 @@ export default function SourceDetailPage() {
   }, [navigation, router])
 
   return (
-    <AppShell>
+    <>
       <FolioRouteFrame section="Collect" title="Source record">
         <div className="flex min-h-[32rem] flex-col">
       {/* v0.7.164 — Source detail layout polish.
@@ -90,6 +89,6 @@ export default function SourceDetailPage() {
           </div>
         </div>
       </FolioRouteFrame>
-    </AppShell>
+    </>
   )
 }

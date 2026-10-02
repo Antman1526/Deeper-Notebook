@@ -1,6 +1,6 @@
 'use client'
 
-import { Search } from 'lucide-react'
+import { Menu, Search } from 'lucide-react'
 import { usePathname } from 'next/navigation'
 
 import { Button } from '@/components/ui/button'
@@ -10,7 +10,17 @@ import { useIsMac } from '@/lib/hooks/use-is-mac'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { FocusModeControl } from './FocusModeControl'
 
-export function CommandBar() {
+interface CommandBarProps {
+  /** v0.8.130 — Phase 3b: the V2 rail carries the brand, so its bar omits it. */
+  showBrand?: boolean
+  /** v0.8.130 — Phase 3b: below 1024px the V2 rail is a sheet opened from here. */
+  onMenu?: () => void
+  menuOpen?: boolean
+  /** v0.8.130 — Phase 3b: V2 shows one keyboard hint, on Quick actions. */
+  focusShortcut?: boolean
+}
+
+export function CommandBar({ showBrand = true, onMenu, menuOpen = false, focusShortcut = true }: CommandBarProps = {}) {
   const pathname = usePathname()
   const { t } = useTranslation()
   const isMac = useIsMac()
@@ -25,12 +35,39 @@ export function CommandBar() {
   return (
     <header className="dn-command-bar" aria-label="Command bar">
       <div className="dn-command-breadcrumb flex items-center gap-2.5">
-        {/* v0.8.130 — 12px type floor, and no hard-coded teal glow (the old brand hue in every theme). */}
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wider bg-primary/10 text-primary border border-primary/20">
-          <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-          <span className="dn-command-kicker m-0 leading-none">{routeLabel}</span>
-        </span>
-        <p className="dn-command-title font-semibold tracking-tight text-foreground">Deeper Notebook</p>
+        {onMenu ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="dn-command-menu"
+            aria-label="Menu"
+            aria-controls="dn-rail"
+            aria-expanded={menuOpen}
+            onClick={onMenu}
+          >
+            <Menu className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        ) : null}
+        {showBrand ? (
+          <>
+            {/* v0.8.130 — 12px type floor, and no hard-coded teal glow (the old brand hue in every theme). */}
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wider bg-primary/10 text-primary border border-primary/20">
+              <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+              <span className="dn-command-kicker m-0 leading-none">{routeLabel}</span>
+            </span>
+            <p className="dn-command-title font-semibold tracking-tight text-foreground">Deeper Notebook</p>
+          </>
+        ) : (
+          <>
+            {/* v0.8.130 — Phase 3b: the product name shows here while the rail (which carries
+                it) is a sheet, below 1024px. */}
+            <p className="dn-command-title dn-command-title--compact font-semibold tracking-tight text-foreground">Deeper Notebook</p>
+            {/* A quiet breadcrumb; the home route reads "Home" (the chip's "Notebook"
+                default named nothing). */}
+            <span className="dn-command-kicker m-0 leading-none">{pathname === '/' ? 'Home' : routeLabel}</span>
+          </>
+        )}
       </div>
       {/* v0.8.96 — the Focus control lives HERE, in flow, not floated over the
           bar. It used to be a shell-level sibling with position:absolute at the
@@ -57,7 +94,7 @@ export function CommandBar() {
             </Kbd>
           ) : null}
         </Button>
-        <FocusModeControl />
+        <FocusModeControl showShortcut={focusShortcut} />
       </div>
     </header>
   )

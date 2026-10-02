@@ -2,7 +2,6 @@
 
 import { useMemo, useState, useEffect, useId } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
-import { AppShell } from '@/components/layout/AppShell'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -1009,11 +1008,11 @@ export default function ApiKeysPage() {
 
   if (isLoading) {
     return (
-      <AppShell>
+      <>
         <SystemRouteFrame route="/settings/api-keys">
           <div className="flex min-h-[60vh] items-center justify-center"><LoadingSpinner size="lg" /></div>
         </SystemRouteFrame>
-      </AppShell>
+      </>
     )
   }
 
@@ -1033,7 +1032,7 @@ export default function ApiKeysPage() {
   //   - Provider grid gap-4 → gap-5 so adjacent cards have visible
   //     separation instead of running into each other
   return (
-    <AppShell>
+    <>
       <SystemRouteFrame route="/settings/api-keys" description={t('apiKeys.description')}>
         <div className="space-y-12 rounded-2xl border border-border/60 bg-[var(--dn-folio-paper)] p-6 sm:p-8 shadow-sm">
           {/* Header */}
@@ -1188,6 +1187,6 @@ export default function ApiKeysPage() {
           </div>
         </div>
       </SystemRouteFrame>
-    </AppShell>
+    </>
   )
 }

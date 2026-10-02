@@ -1,6 +1,5 @@
 'use client'
 
-import { AppShell } from '@/components/layout/AppShell'
 import { RecentSourceStrip } from '@/components/deeper-notebook/source-gallery/RecentSourceStrip'
 import { KnowledgeExplorer } from '@/components/vault/KnowledgeExplorer'
 import { isVisualSystemV2Enabled } from '@/lib/features'
@@ -13,7 +12,7 @@ export default function KnowledgePage() {
   const visualGalleryEnabled = isVisualSystemV2Enabled() && sourceVisualsEnabled
 
   return (
-    <AppShell>
+    <>
       <div className="min-w-0 space-y-6">
         {visualGalleryEnabled ? (
           <div
@@ -25,6 +24,6 @@ export default function KnowledgePage() {
         ) : null}
         <KnowledgeExplorer />
       </div>
-    </AppShell>
+    </>
   )
 }

@@ -79,6 +79,9 @@ describe('AppShell feature switch', () => {
 
   it('renders only the Luminous shell when the flag is on', () => {
     process.env.NEXT_PUBLIC_DN_LUMINOUS_FOLIO = '1'
+    // v0.8.130 — V2 wins when enabled (the default), so this case needs V2 off. It only
+    // passed before because the V2 shell also rendered the "Primary tools" dock.
+    process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2 = '0'
     render(<AppShell><div data-testid="luminous-page">Luminous page</div></AppShell>)
 
     expect(screen.getByRole('navigation', { name: 'Primary tools' })).toBeInTheDocument()
