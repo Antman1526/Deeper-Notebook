@@ -333,7 +333,9 @@ export default function NotebookPage() {
                 ref={studioPanelRef}
                 collapsible
                 collapsedSize={4}
-                minSize={18}
+                // v0.8.130 — 22%, not 18%: at 18% (about 180px at 1280) the evidence
+                // receipt overflowed the column and its fingerprints broke mid-value.
+                minSize={22}
                 defaultSize={24}
                 onCollapse={() => setStudio(true)}
                 onExpand={() => setStudio(false)}
@@ -367,7 +369,9 @@ export default function NotebookPage() {
                 <div className="h-full px-1.5">{chatColumn}</div>
               </ResizablePanel>
               <ResizableHandle withHandle />
-              <ResizablePanel defaultSize={30} minSize={22} className="min-w-0">
+              {/* v0.8.130 — 28%, not 22%: the shared Notes/Studio panel holds the
+                  evidence receipt, which overflowed below about 210px. */}
+              <ResizablePanel defaultSize={30} minSize={28} className="min-w-0">
                 {/* v0.8.130 — Phase 2 exit gate: real tabpanels, as on small screens. */}
                 <Tabs
                   value={sideTab}

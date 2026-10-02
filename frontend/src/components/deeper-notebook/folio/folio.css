@@ -200,6 +200,14 @@
   color: var(--foreground);
 }
 
+/* v0.8.130 — an evidence receipt in a narrow column (the notebook's Studio) keeps its
+ * frame but not a full-page inset. */
+@container (max-width: 28rem) {
+  [data-dn-folio-evidence] {
+    padding: var(--dn-space-3);
+  }
+}
+
 [data-dn-folio-margin-note] {
   border-inline-start: 2px solid var(--dn-brass);
 }
