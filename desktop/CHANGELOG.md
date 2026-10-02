@@ -207,6 +207,16 @@ Frontend UI audit (2026-09-30): the concrete defects behind the "unfinished" fee
 
 🛠 **Tests.** New `sentence-case.test.ts` fails on any Title Case en-US value outside an allowlist of proper nouns, acronyms and new-sentence starts. New `ui-audit-copy.test.ts` fails if those components carry the English again or a key goes missing; the locale parity and placeholder tests cover the translations. Unit tests read keys and the browser specs read the new English. The pre-V2 rollback baselines (16 per platform) are regenerated for the recased labels; their diffs were text only.
 
+**Phase 4b — accessibility.**
+
+♿ **A stray heading on every page.** The command palette rendered its screen-reader title ("Quick actions", "Navigation, search, ask, theme") outside its dialog, so the closed palette left a heading at the end of every page; it is inside the dialog now.
+
+♿ **Landmarks, headings and labels.** Knowledge had no main landmark (its header, mode toolbar and drawers sat outside any); the page is the main landmark and its pane workspace a named region. The notebook columns' titles are level-2 headings, so source cards (now h3, were h4) no longer skip a level, and an alert's title is no longer a fixed h5. Labelled groupings (Home's actions, the Knowledge header, source authority, note links, research drawers) carry a group role, which their labels need; a theme card's "Current" badge drops a redundant label; Knowledge's tab strip is a tablist only when it has tabs; source gallery cards are list items in a list instead of articles claiming the listitem role.
+
+♿ **Named controls.** The rail's logo is a link home, and its theme and language buttons have tooltips like the others.
+
+🛠 **The axe gate.** New `e2e/phase4-a11y.spec.ts` runs axe-core 4.10.3 (WCAG 2.1 A/AA and best practices) on 12 routes, light and dark, at 1440 and 390: no violations, and nothing undecided except a closed Radix trigger's `aria-controls`, which axe cannot resolve. The faint paper textures are switched off for the check so axe can measure contrast; where an overlay still hides the background, the test measures contrast itself. `axe-core` becomes a declared dev dependency (it was already installed through the lint plugin).
+
 ## v0.8.129 — 2026-09-12 — SurrealDB live integration suite, live service verification & test setting hardening
 
 🛠 **SurrealDB live integration test suite (132 passed).** Resolved a schema migration head stepping issue in `tests/integration/test_search_quality_benchmark.py`: migration 51 round-trip stepping now uses `runner.run_one_up()` against the migration 52 head. Full suite passed 100% against real SurrealDB 2.6.5.
