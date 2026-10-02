@@ -949,7 +949,11 @@ export function KnowledgeExplorer() {
         skipInitialMeasurement = false
         return
       }
-      const width = entries[0]?.contentRect.width
+      // v0.8.130 — the border box, which is what --knowledge-sidebar-width sets. The
+      // content box is narrower by the rail's padding, so saving it shrank an
+      // untouched rail on every observation, down to 240px.
+      const entry = entries[0]
+      const width = entry?.borderBoxSize?.[0]?.inlineSize ?? (entry?.target as HTMLElement | undefined)?.getBoundingClientRect().width
       if (width && clampWidth(width) !== navigation.sidebarWidth) {
         setNavigation({ sidebarWidth: clampWidth(width) })
       }

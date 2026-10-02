@@ -1057,12 +1057,26 @@ describe('KnowledgeExplorer durable workspace integration', () => {
       expect(observe).toHaveBeenCalled()
 
       const initialWidth = useKnowledgeWorkspaceStore.getState().navigation.sidebarWidth
-      const entry = { contentRect: { width: initialWidth - 32 } } as ResizeObserverEntry
-      act(() => resizeCallback?.([entry], {} as ResizeObserver))
-      expect(useKnowledgeWorkspaceStore.getState().navigation.sidebarWidth).toBe(initialWidth)
+      // A browser entry: the border box, and a content box 32px narrower (padding).
+      const entryFor = (borderBox: number) => ({
+        contentRect: { width: borderBox - 32 },
+        borderBoxSize: [{ inlineSize: borderBox, blockSize: 600 }],
+      }) as unknown as ResizeObserverEntry
+      const width = () => useKnowledgeWorkspaceStore.getState().navigation.sidebarWidth
 
-      act(() => resizeCallback?.([entry], {} as ResizeObserver))
-      expect(useKnowledgeWorkspaceStore.getState().navigation.sidebarWidth).toBe(initialWidth - 32)
+      // The first observation is the layout baseline.
+      act(() => resizeCallback?.([entryFor(initialWidth)], {} as ResizeObserver))
+      expect(width()).toBe(initialWidth)
+
+      // v0.8.130 — an unchanged rail is not a resize. Saving its content box shrank the
+      // rail by its padding on every observation, down to 240px, at a timing-dependent
+      // pace (the Luminous knowledge snapshot flaked on it).
+      act(() => resizeCallback?.([entryFor(initialWidth)], {} as ResizeObserver))
+      expect(width()).toBe(initialWidth)
+
+      // A genuine resize changes the border box, and is kept.
+      act(() => resizeCallback?.([entryFor(initialWidth - 32)], {} as ResizeObserver))
+      expect(width()).toBe(initialWidth - 32)
     } finally {
       if (originalResizeObserver) vi.stubGlobal('ResizeObserver', originalResizeObserver)
       else vi.unstubAllGlobals()

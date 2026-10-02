@@ -217,6 +217,8 @@ Frontend UI audit (2026-09-30): the concrete defects behind the "unfinished" fee
 
 🛠 **The axe gate.** New `e2e/phase4-a11y.spec.ts` runs axe-core 4.10.3 (WCAG 2.1 A/AA and best practices) on 12 routes, light and dark, at 1440 and 390: no violations, and nothing undecided except a closed Radix trigger's `aria-controls`, which axe cannot resolve. The faint paper textures are switched off for the check so axe can measure contrast; where an overlay still hides the background, the test measures contrast itself. `axe-core` becomes a declared dev dependency (it was already installed through the lint plugin).
 
+🐛 **Knowledge's utility rail shrank by itself.** The rail saved its measured width as if the user had resized it, but it measured the content box, which is narrower than the rail by its padding; each save triggered another measurement, so an untouched rail could shrink from 320px to 240px on load, at a timing-dependent pace. It measures the border box now. This was the Luminous knowledge snapshot's flake (it failed about one run in three on both platforms); the Linux baseline, captured mid-shrink at 240px, is regenerated.
+
 ## v0.8.129 — 2026-09-12 — SurrealDB live integration suite, live service verification & test setting hardening
 
 🛠 **SurrealDB live integration test suite (132 passed).** Resolved a schema migration head stepping issue in `tests/integration/test_search_quality_benchmark.py`: migration 51 round-trip stepping now uses `runner.run_one_up()` against the migration 52 head. Full suite passed 100% against real SurrealDB 2.6.5.
