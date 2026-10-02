@@ -1074,6 +1074,123 @@ html[data-theme^='high-contrast'] [data-dn-ruled] {
   min-block-size: 2.75rem;
 }
 
+/* v0.8.130 — checkboxes and radios keep that 44px target but draw a 16px box in its
+ * middle; filling the target, they read as large filled squares (the Checkbox
+ * component everywhere in V2, native inputs too). The control itself is transparent;
+ * negative inline margins give the box the footprint of a 16px control, so it lines
+ * up with the text around it. Focus is drawn on the box. Space a checkbox from its
+ * label with flex `gap`: the margins here replace margin-based `space-x-*` spacing. */
+[data-dn-visual-system='v2'] :is(
+  [data-slot='checkbox'],
+  [data-slot='radio-group-item'],
+  input[type='checkbox'],
+  input[type='radio']
+):not(:disabled):not([aria-disabled='true']) {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  margin-inline: calc((1rem - 2.75rem) / 2);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+[data-dn-visual-system='v2'] :is(input[type='checkbox'], input[type='radio']):not(:disabled) {
+  appearance: none;
+  margin-block: 0;
+  cursor: pointer;
+}
+
+/* Beside multi-line text (a source candidate), the box centres on the first line
+ * (20px) rather than on the 44px target: the target overhangs above and below. */
+[data-dn-visual-system='v2'] input[data-dn-checkbox-on-first-line]:not(:disabled) {
+  margin-block: -0.75rem -1rem;
+}
+
+[data-dn-visual-system='v2'] :is(
+  [data-slot='checkbox'],
+  [data-slot='radio-group-item'],
+  input[type='checkbox'],
+  input[type='radio']
+):not(:disabled):not([aria-disabled='true'])::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  box-sizing: border-box;
+  inline-size: 1rem;
+  block-size: 1rem;
+  border: 1px solid var(--input);
+  border-radius: 4px;
+  background: var(--background);
+}
+
+[data-dn-visual-system='v2'] :is([data-slot='radio-group-item'], input[type='radio']):not(:disabled)::before {
+  border-radius: 999px;
+}
+
+[data-dn-visual-system='v2'] :is(
+  [data-slot='checkbox'][data-state='checked'],
+  [data-slot='checkbox'][data-state='indeterminate'],
+  input[type='checkbox']:checked
+):not(:disabled)::before {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+[data-dn-visual-system='v2'] :is([data-slot='radio-group-item'][data-state='checked'], input[type='radio']:checked):not(:disabled)::before {
+  border-color: var(--primary);
+}
+
+/* The component's own indicator (check icon, radio dot) sits above the drawn box. */
+[data-dn-visual-system='v2'] :is([data-slot='checkbox-indicator'], [data-slot='radio-group-indicator']) {
+  position: relative;
+  z-index: 1;
+}
+
+/* Native inputs draw their own mark. */
+[data-dn-visual-system='v2'] input[type='checkbox']:checked:not(:disabled)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  inline-size: 0.3125rem;
+  block-size: 0.5625rem;
+  border: solid var(--primary-foreground);
+  border-width: 0 2px 2px 0;
+  transform: translateY(-1px) rotate(45deg);
+}
+
+[data-dn-visual-system='v2'] input[type='radio']:checked:not(:disabled)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: 999px;
+  background: var(--primary);
+}
+
+[data-dn-visual-system='v2'] :is(
+  [data-slot='checkbox'],
+  [data-slot='radio-group-item'],
+  input[type='checkbox'],
+  input[type='radio']
+):not(:disabled):focus-visible {
+  outline: none;
+}
+
+[data-dn-visual-system='v2'] :is(
+  [data-slot='checkbox'],
+  [data-slot='radio-group-item'],
+  input[type='checkbox'],
+  input[type='radio']
+):not(:disabled):focus-visible::before {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+}
+
 /* ------------------------------------------------------------------------- */
 /* v0.8.84 — shell layering repairs (owner-reported overlap, 2026-08-16).    */
 

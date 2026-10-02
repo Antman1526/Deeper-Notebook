@@ -179,7 +179,7 @@ export function RebuildEmbeddings() {
             <div className="space-y-3" role="group" aria-labelledby="include-label">
               <span id="include-label" className="text-sm font-medium leading-none">{t('advanced.rebuild.include')}</span>
               <div className="space-y-3">
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center gap-2">
                   <Checkbox
                     id="sources"
                     checked={includeSources}
@@ -189,7 +189,7 @@ export function RebuildEmbeddings() {
                     {t('navigation.sources')}
                   </Label>
                 </div>
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center gap-2">
                   <Checkbox
                     id="notes"
                     checked={includeNotes}
@@ -199,7 +199,7 @@ export function RebuildEmbeddings() {
                     {t('common.notes')}
                   </Label>
                 </div>
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center gap-2">
                   <Checkbox
                     id="insights"
                     checked={includeInsights}

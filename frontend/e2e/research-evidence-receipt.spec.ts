@@ -228,3 +228,33 @@ test('the shared Notes/Studio panel at its narrowest still fits the receipt (102
   const geometry = await receiptGeometry(page)
   expect(geometry.overflow, JSON.stringify(geometry)).toBeLessThanOrEqual(0)
 })
+
+// v0.8.130 — the candidate's checkbox was drawn as a large square: the V2 target rule
+// makes every control 44px, and the native checkbox filled it (it also stretched to
+// the label's height). It keeps the 44px target and draws a 16px box on the title line.
+test('the candidate checkbox keeps a 44px target but draws a 16px box on the title line', async ({ page }) => {
+  const { workspace } = await openGuidedResearch(page)
+  const checkbox = workspace.getByRole('checkbox', { name: /Evidence-backed research source/ })
+  await checkbox.scrollIntoViewIfNeeded()
+  const geometry = await checkbox.evaluate((input) => {
+    const box = input.getBoundingClientRect()
+    const drawn = getComputedStyle(input, '::before')
+    const titleElement = input.closest('label')!.querySelector('span.font-medium')!
+    const title = titleElement.getBoundingClientRect()
+    const lineHeight = parseFloat(getComputedStyle(titleElement).lineHeight)
+    return {
+      width: box.width, height: box.height,
+      drawn: [drawn.width, drawn.height],
+      appearance: getComputedStyle(input).appearance,
+      centreOffset: Math.abs((box.top + box.height / 2) - (title.top + lineHeight / 2)),
+    }
+  })
+  expect(Math.min(geometry.width, geometry.height), JSON.stringify(geometry)).toBeGreaterThanOrEqual(44)
+  expect(geometry.appearance, JSON.stringify(geometry)).toBe('none')
+  expect(geometry.drawn, JSON.stringify(geometry)).toEqual(['16px', '16px'])
+  expect(geometry.centreOffset, JSON.stringify(geometry)).toBeLessThanOrEqual(3)
+  // Still a working control: pending candidates start selected, and the label toggles it.
+  await expect(checkbox).toBeChecked()
+  await workspace.getByText('A deterministic source used for browser acceptance.').click()
+  await expect(checkbox).not.toBeChecked()
+})
