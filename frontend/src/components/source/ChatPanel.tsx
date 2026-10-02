@@ -610,7 +610,7 @@ export function ChatPanel({
                   aria-label={debateMode ? 'Leave Debate mode' : 'Enter Debate mode'}
                   title="Debate mode — the assistant argues the opposing case, grounded in your sources"
                   onClick={onToggleDebateMode}
-                  className="h-8 gap-1.5 rounded-full px-2.5 text-xs"
+                  className="h-8 gap-1.5 rounded-md px-2.5 text-xs"
                   data-testid="debate-mode-toggle"
                 >
                   <Swords className="h-3.5 w-3.5" aria-hidden="true" />
@@ -637,7 +637,7 @@ export function ChatPanel({
                     aria-label="Stop generating"
                     title="Stop generating"
                     onClick={onCancelStreaming}
-                    className="h-9 w-9 flex-shrink-0 rounded-full"
+                    className="h-9 w-9 flex-shrink-0 rounded-md"
                   >
                     <Square className="h-4 w-4" />
                   </Button>
@@ -648,7 +648,7 @@ export function ChatPanel({
                   size="icon"
                   aria-label={t('chat.send', { defaultValue: 'Send message' })}
                   title={t('chat.pressToSend').replace('{key}', 'Enter')}
-                  className="h-9 w-9 flex-shrink-0 rounded-full"
+                  className="h-9 w-9 flex-shrink-0 rounded-md"
                 >
                   {isStreaming ? (
                     <Loader2 className="h-4 w-4 animate-spin" />

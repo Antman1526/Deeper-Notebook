@@ -70,11 +70,13 @@
      derived from --radius 0.65rem, so buttons, inputs, selects, badges and tooltips
      were the same 8.4px. Remapping the steps moves every existing `rounded-*`
      onto the spec; pill shapes use `rounded-full`. */
-  --radius-sm: 0.5rem;   /* chips, tooltips */
-  --radius-md: 0.75rem;  /* inputs, menu items */
-  --radius-lg: 1rem;     /* menus, popovers */
-  --radius-xl: 1.5rem;   /* cards */
-  --radius-2xl: 1.75rem; /* dialogs, hero surfaces */
+  /* v0.8.130 — premium pass (user decision 2026-10-01): tighter corners. Buttons and
+     inputs 8px, cards 12px, dialogs 16px; the 24-28px card radii read soft and glossy. */
+  --radius-sm: 0.375rem; /* chips, tooltips */
+  --radius-md: 0.5rem;   /* buttons, inputs, menu items */
+  --radius-lg: 0.625rem; /* menus, popovers */
+  --radius-xl: 0.75rem;  /* cards */
+  --radius-2xl: 1rem;    /* dialogs, hero surfaces */
 
   /* v0.8.130 — standard easing for every `transition-*` utility (Tailwind's default
      was ease-in-out), and a serif family for the three stylesheets that use
@@ -298,25 +300,28 @@ html[data-theme] {
 }
 
 html[data-theme="research-core-dark"] { --dn-theme-canvas: #071B1D; --dn-theme-panel: #0B292B; --dn-theme-text: #D8FFF8; --dn-theme-primary: #2DD4BF; --dn-theme-primary-foreground: #000000; --dn-theme-accent: #38BDF8; --dn-theme-accent-foreground: #000000; --dn-theme-border: #225053; }
+/* v0.8.130 — premium pass + notebook layer (user decisions 2026-10-01): the indigo
+   pair is paper and ink. A warm paper desk, off-white pages, ink text and warm
+   hairlines replace the lavender cast; indigo is the pen. */
 html[data-theme="gemini-forward-light"] {
-  --dn-theme-canvas: #F7F7FC;
-  --dn-theme-panel: #FFFFFF;
-  --dn-theme-text: #202235;
-  --dn-theme-primary: #5367D9;
+  --dn-theme-canvas: #F5F3EE;
+  --dn-theme-panel: #FFFEFB;
+  --dn-theme-text: #1E1C19;
+  --dn-theme-primary: #3F4FC9;
   --dn-theme-primary-foreground: #FFFFFF;
   --dn-theme-accent: #7B5BD6;
   --dn-theme-accent-foreground: #FFFFFF;
-  --dn-theme-border: #D9DDF0;
+  --dn-theme-border: #E6E1D7;
 }
 html[data-theme="gemini-forward-dark"] {
-  --dn-theme-canvas: #10111F;
-  --dn-theme-panel: #191B2E;
-  --dn-theme-text: #F1F2FF;
-  --dn-theme-primary: #91A0FF;
+  --dn-theme-canvas: #12110F;
+  --dn-theme-panel: #1B1A17;
+  --dn-theme-text: #F3F1EC;
+  --dn-theme-primary: #9AA5FF;
   --dn-theme-primary-foreground: #000000;
   --dn-theme-accent: #C59BFF;
   --dn-theme-accent-foreground: #000000;
-  --dn-theme-border: #343855;
+  --dn-theme-border: #2F2D29;
 }
 html[data-theme="research-core-light"] { --dn-theme-canvas: #F5FBF9; --dn-theme-panel: #FFFFFF; --dn-theme-text: #102A2A; --dn-theme-primary: #0F766E; --dn-theme-primary-foreground: #FFFFFF; --dn-theme-accent: #0284C7; --dn-theme-accent-foreground: #000000; --dn-theme-border: #C9DED8; }
 html[data-theme="deep-ocean"] { --dn-theme-canvas: #06151F; --dn-theme-panel: #0B2432; --dn-theme-text: #D8F3F8; --dn-theme-primary: #2DD4BF; --dn-theme-primary-foreground: #000000; --dn-theme-accent: #38BDF8; --dn-theme-accent-foreground: #000000; --dn-theme-border: #21485A; }

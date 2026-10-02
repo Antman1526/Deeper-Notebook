@@ -70,7 +70,7 @@ export function InstrumentDock() {
             <Button
               type="button"
               aria-label={t('common.create')}
-              className="w-full justify-center p-0 h-10 rounded-xl group relative overflow-hidden bg-primary text-primary-foreground hover:bg-primary/95 duration-150"
+              className="w-full justify-center p-0 h-10 rounded-md group relative overflow-hidden bg-primary text-primary-foreground hover:bg-primary/95 duration-150"
             >
               <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-black/10 dark:bg-white/10 group-hover:bg-black/15 transition-colors duration-150">
                 <Plus className="h-4 w-4" aria-hidden="true" />
@@ -117,7 +117,7 @@ export function InstrumentDock() {
         <Button
           type="button"
           variant="outline"
-          className="w-full justify-start gap-3 rounded-xl hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive duration-150"
+          className="w-full justify-start gap-3 rounded-md hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive duration-150"
           onClick={logout}
           aria-label={t('common.signOut')}
         >

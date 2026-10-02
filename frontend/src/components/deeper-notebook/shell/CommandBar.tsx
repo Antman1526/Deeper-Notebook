@@ -15,9 +15,12 @@ export function CommandBar() {
   const { t } = useTranslation()
   const isMac = useIsMac()
 
-  const routeLabel = pathname && pathname !== '/'
+  const routeSegment = pathname && pathname !== '/'
     ? pathname.split('/').filter(Boolean)[0]
     : 'notebook'
+  // v0.8.130 — premium pass: sentence case ("Setup wizard"); the uppercase style
+  // that used to hide the raw path segment is gone.
+  const routeLabel = routeSegment.charAt(0).toUpperCase() + routeSegment.slice(1).replace(/-/g, ' ')
 
   return (
     <header className="dn-command-bar" aria-label="Command bar">

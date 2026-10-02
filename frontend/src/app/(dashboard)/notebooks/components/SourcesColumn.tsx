@@ -234,7 +234,7 @@ export function SourcesColumn({
             <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
               <DropdownMenuTrigger asChild>
                 {/* v0.8.130 — visible "Add" (NotebookLM's label); "Add Source" truncated in a 20% column. */}
-                <Button variant="outline" className="min-w-0 flex-1 rounded-full" aria-label={t('sources.addSource')}>
+                <Button variant="outline" className="min-w-0 flex-1 rounded-md" aria-label={t('sources.addSource')}>
                   <Plus className="h-4 w-4" />
                   <span className="truncate">{t('common.add')}</span>
                 </Button>

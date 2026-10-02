@@ -67,7 +67,7 @@ export function CaptureItemRow({ item, showVisualCover = false }: { item: Captur
   }
 
   return (
-    <article className="group relative rounded-xl border border-border/60 bg-card/70 p-3.5 transition-[background-color,border-color,box-shadow] duration-150 hover:border-primary/40 hover:bg-card/95 hover:shadow-xs">
+    <article className="group relative rounded-xl border border-border/60 bg-card/70 p-3.5 transition-[background-color,border-color,box-shadow] duration-150 hover:border-primary/40 hover:bg-card hover:shadow-xs">
       {/* v0.8.130 — named transitions, no press-scale, 12px type floor (UI audit Phase 1) */}
       {linkedSource ? (
         <div className="mb-3 max-w-xs" data-testid="capture-linked-source-cover">

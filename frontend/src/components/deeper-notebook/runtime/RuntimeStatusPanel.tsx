@@ -82,7 +82,7 @@ export function RuntimeStatusPanel({ snapshot, isLoading, onRefresh, compact = f
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--dn-brass)]">
+            <p className="text-xs font-medium text-muted-foreground">
               Runtime status
             </p>
             <h2 className="mt-1 text-base font-semibold">Checking local runtime</h2>
@@ -109,7 +109,7 @@ export function RuntimeStatusPanel({ snapshot, isLoading, onRefresh, compact = f
     >
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--dn-brass)]">
+          <p className="text-xs font-medium text-muted-foreground">
             Runtime status
           </p>
           <h2 className="mt-1 text-base font-semibold">{overallLabel}</h2>

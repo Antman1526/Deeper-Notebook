@@ -103,7 +103,7 @@ export function NotesColumn({
           <div data-dn-column-actions="" className="flex flex-none items-center gap-2 px-4 pt-3">
             <Button
               variant="outline"
-              className="min-w-0 flex-1 rounded-full"
+              className="min-w-0 flex-1 rounded-md"
               aria-label={t('common.addNote')}
               onClick={() => {
                 setEditingNote(null)
@@ -133,7 +133,8 @@ export function NotesColumn({
             )}
           </div>
 
-          <CardContent className="flex-1 overflow-y-auto min-h-0">
+          {/* v0.8.130 — notebook layer: the Notes body is ruled paper with a margin rule. */}
+          <CardContent data-dn-ruled="" className="flex-1 overflow-y-auto min-h-0">
             {isLoading ? (
               <div className="flex items-center justify-center py-8">
                 <LoadingSpinner />
@@ -150,7 +151,7 @@ export function NotesColumn({
                   // v0.8.130 — narrow transition, no press-scale (UI audit Phase 1)
                   <div
                     key={note.id}
-                    className="group relative cursor-pointer rounded-xl border border-border/50 bg-card/95 p-3.5 transition-[border-color,box-shadow] duration-200 ease-out ring-1 ring-border/30 hover:ring-primary/40 hover:border-border/80 hover:shadow-md shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)] dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.03)]"
+                    className="group relative cursor-pointer rounded-xl border bg-card p-3.5 transition-[border-color] duration-200 ease-out hover:border-foreground/25"
                     onClick={() => setEditingNote(note)}
                   >
                     <div className="flex items-start justify-between mb-2">
@@ -190,7 +191,7 @@ export function NotesColumn({
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-7 w-7 p-0 rounded-full opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-[opacity,background-color] duration-150 hover:bg-muted/80"
+                              className="h-7 w-7 p-0 rounded-md opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-[opacity,background-color] duration-150 hover:bg-muted/80"
                               onClick={(e) => e.stopPropagation()}
                             >
                               <MoreVertical className="h-4 w-4" />
@@ -226,7 +227,7 @@ export function NotesColumn({
                     )}
 
                     {note.content && (
-                      <p className="text-sm text-muted-foreground line-clamp-3 break-words leading-relaxed">
+                      <p data-dn-reading="" className="text-sm text-muted-foreground line-clamp-3 break-words leading-relaxed">
                         {note.content}
                       </p>
                     )}

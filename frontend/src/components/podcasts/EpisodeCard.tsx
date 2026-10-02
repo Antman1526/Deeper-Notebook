@@ -504,8 +504,8 @@ export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: 
   const isCompleted = episode.job_status === 'completed' && !isAwaitingReview
 
   return (
-    <div className="group relative rounded-2xl p-[1.5px] bg-gradient-to-b from-border/80 via-border/40 to-border/20 shadow-sm hover:shadow-md hover:from-border hover:via-border/60 hover:to-border/30 transition-[box-shadow,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to] duration-200">
-      <div className="rounded-[14.5px] bg-card/95 backdrop-blur-sm p-4 sm:p-5 space-y-4 border border-white/[0.04] dark:border-white/[0.02] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+    <div className="group relative rounded-xl">
+      <div className="rounded-xl bg-card p-4 sm:p-5 space-y-4 border">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
             <div className="flex flex-wrap items-center gap-2">
@@ -564,7 +564,7 @@ export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: 
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 rounded-xl px-2.5 gap-2 border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary hover:text-primary font-medium duration-150"
+                className="h-8 rounded-md px-2.5 gap-2 border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary hover:text-primary font-medium duration-150"
                 onClick={() =>
                   setPlayingEpisode({
                     id: episode.id,
@@ -582,7 +582,7 @@ export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: 
             ) : null}
             <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
               <DialogTrigger asChild>
-                <Button variant="outline" size="sm" className="h-8 rounded-xl px-2.5 duration-150">
+                <Button variant="outline" size="sm" className="h-8 rounded-md px-2.5 duration-150">
                   <InfoIcon className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" /> {t('podcasts.details')}
                 </Button>
               </DialogTrigger>

@@ -120,11 +120,12 @@ describe('accent is a neutral state layer', () => {
 // seven radii in use collapse onto five steps plus `rounded-full`.
 describe('design token scale', () => {
   it.each([
-    ['sm', '0.5rem'], // chips, tooltips: 8px
-    ['md', '0.75rem'], // inputs, menu items: 12px
-    ['lg', '1rem'], // menus, popovers: 16px
-    ['xl', '1.5rem'], // cards: 24px
-    ['2xl', '1.75rem'], // dialogs, hero surfaces: 28px
+    // v0.8.130 — premium pass (user decision 2026-10-01): tighter corners.
+    ['sm', '0.375rem'], // chips, tooltips: 6px
+    ['md', '0.5rem'], // buttons, inputs, menu items: 8px
+    ['lg', '0.625rem'], // menus, popovers: 10px
+    ['xl', '0.75rem'], // cards: 12px
+    ['2xl', '1rem'], // dialogs, hero surfaces: 16px
   ])('rounded-%s is %s', (step, value) => {
     expect(block(css, '@theme inline')).toMatch(new RegExp(`--radius-${step}:\\s*${value.replace('.', '\\.')};`))
   })
@@ -176,13 +177,18 @@ const stylesheets = (dir: string): string[] =>
   })
 
 describe('brand and heading decisions', () => {
-  it('sets no serif face on anything but the note editor writing surface', () => {
+  // v0.8.130 — notebook layer (user decision 2026-10-01): reading text (answers and
+  // note previews) is also set in the book serif; headings and UI stay sans.
+  it('sets no serif face on anything but the writing and reading surfaces', () => {
     const offenders: string[] = []
     for (const file of stylesheets(path.resolve(__dirname, '..'))) {
       const source = fs.readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
       for (const match of source.matchAll(/([^{}]+)\{[^{}]*font-family:\s*var\(--font-(?:serif|dn-editorial)\)/g)) {
         const selectors = match[1].trim()
-        if (!/\.cm-scroller/.test(selectors)) offenders.push(`${path.basename(file)}: ${selectors.replace(/\s+/g, ' ')}`)
+        const allowed = selectors.split(',').every((selector) => (
+          /\.cm-scroller/.test(selector) || /^\s*\[data-dn-message='ai'\]\s*$|^\s*\[data-dn-reading\]\s*$/.test(selector)
+        ))
+        if (!allowed) offenders.push(`${path.basename(file)}: ${selectors.replace(/\s+/g, ' ')}`)
       }
     }
     expect(offenders).toEqual([])

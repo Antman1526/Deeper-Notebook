@@ -328,7 +328,7 @@ export function CitationPill({ kind, value, messageId, onViewSource, label: labe
           aria-label={ariaLabel}
           className={[
             'inline-flex items-center gap-0.5',
-            'mx-0.5 px-1.5 py-0 rounded-full border text-xs font-semibold',
+            'mx-0.5 px-1.5 py-0 rounded-sm border text-xs font-semibold',
             'cursor-pointer transition-colors',
             'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
             // Prevent citation click from navigating or propagating to parent anchor elements

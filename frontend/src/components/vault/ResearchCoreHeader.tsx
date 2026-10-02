@@ -41,7 +41,7 @@ export function ResearchCoreHeader({
     unavailable: 'Local readiness: unavailable',
   }[readiness.state]
   return (
-    <header aria-label="Research Core workspace" className="flex flex-wrap items-center gap-x-4 gap-y-2.5 border-b border-border/70 bg-card/60 px-5 py-3.5 backdrop-blur-md transition-colors">
+    <header aria-label="Research Core workspace" className="flex flex-wrap items-center gap-x-4 gap-y-2.5 border-b border-border/70 bg-card/60 px-5 py-3.5 transition-colors">
       <div className="min-w-0">
         <h1 className="truncate text-lg font-semibold tracking-tight text-foreground">{workspaceTitle}</h1>
         <div className="research-core-authority mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground" aria-label="Source authority summary">

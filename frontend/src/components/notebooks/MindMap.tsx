@@ -434,7 +434,7 @@ function MindMapCanvas({
 
   return (
     <div ref={canvasRef} className="relative h-full w-full">
-      <div className="absolute top-3 left-4 z-10 flex flex-wrap items-center gap-1.5 rounded-lg border bg-background/90 p-1 backdrop-blur-xs shadow-xs">
+      <div className="absolute top-3 left-4 z-10 flex flex-wrap items-center gap-1.5 rounded-lg border bg-background/90 p-1 shadow-xs">
         <button
           type="button"
           onClick={() => setFilter('all')}

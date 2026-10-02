@@ -7,8 +7,9 @@ import { cn } from "@/lib/utils"
 // v0.8.130 — Token spec (UI audit 4.2): pill shape, 40px default, flat fills, and no
 // box-shadow focus ring (the global 3px :focus-visible outline is the one ring; the
 // two used to stack). Hover fills use the neutral --accent state layer.
+// v0.8.130 — premium pass: rectangular (8px), not pills.
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full text-sm font-medium transition-[color,background-color,border-color,opacity] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none aria-invalid:border-destructive",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-[color,background-color,border-color,opacity] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none aria-invalid:border-destructive",
   {
     variants: {
       variant: {

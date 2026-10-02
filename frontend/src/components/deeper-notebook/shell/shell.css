@@ -65,8 +65,6 @@
   border-right: 1px solid var(--dn-glass-border);
   background: var(--dn-glass-bg);
   padding: var(--dn-space-3);
-  -webkit-backdrop-filter: blur(var(--dn-glass-blur)) saturate(1.2);
-  backdrop-filter: blur(var(--dn-glass-blur)) saturate(1.2);
 }
 
 .dn-dock-brand,
@@ -183,8 +181,6 @@
   border-bottom: 1px solid var(--dn-glass-border);
   background: var(--dn-glass-bg);
   padding: var(--dn-space-3) var(--dn-space-6);
-  -webkit-backdrop-filter: blur(var(--dn-glass-blur)) saturate(1.2);
-  backdrop-filter: blur(var(--dn-glass-blur)) saturate(1.2);
 }
 
 .dn-command-breadcrumb {
@@ -215,15 +211,16 @@
   letter-spacing: -0.015em;
 }
 
-/* v0.8.130 — 12px type floor (was 0.65rem). */
+/* v0.8.130 — 12px type floor (was 0.65rem); premium pass: grey sentence case at
+   medium weight (was bold, tracked uppercase). */
 .dn-command-kicker,
 .dn-navigator-section-title {
   margin: 0 0 0.15rem;
   color: var(--muted-foreground);
   font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 .dn-command-trigger {
@@ -243,7 +240,7 @@
   min-width: 0;
   overflow: auto;
   border-right: 1px solid var(--dn-glass-border);
-  background: color-mix(in oklab, var(--dn-glass-bg) 92%, var(--background));
+  background: var(--background);
   padding: var(--dn-space-6) var(--dn-space-3);
 }
 
@@ -289,8 +286,10 @@
 .dn-navigator-link:hover,
 .dn-navigator-link:focus-visible,
 .dn-navigator-link.is-active {
-  border-color: var(--dn-glass-border);
-  background: var(--dn-selection);
+  /* v0.8.130 — premium pass: the neutral state layer, no outline (the indigo-tinted
+     block with a border read as a lavender button); the indicator bar marks "active". */
+  border-color: transparent;
+  background: var(--accent);
   color: var(--foreground);
 }
 

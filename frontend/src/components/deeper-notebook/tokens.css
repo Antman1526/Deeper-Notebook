@@ -17,9 +17,10 @@
   --dn-evidence-supported: var(--success);
   --dn-evidence-mixed: var(--warning);
   --dn-evidence-unsupported: var(--destructive);
-  --dn-radius-control: 0.75rem;
-  --dn-radius-card: 1rem;
-  --dn-radius-hero: 1.5rem;
+  --dn-radius-control: 0.5rem; /* v0.8.130 — premium pass: 8px controls */
+  /* v0.8.130 — premium pass: 12px cards and hero (were 16px and 24px). */
+  --dn-radius-card: 0.75rem;
+  --dn-radius-hero: 0.75rem;
   --dn-shadow-low: var(--elevation-sm);
   --dn-shadow-medium: var(--elevation-md);
   /* v0.8.130 — brand uses of the theme's second hue read --brand-accent; --accent
@@ -123,8 +124,9 @@
     0 10px 34px -8px color-mix(in oklab, var(--primary) 48%, transparent);
 
   /* Frosted-glass panel tokens. */
-  --dn-glass-bg: color-mix(in oklab, var(--card) 74%, transparent);
-  --dn-glass-border: color-mix(in oklab, var(--foreground) 12%, transparent);
+  /* v0.8.130 — premium pass: the glass tokens are solid (shell and lens surfaces). */
+  --dn-glass-bg: var(--background);
+  --dn-glass-border: var(--border);
   --dn-glass-blur: 14px;
 
   /* Motion roles: immediate/interface/narrative/ambient. */
@@ -135,19 +137,15 @@
 }
 
 .dark {
-  --dn-glass-bg: color-mix(in oklab, var(--card) 52%, transparent);
-  --dn-glass-border: color-mix(in oklab, var(--primary) 24%, var(--border));
+  --dn-glass-bg: var(--background);
+  --dn-glass-border: var(--border);
 }
 
-/* Frosted-glass surface for cards/headers that float above content. */
+/* v0.8.130 — premium pass: a solid surface with a hairline. It was frosted glass
+   (blur + saturate) with an inset white highlight. */
 .dn-glass {
-  background: var(--dn-glass-bg);
-  -webkit-backdrop-filter: blur(var(--dn-glass-blur)) saturate(1.4);
-  backdrop-filter: blur(var(--dn-glass-blur)) saturate(1.4);
-  border: 1px solid var(--dn-glass-border);
-  box-shadow:
-    var(--elevation-lg),
-    inset 0 1px 0 0 color-mix(in oklab, white 16%, transparent);
+  background: var(--card);
+  border: 1px solid var(--border);
 }
 
 /* Explicit display-preference guards keep ambient presentation outside the

@@ -56,32 +56,34 @@ _THEMES = {
     # a Gemini-Forward choice to the fallback theme on every page load, so the
     # packaged app could not show the brand at all. Values are the ones
     # frontend globals.css computes for these themes (read from the built app).
+    # v0.8.130 — paper and ink (premium pass + notebook layer, 2026-10-01); read from
+    # the built app like the values below.
     "gemini-forward-light": {
         "is_dark": False,
-        "bg": "#F7F7FC",
-        "fg": "#202235",
-        "card": "#FFFFFF",
-        "muted": "#FDFDFE",
-        "muted_fg": "#595B6C",
-        "primary": "#5367D9",
+        "bg": "#F5F3EE",
+        "fg": "#1E1C19",
+        "card": "#FFFEFB",
+        "muted": "#FCFBF8",
+        "muted_fg": "#575551",
+        "primary": "#3F4FC9",
         "primary_fg": "#FFFFFF",
         "accent": "#7B5BD6",
         "accent_fg": "#FFFFFF",
-        "border": "#D9DDF0",
+        "border": "#E6E1D7",
         "destructive": "#D00016",
     },
     "gemini-forward-dark": {
         "is_dark": True,
-        "bg": "#10111F",
-        "fg": "#F1F2FF",
-        "card": "#191B2E",
-        "muted": "#17182A",
-        "muted_fg": "#A5A6B5",
-        "primary": "#91A0FF",
+        "bg": "#12110F",
+        "fg": "#F3F1EC",
+        "card": "#1B1A17",
+        "muted": "#191815",
+        "muted_fg": "#A7A6A2",
+        "primary": "#9AA5FF",
         "primary_fg": "#000000",
         "accent": "#C59BFF",
         "accent_fg": "#000000",
-        "border": "#343855",
+        "border": "#2F2D29",
         "destructive": "#FF9492",
     },
     # --- Research Core OS palettes ---

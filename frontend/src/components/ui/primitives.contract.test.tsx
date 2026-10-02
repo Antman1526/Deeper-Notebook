@@ -52,10 +52,12 @@ describe('ui/ primitives source contract', () => {
 })
 
 describe('Button', () => {
-  it('is a 40px pill by default', () => {
+  // v0.8.130 — premium pass (user decision 2026-10-01): rectangular, not a pill.
+  it('is a 40px rectangle (8px corners) by default', () => {
     render(<Button>Save</Button>)
     const button = screen.getByRole('button', { name: 'Save' })
-    expect(button).toHaveClass('rounded-full', 'h-10')
+    expect(button).toHaveClass('rounded-md', 'h-10')
+    expect(button).not.toHaveClass('rounded-full')
   })
 
   it.each([

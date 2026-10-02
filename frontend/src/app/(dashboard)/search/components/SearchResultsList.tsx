@@ -100,7 +100,7 @@ function renderSearchResultCard(
     <Card
       key={result.id}
       data-testid={`search-result-card-${result.id}`}
-      className="group rounded-xl border border-border/60 bg-card/95 p-1 transition-[border-color,box-shadow] duration-200 hover:border-primary/40 hover:shadow-md ring-1 ring-border/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)] dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.03)]"
+      className="group rounded-xl border border-border/60 bg-card p-1 transition-[border-color,box-shadow] duration-200 hover:border-primary/40 hover:shadow-md"
     >
       <CardContent className="pt-3 pb-3 px-3.5">
         <div className={sourceResult ? 'grid min-w-0 gap-4 sm:grid-cols-[10rem_minmax(0,1fr)]' : ''}>

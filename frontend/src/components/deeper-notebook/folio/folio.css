@@ -38,13 +38,14 @@
   min-inline-size: 0;
 }
 
+/* v0.8.130 — premium pass: quiet grey sentence case (was brass, tracked uppercase). */
 [data-dn-folio-page-eyebrow] {
   margin-block: 0 var(--dn-space-2);
-  color: var(--dn-brass);
+  color: var(--muted-foreground);
   font-size: var(--dn-text-xs);
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 /* v0.8.130 — sans display step (32/40); 44px was sized for the serif. */
@@ -245,11 +246,11 @@
 
 [data-dn-folio-state-kind-label] {
   margin: 0;
-  color: var(--dn-brass);
+  color: var(--muted-foreground);
   font-size: var(--dn-text-xs);
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 [data-dn-folio-state-title],

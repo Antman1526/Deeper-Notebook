@@ -441,7 +441,7 @@ export function SourceCard({
                   variant="ghost"
                   size="sm"
                   aria-label="Source actions"
-                  className="h-8 w-8 rounded-full bg-card p-0 shadow-xs"
+                  className="h-8 w-8 rounded-md bg-card p-0 shadow-xs"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <MoreVertical className="h-4 w-4" />

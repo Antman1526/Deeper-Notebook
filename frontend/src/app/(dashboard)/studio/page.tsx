@@ -370,8 +370,10 @@ export default function StudioPage() {
         </>} sourceDesk={<>
 
       {/* v0.8.130 — no glow, no press/hover scale, narrow transitions (UI audit Phase 1) */}
-      <div className="mb-6 group relative rounded-2xl p-[1.5px] bg-gradient-to-b from-border/80 via-border/40 to-border/20 shadow-sm hover:shadow-md transition-shadow duration-200">
-        <div className="rounded-[14.5px] bg-card/95 backdrop-blur-sm p-6 space-y-6 border border-white/[0.04] dark:border-white/[0.02] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+      {/* v0.8.130 — premium pass: one flat card (was a gradient bezel around a blurred
+          card with an inset highlight). */}
+      <div className="mb-6">
+        <div className="rounded-xl border bg-card p-6 space-y-6">
           <div>
             <h2 className="text-lg font-semibold text-foreground">{t('studio.step1Title')}</h2>
             <p className="text-sm text-muted-foreground mt-1">
@@ -460,8 +462,10 @@ export default function StudioPage() {
       </div>
       </>} editorialBrief={<>
 
-      <div className="mb-6 group relative rounded-2xl p-[1.5px] bg-gradient-to-b from-border/80 via-border/40 to-border/20 shadow-sm hover:shadow-md transition-shadow duration-200">
-        <div className="rounded-[14.5px] bg-card/95 backdrop-blur-sm p-6 space-y-6 border border-white/[0.04] dark:border-white/[0.02] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+      {/* v0.8.130 — premium pass: one flat card (was a gradient bezel around a blurred
+          card with an inset highlight). */}
+      <div className="mb-6">
+        <div className="rounded-xl border bg-card p-6 space-y-6">
           <div>
             <h2 className="text-lg font-semibold text-foreground">{t('studio.step2Title')}</h2>
           </div>
@@ -474,9 +478,9 @@ export default function StudioPage() {
               type="button"
               onClick={() => setMode('notebook')}
               className={cn(
-                "group relative rounded-2xl p-5 text-left transition-[border-color,background-color,box-shadow] duration-200",
+                "group relative rounded-xl p-5 text-left transition-[border-color,background-color,box-shadow] duration-200",
                 mode === 'notebook'
-                  ? "border-2 border-primary bg-primary/[0.06] shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] ring-1 ring-primary/30"
+                  ? "border-2 border-primary bg-primary/[0.06]"
                   : "border border-border/70 bg-card/60 hover:border-primary/40 hover:bg-card/90"
               )}
             >
@@ -493,9 +497,9 @@ export default function StudioPage() {
               type="button"
               onClick={() => setMode('podcast')}
               className={cn(
-                "group relative rounded-2xl p-5 text-left transition-[border-color,background-color,box-shadow] duration-200",
+                "group relative rounded-xl p-5 text-left transition-[border-color,background-color,box-shadow] duration-200",
                 mode === 'podcast'
-                  ? "border-2 border-primary bg-primary/[0.06] shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] ring-1 ring-primary/30"
+                  ? "border-2 border-primary bg-primary/[0.06]"
                   : "border border-border/70 bg-card/60 hover:border-primary/40 hover:bg-card/90"
               )}
             >
@@ -512,9 +516,9 @@ export default function StudioPage() {
               type="button"
               onClick={() => setMode('both')}
               className={cn(
-                "group relative rounded-2xl p-5 text-left transition-[border-color,background-color,box-shadow] duration-200",
+                "group relative rounded-xl p-5 text-left transition-[border-color,background-color,box-shadow] duration-200",
                 mode === 'both'
-                  ? "border-2 border-primary bg-primary/[0.06] shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] ring-1 ring-primary/30"
+                  ? "border-2 border-primary bg-primary/[0.06]"
                   : "border border-border/70 bg-card/60 hover:border-primary/40 hover:bg-card/90"
               )}
             >
@@ -531,9 +535,9 @@ export default function StudioPage() {
               type="button"
               onClick={() => setMode('course_pack')}
               className={cn(
-                "group relative rounded-2xl p-5 text-left transition-[border-color,background-color,box-shadow] duration-200",
+                "group relative rounded-xl p-5 text-left transition-[border-color,background-color,box-shadow] duration-200",
                 mode === 'course_pack'
-                  ? "border-2 border-primary bg-primary/[0.06] shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] ring-1 ring-primary/30"
+                  ? "border-2 border-primary bg-primary/[0.06]"
                   : "border border-border/70 bg-card/60 hover:border-primary/40 hover:bg-card/90"
               )}
             >
@@ -616,7 +620,7 @@ export default function StudioPage() {
               onClick={onGenerate}
               disabled={!canSubmit}
               size="lg"
-              className="h-11 px-7 rounded-full font-medium bg-primary text-primary-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] hover:bg-primary/95 duration-150"
+              className="h-11 px-7 rounded-md font-medium bg-primary text-primary-foreground hover:bg-primary/95 duration-150"
             >
               {isPending ? (
                 <>

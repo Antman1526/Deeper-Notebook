@@ -48,17 +48,18 @@ export function NotebookCard({ notebook }: NotebookCardProps) {
           must stay independently clickable sit above it with `relative z-10`. */}
       <div
         data-dn-notebook-card=""
-        className="group relative rounded-2xl p-1 bg-gradient-to-b from-border/40 via-border/10 to-transparent ring-1 ring-border/30 transition-shadow duration-300 hover:ring-primary/40 hover:shadow-md"
+        // v0.8.130 — premium pass: no gradient bezel; the card's own hairline darkens on hover.
+        className="group relative rounded-xl"
       >
         <Link
           href={`/notebooks/${encodeURIComponent(notebook.id)}`}
           aria-label={notebook.name}
-          className="absolute inset-0 z-[1] rounded-2xl"
+          className="absolute inset-0 z-[1] rounded-xl"
         />
         <Card 
           // v0.8.130 — Phase 3a: gap-1.5 (the default 24px gap plus the header's 44px action
           // row left a ~58px blank band between the title and the description).
-          className="gap-1.5 border-0 rounded-[calc(1rem-2px)] bg-card/95 py-3 transition-colors group-hover:bg-card shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)]"
+          className="gap-1.5 rounded-xl border bg-card py-3 transition-colors group-hover:border-foreground/25"
         >
           <CardHeader className="pb-0">
             <div className="flex min-w-0 items-start justify-between">
@@ -80,7 +81,7 @@ export function NotebookCard({ notebook }: NotebookCardProps) {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="relative z-10 h-8 w-8 p-0 rounded-full opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-[opacity,background-color] duration-200 hover:bg-muted/80"
+                      className="relative z-10 h-8 w-8 p-0 rounded-md opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-[opacity,background-color] duration-200 hover:bg-muted/80"
                       aria-label={`Actions for ${notebook.name}`}
                     >
                       <MoreHorizontal className="h-4 w-4" />

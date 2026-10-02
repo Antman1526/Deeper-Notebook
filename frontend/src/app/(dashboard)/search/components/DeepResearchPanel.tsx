@@ -28,7 +28,7 @@ interface DeepResearchPanelProps {
 
 export function DeepResearchPanel({ result, openModal, copiedBrief, onCopyBrief, onSaveNote }: DeepResearchPanelProps) {
   return (
-    <Card className="border-primary/40 bg-gradient-to-b from-primary/[0.04] to-transparent shadow-sm">
+    <Card className="border-primary/40 shadow-sm">
       <CardHeader className="pb-3 border-b">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">

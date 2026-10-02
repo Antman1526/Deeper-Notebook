@@ -55,7 +55,7 @@ function AlertDialogContent({
         data-slot="alert-dialog-content"
         // v0.8.130 — solid surface and a lighter scrim instead of frosted glass (UI audit 5).
         className={cn(
-          "bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-2xl border border-border/80 p-6 shadow-[0_24px_64px_-16px_rgba(0,0,0,0.35),inset_0_1px_0_rgba(255,255,255,0.08)] ring-1 ring-white/10 dark:ring-white/[0.04] duration-200 sm:max-w-lg overflow-hidden",
+          "bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-2xl border border-border/80 p-6 shadow-[0_24px_64px_-16px_rgba(0,0,0,0.35)] duration-200 sm:max-w-lg overflow-hidden",
           className
         )}
         {...props}

@@ -364,7 +364,7 @@ function CredentialItem({
   return (
     <>
       {/* v0.8.130 — status colours from theme tokens, narrow transitions, 12px type floor (UI audit Phase 1) */}
-      <div className="rounded-xl border border-border/70 bg-card/40 p-3.5 space-y-2.5 shadow-sm transition-colors hover:border-border/90 hover:bg-card/70">
+      <div className="rounded-xl border border-border/70 bg-card/40 p-3.5 space-y-2.5 shadow-sm transition-colors hover:border-border/90 hover:bg-card">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 min-w-0">
             <span className="font-medium truncate">{credential.name}</span>
@@ -577,7 +577,7 @@ function ProviderSection({
   const activeTypes = new Set(providerModels.map(m => m.type))
 
   return (
-    <Card className={`rounded-2xl border border-border/70 bg-card/70 shadow-sm backdrop-blur-sm transition-[border-color,box-shadow] duration-200 hover:border-primary/30 hover:shadow-md ${!hasCredentials ? 'opacity-85' : ''}`}>
+    <Card className={`rounded-2xl border border-border/70 bg-card shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-primary/30 hover:shadow-md ${!hasCredentials ? 'opacity-85' : ''}`}>
       <CardHeader className="pb-3 border-b border-border/30 bg-muted/20 rounded-t-2xl px-5 pt-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 flex-wrap">
@@ -1035,7 +1035,7 @@ export default function ApiKeysPage() {
   return (
     <AppShell>
       <SystemRouteFrame route="/settings/api-keys" description={t('apiKeys.description')}>
-        <div className="space-y-12 rounded-2xl border border-border/60 bg-[var(--dn-folio-paper)] p-6 sm:p-8 shadow-sm backdrop-blur-sm">
+        <div className="space-y-12 rounded-2xl border border-border/60 bg-[var(--dn-folio-paper)] p-6 sm:p-8 shadow-sm">
           {/* Header */}
           <header className="space-y-2">
             <h2 className="flex items-center gap-3 text-2xl font-semibold">

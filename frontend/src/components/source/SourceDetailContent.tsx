@@ -759,7 +759,7 @@ export function SourceDetailContent({
       {/* Tabs Content */}
       <div className="flex-1 overflow-y-auto px-2">
         <Tabs defaultValue="content" className="w-full">
-          <TabsList className="grid w-full grid-cols-3 sticky top-0 z-10 rounded-xl bg-muted/60 p-1 backdrop-blur-md border border-border/40 shadow-xs">
+          <TabsList className="grid w-full grid-cols-3 sticky top-0 z-10 rounded-xl bg-muted/60 p-1 border border-border/40 shadow-xs">
             <TabsTrigger value="content" className="rounded-lg">{t('sources.content')}</TabsTrigger>
             <TabsTrigger value="insights" className="rounded-lg">
               {t('common.insights')} {insights.length > 0 && `(${insights.length})`}
@@ -835,7 +835,7 @@ export function SourceDetailContent({
                 {citedPassage && (
                   <div
                     ref={citedPassageRef}
-                    className="mb-5 relative overflow-hidden rounded-2xl border border-primary/30 bg-gradient-to-r from-primary/15 via-primary/5 to-transparent p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]"
+                    className="mb-5 relative overflow-hidden rounded-2xl border border-primary/30 bg-primary/5 p-4"
                   >
                     <div className="absolute top-0 left-0 bottom-0 w-1.5 bg-primary" />
                     <div className="flex items-center justify-between gap-2 mb-2 pl-2">
