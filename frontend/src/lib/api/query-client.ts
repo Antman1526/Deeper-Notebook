@@ -1,26 +1,67 @@
-import { QueryClient } from '@tanstack/react-query'
+import { MutationCache, QueryClient } from '@tanstack/react-query'
 
+import { markErrorReported } from './client'
+
+const SAFE_TO_REPEAT = new Set(['get', 'head', 'options', 'put', 'delete'])
+
+/**
+ * v0.8.130 — retry a mutation only when no response arrived (the request may
+ * never have reached the API) and its method is safe to repeat. Once the server
+ * has answered, 5xx included, a retry would repeat a write it may already have
+ * applied (a POST could create twice) and delay the caller's error report.
+ */
 export function shouldRetryMutation(failureCount: number, error: unknown): boolean {
-  const status = (error as { response?: { status?: number } })?.response?.status
-  if (typeof status === 'number' && status >= 400 && status < 500) {
-    return false
-  }
+  const { response, config } = (error ?? {}) as { response?: unknown; config?: { method?: string } }
+  if (response) return false
+  const method = config?.method?.toLowerCase()
+  if (!method || !SAFE_TO_REPEAT.has(method)) return false
   return failureCount < 1
 }
 
-export const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 5 * 60 * 1000, // 5 minutes
-      gcTime: 10 * 60 * 1000, // 10 minutes
-      retry: 2,
-      refetchOnWindowFocus: false,
+/**
+ * For mutations that send an idempotency key (a stable request id reused across
+ * attempts): the server deduplicates, so a lost request may be repeated once
+ * whatever its method. Once the server has answered, it is not retried.
+ */
+export function shouldRetryIdempotentMutation(failureCount: number, error: unknown): boolean {
+  if ((error as { response?: unknown } | null)?.response) return false
+  return failureCount < 1
+}
+
+declare module '@tanstack/react-query' {
+  interface Register {
+    mutationMeta: {
+      /** The mutation's callers report its errors (a per-call onError or a catch). */
+      reportsErrors?: boolean
+    }
+  }
+}
+
+export function createQueryClient(): QueryClient {
+  return new QueryClient({
+    // v0.8.130 — a mutation with its own onError (or meta.reportsErrors) reports
+    // its failures, so the API client's generic 5xx toast stands down. This runs
+    // before the mutation's onError, inside the task the interceptor waits out.
+    mutationCache: new MutationCache({
+      onError: (error, _variables, _context, mutation) => {
+        if (mutation.options.onError || mutation.meta?.reportsErrors) markErrorReported(error)
+      },
+    }),
+    defaultOptions: {
+      queries: {
+        staleTime: 5 * 60 * 1000, // 5 minutes
+        gcTime: 10 * 60 * 1000, // 10 minutes
+        retry: 2,
+        refetchOnWindowFocus: false,
+      },
+      mutations: {
+        retry: shouldRetryMutation,
+      },
     },
-    mutations: {
-      retry: shouldRetryMutation,
-    },
-  },
-})
+  })
+}
+
+export const queryClient = createQueryClient()
 
 export const QUERY_KEYS = {
   notebooks: ['notebooks'] as const,

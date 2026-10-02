@@ -1,5 +1,7 @@
 'use client'
 
+import { getApiErrorMessage } from '@/lib/utils/error-handler'
+import { markErrorReported } from '@/lib/api/client'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -152,8 +154,10 @@ export default function SearchPage() {
       setDeepResearchResult(data)
       toast.success('Deep Research brief ready')
     } catch (err: unknown) {
+      markErrorReported(err) // v0.8.130 — this caller reports the failure itself
       console.error('Deep research error:', err)
-      toast.error(err instanceof Error ? err.message : 'Deep Research failed')
+      // v0.8.130 — a readable message, not axios's "Request failed with status code 500".
+      toast.error('Deep Research failed', { description: getApiErrorMessage(err, t) })
     } finally {
       setIsDeepResearching(false)
     }

@@ -6,7 +6,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query'
 
-import { QUERY_KEYS } from '@/lib/api/query-client'
+import { QUERY_KEYS, shouldRetryIdempotentMutation } from '@/lib/api/query-client'
 import {
   AddStudyPlanSourceInput,
   ApproveStudySyllabusInput,
@@ -64,6 +64,9 @@ export function useDecideStudyProgress() {
   return useMutation({
     mutationFn: ({ planId, input }: { planId: string; input: StudyProgressDecisionInput }) =>
       studyPlansApi.decideProgress(planId, input),
+    // v0.8.130 — input.request_id is an idempotency key carried in the variables (the same on
+    // every attempt), so a lost request may be repeated; the default never repeats a POST.
+    retry: shouldRetryIdempotentMutation,
     onSuccess: async (result, { planId }) => {
       queryClient.setQueryData(QUERY_KEYS.studyPlanProgress(planId), result.projection)
       await Promise.all([

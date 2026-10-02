@@ -1,5 +1,6 @@
 'use client'
 
+import { markErrorReported } from '@/lib/api/client'
 import { useConfirm } from '@/components/common/use-confirm'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
@@ -403,6 +404,7 @@ export function SourceDetailContent({
         }, 5000)
       }
     } catch (err) {
+      markErrorReported(err) // v0.8.130 — this caller reports the failure itself
       console.error('Failed to create insight:', err)
       toast.error(t('common.error'))
     } finally {
@@ -421,6 +423,7 @@ export function SourceDetailContent({
       setInsightToDelete(null)
       await fetchInsights()
     } catch (err) {
+      markErrorReported(err) // v0.8.130 — this caller reports the failure itself
       console.error('Failed to delete insight:', err)
       toast.error(t('common.error'))
     } finally {
@@ -436,6 +439,7 @@ export function SourceDetailContent({
       toast.success(t('common.success'))
       setSource({ ...source, title })
     } catch (err) {
+      markErrorReported(err) // v0.8.130 — this caller reports the failure itself
       console.error('Failed to update source title:', err)
       toast.error(t('common.error'))
       await fetchSource()
@@ -451,6 +455,7 @@ export function SourceDetailContent({
       toast.success(response.message || t('common.success'))
       await fetchSource()
     } catch (err) {
+      markErrorReported(err) // v0.8.130 — this caller reports the failure itself
       console.error('Failed to embed content:', err)
       toast.error(t('common.error'))
     } finally {
@@ -472,6 +477,7 @@ export function SourceDetailContent({
       queryClient.invalidateQueries({ queryKey: ['sources'] })
       await fetchSource()
     } catch (err) {
+      markErrorReported(err) // v0.8.130 — this caller reports the failure itself
       console.error('Failed to retry source processing:', err)
       toast.error(t('common.error'))
     } finally {
@@ -527,6 +533,7 @@ export function SourceDetailContent({
       setFileAvailable(true)
       toast.success(t('common.success'))
     } catch (err) {
+      markErrorReported(err) // v0.8.130 — this caller reports the failure itself
       console.error('Failed to download file:', err)
       if (isAxiosError(err) && err.response?.status === 404) {
         setFileAvailable(false)
@@ -610,6 +617,7 @@ export function SourceDetailContent({
         toast.success(t('common.success'))
         onClose?.()
       } catch (error) {
+        markErrorReported(error) // v0.8.130 — this caller reports the failure itself
         console.error('Failed to delete source:', error)
         toast.error(t('common.error'))
       }
@@ -1229,6 +1237,7 @@ export function SourceDetailContent({
             setSelectedInsight(null)
             await fetchInsights()
           } catch (err) {
+            markErrorReported(err) // v0.8.130 — this caller reports the failure itself
             console.error('Failed to delete insight:', err)
             toast.error(t('common.error'))
           }

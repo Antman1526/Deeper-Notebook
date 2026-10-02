@@ -99,7 +99,7 @@ vi.mock('@/lib/hooks/use-local-models', () => ({
   useModelRoutePlan: () => testState.routePlans.shift() ?? ({ data: undefined, isError: false, isLoading: false }),
 }))
 
-vi.mock('@/lib/api/client', () => ({ default: testState.api }))
+vi.mock('@/lib/api/client', () => ({ default: testState.api, markErrorReported: () => undefined }))
 
 vi.mock('@tanstack/react-query', () => ({
   // React may render the workspace more than once in development; retain the

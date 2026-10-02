@@ -1,5 +1,6 @@
 'use client'
 
+import { markErrorReported } from '@/lib/api/client'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
@@ -57,7 +58,10 @@ export function QuickPodcastDialog() {
     setError(null)
     void podcastsApi.getPodcastReadiness(selections).then(
       (result) => current && setReadiness(result),
-      () => current && setError('Podcast readiness is unavailable. No production was started.'),
+      (error) => {
+        markErrorReported(error) // v0.8.130 — this caller reports the failure itself
+        if (current) setError('Podcast readiness is unavailable. No production was started.')
+      },
     )
     return () => { current = false }
   }, [open, selections])
@@ -104,7 +108,8 @@ export function QuickPodcastDialog() {
         notebookId: notebookId ?? undefined,
       })
       dismiss()
-    } catch {
+    } catch (error) {
+      markErrorReported(error) // v0.8.130 — this caller reports the failure itself
       setSubmitError('Production could not be submitted. Review your readiness and try again.')
     } finally {
       setSubmitting(false)

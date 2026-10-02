@@ -15,7 +15,7 @@ import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { toast } from 'sonner'
-import apiClient from '@/lib/api/client'
+import apiClient, { markErrorReported } from '@/lib/api/client'
 
 interface GitCommitItem {
   hash: string
@@ -74,6 +74,7 @@ export function VaultGitHistoryDialog({
       const res = await apiClient.get<GitCommitItem[]>(`/vaults/${vaultId}/git/history`)
       setHistory(res.data || [])
     } catch (err: unknown) {
+      markErrorReported(err) // v0.8.130 — this caller reports the failure itself
       console.error('Failed to load vault git history:', err)
       toast.error('Failed to load version history')
     } finally {
@@ -116,6 +117,7 @@ export function VaultGitHistoryDialog({
         toast.info(res.data.message || 'No changes to snapshot')
       }
     } catch (err: unknown) {
+      markErrorReported(err) // v0.8.130 — this caller reports the failure itself
       console.error('Failed to take snapshot:', err)
       toast.error('Failed to record snapshot')
     } finally {
@@ -137,7 +139,8 @@ export function VaultGitHistoryDialog({
       } else {
         toast.error(res.data.error || 'Failed to set remote')
       }
-    } catch {
+    } catch (error) {
+      markErrorReported(error) // v0.8.130 — this caller reports the failure itself
       toast.error('Failed to set remote repository')
     }
   }
@@ -154,7 +157,8 @@ export function VaultGitHistoryDialog({
       } else {
         toast.error(res.data.error || 'Push failed')
       }
-    } catch {
+    } catch (error) {
+      markErrorReported(error) // v0.8.130 — this caller reports the failure itself
       toast.error('Failed to push to remote repository')
     } finally {
       setIsPushing(false)
@@ -174,7 +178,8 @@ export function VaultGitHistoryDialog({
       } else {
         toast.error(res.data.error || 'Pull failed')
       }
-    } catch {
+    } catch (error) {
+      markErrorReported(error) // v0.8.130 — this caller reports the failure itself
       toast.error('Failed to pull from remote repository')
     } finally {
       setIsPulling(false)

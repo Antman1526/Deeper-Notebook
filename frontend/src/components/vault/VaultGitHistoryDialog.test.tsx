@@ -5,6 +5,7 @@ import { VaultGitHistoryDialog } from './VaultGitHistoryDialog'
 import apiClient from '@/lib/api/client'
 
 vi.mock('@/lib/api/client', () => ({
+  markErrorReported: () => undefined,
   default: {
     get: vi.fn(),
     post: vi.fn(),

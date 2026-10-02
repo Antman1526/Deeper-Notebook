@@ -9,6 +9,7 @@
 // only when the operator restored key-only gating
 // (DEEPER_NOTEBOOK_WEB_SEARCH_KEYLESS=0) with no key set. Search is
 // server-side via POST /notebooks/{id}/discover-sources.
+import { markErrorReported } from '@/lib/api/client'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { Compass, Loader2, Search } from 'lucide-react'
@@ -78,7 +79,8 @@ export function DiscoverSourcesDialog({
       setEnabled(data.enabled)
       setProvider(data.provider)
       setResults(data.results)
-    } catch {
+    } catch (error) {
+      markErrorReported(error) // v0.8.130 — this caller reports the failure itself
       setResults([])
       toast.error(t('sources.discoverError', { defaultValue: 'Search failed. Please try again.' }))
     } finally {

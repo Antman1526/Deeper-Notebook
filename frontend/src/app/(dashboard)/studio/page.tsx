@@ -42,7 +42,7 @@ import {
 import { useToast } from '@/lib/hooks/use-toast'
 import { useStudioCoursePack, useStudioGenerate } from '@/lib/hooks/use-studio'
 import { StudioMode } from '@/lib/api/studio'
-import apiClient from '@/lib/api/client'
+import apiClient, { isErrorReported } from '@/lib/api/client'
 // v0.7.1 — use existing QUERY_KEYS so Studio's profile fetches share
 // cache with use-podcasts.ts (and pick up invalidations from profile
 // mutations). Previously this file declared its own raw keys, causing
@@ -320,6 +320,8 @@ export default function StudioPage() {
       }
       router.push(`/notebooks/${encodeURIComponent(result.notebook_id)}`)
     } catch (e) {
+      // v0.8.130 — the mutation's own onError already told the user; don't toast twice.
+      if (isErrorReported(e)) return
       // v0.7.196 — was ad-hoc unwrap of axios `response.data.detail`
       // and bare `(e as Error).message` fallback — both could surface
       // raw stack-trace text. Route through getApiErrorMessage so

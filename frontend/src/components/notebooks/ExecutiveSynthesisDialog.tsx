@@ -1,5 +1,6 @@
 'use client'
 
+import { markErrorReported } from '@/lib/api/client'
 import { useState, useEffect, useCallback } from 'react'
 import {
   Dialog,
@@ -50,6 +51,7 @@ export function ExecutiveSynthesisDialog({
       const res = await notebooksApi.getExecutiveSynthesis(notebookId)
       setData(res)
     } catch (err: unknown) {
+      markErrorReported(err) // v0.8.130 — this caller reports the failure itself
       const msg =
         (err as { response?: { data?: { detail?: string } } })?.response?.data
           ?.detail || 'Failed to generate executive cross-source synthesis.'

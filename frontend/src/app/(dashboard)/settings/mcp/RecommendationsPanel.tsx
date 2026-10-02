@@ -37,7 +37,7 @@ import {
 } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import apiClient from '@/lib/api/client'
+import apiClient, { isErrorReported } from '@/lib/api/client'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useCreateMCPServer, useMCPServers } from '@/lib/hooks/use-mcp-servers'
 import { toast } from 'sonner'
@@ -116,6 +116,8 @@ export function RecommendationsPanel() {
       // defensive.)
       queryClient.invalidateQueries({ queryKey: ['mcp', 'servers'] })
     } catch (err: unknown) {
+      // v0.8.130 — the mutation's own onError already told the user; don't toast twice.
+      if (isErrorReported(err)) return
       const msg = err instanceof Error ? err.message : 'Unknown error'
       toast.error(
         t('mcp.recommendations.connectError', {

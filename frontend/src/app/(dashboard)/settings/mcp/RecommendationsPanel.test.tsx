@@ -25,6 +25,8 @@ vi.mock('@/lib/hooks/use-translation', () => ({
 const apiGet = vi.fn()
 vi.mock('@/lib/api/client', () => ({
   default: { get: (...args: unknown[]) => apiGet(...args) },
+  // The mocked create hook reports nothing, so the panel's own toast must show.
+  isErrorReported: () => false,
 }))
 
 // Mock the MCP hooks — the panel uses useMCPServers + useCreateMCPServer.

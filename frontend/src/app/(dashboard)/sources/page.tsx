@@ -1,5 +1,6 @@
 'use client'
 
+import { markErrorReported } from '@/lib/api/client'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { sourcesApi } from '@/lib/api/sources'
@@ -85,6 +86,7 @@ export default function SourcesPage() {
       hasMoreRef.current = hasMoreData
       offsetRef.current += data.length
     } catch (err) {
+      markErrorReported(err) // v0.8.130 — this caller reports the failure itself
       console.error('Failed to fetch sources:', err)
       setError(failedToLoadMessage)
       toast.error(failedToLoadMessage)
@@ -333,6 +335,7 @@ export default function SourcesPage() {
       setSources(prev => prev.filter(s => s.id !== deleteDialog.source?.id))
       setDeleteDialog({ open: false, source: null })
     } catch (err: unknown) {
+      markErrorReported(err) // v0.8.130 — this caller reports the failure itself
       const error = err as { response?: { data?: { detail?: string } }, message?: string };
       console.error('Failed to delete source:', error)
       toast.error(t(getApiErrorKey(error.response?.data?.detail || error.message)))

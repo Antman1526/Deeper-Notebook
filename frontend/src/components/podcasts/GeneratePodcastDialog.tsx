@@ -1,5 +1,6 @@
 'use client'
 
+import { markErrorReported, isErrorReported } from '@/lib/api/client'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, Sparkles } from 'lucide-react'
 import { useQueries, useQueryClient } from '@tanstack/react-query'
@@ -717,6 +718,7 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
         description: suggestion.reasoning,
       })
     } catch (err) {
+      markErrorReported(err) // v0.8.130 — this caller reports the failure itself
       const msg =
         (err as { response?: { data?: { detail?: string } }; message?: string })
           ?.response?.data?.detail ||
@@ -944,6 +946,8 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
       }, 500)
     } catch (error) {
       console.error('Failed to generate podcast', error)
+      // v0.8.130 — the mutation's own onError already told the user; don't toast twice.
+      if (isErrorReported(error)) return
       // v0.7.196 — was `error.message` raw, leaked axios + FastAPI
       // stack-text. Route through ERROR_MAP first, fall back to
       // `common.refreshPage` for unknown errors. Same sibling-pattern

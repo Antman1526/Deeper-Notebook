@@ -9,6 +9,7 @@
 // caller chooses what to do with it.
 'use client'
 
+import { markErrorReported } from '@/lib/api/client'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Dialog,
@@ -126,6 +127,7 @@ export function DirectoryPicker({
       setNewFolderName('')
       navigate(result.path)
     } catch (error: unknown) {
+      markErrorReported(error) // v0.8.130 — this caller reports the failure itself
       toast({
         title: t('filesystem.cannotCreateFolder'),
         description: t(getApiErrorKey(error, t('common.error'))),

@@ -1,5 +1,6 @@
 'use client'
 
+import { markErrorReported } from '@/lib/api/client'
 import { useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -204,7 +205,8 @@ export function PodcastStudio({ seedDocumentIds, selections, notebookId, heading
       }))
       setStudioState(nextReadiness.ready ? 'briefing_ready' : 'preview_ready')
       setProductionPhase('review')
-    } catch {
+    } catch (error) {
+      markErrorReported(error) // v0.8.130 — this caller reports the failure itself
       if (isCurrentRequest()) setProductionError('Podcast readiness is unavailable. No production was started.')
     } finally {
       if (isCurrentRequest()) setIsPreparing(false)
@@ -252,7 +254,8 @@ export function PodcastStudio({ seedDocumentIds, selections, notebookId, heading
       setStudioState('submitted')
       setStudioState('awaiting_outline')
       setSubmittedMessage(`Production submitted: ${submitted.episodeName}. Outline review is next.`)
-    } catch {
+    } catch (error) {
+      markErrorReported(error) // v0.8.130 — this caller reports the failure itself
       setProductionError('Production could not be submitted. Review readiness and try again.')
       setStudioState('briefing_ready')
     } finally {

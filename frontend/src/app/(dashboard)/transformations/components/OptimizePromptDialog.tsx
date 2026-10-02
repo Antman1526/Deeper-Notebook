@@ -10,6 +10,8 @@
  * prompt the user reviews and applies. Nothing is applied automatically.
  */
 
+import { getApiErrorMessage } from '@/lib/utils/error-handler'
+import { markErrorReported } from '@/lib/api/client'
 import { useEffect, useRef, useState } from 'react'
 import { Loader2, Sparkles } from 'lucide-react'
 
@@ -134,9 +136,10 @@ export function OptimizePromptDialog({
         }
       }, 5000)
     } catch (e: unknown) {
+      markErrorReported(e) // v0.8.130 — this caller reports the failure itself
       const detail =
         (e as { response?: { data?: { detail?: string } } })?.response?.data
-          ?.detail ?? String(e)
+          ?.detail ?? getApiErrorMessage(e, t)
       setError(detail)
     }
   }

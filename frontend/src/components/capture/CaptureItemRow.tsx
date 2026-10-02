@@ -1,3 +1,4 @@
+import { markErrorReported } from '@/lib/api/client'
 import { useState } from 'react'
 import { AudioLines, Sparkles } from 'lucide-react'
 
@@ -57,7 +58,8 @@ export function CaptureItemRow({ item, showVisualCover = false }: { item: Captur
     setError(null)
     try {
       setPreview(await captureApi.route(`${item.root_path}/${item.relative_path}`))
-    } catch {
+    } catch (error) {
+      markErrorReported(error) // v0.8.130 — this caller reports the failure itself
       setError(
         'This local file could not be prepared for review. It was not imported or moved.'
       )

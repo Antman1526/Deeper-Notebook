@@ -1,5 +1,7 @@
 'use client'
 
+import { useTranslation } from '@/lib/hooks/use-translation'
+import { getApiErrorMessage } from '@/lib/utils/error-handler'
 import React from 'react'
 import { AlertCircle, Cpu, Loader2 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -32,7 +34,7 @@ import {
   getRouteReceipts,
   updateLocalModelSettings,
 } from '@/lib/api/local-models'
-import apiClient from '@/lib/api/client'
+import apiClient, { markErrorReported } from '@/lib/api/client'
 import { useLocalModelsHealth, useModelRoutePlan } from '@/lib/hooks/use-local-models'
 import { SystemRouteFrame } from '@/components/deeper-notebook/route-frames/SystemRouteFrames'
 
@@ -62,6 +64,7 @@ function ConnectionChecks() {
 
 function LocalModelsWorkspace() {
   const queryClient = useQueryClient()
+  const { t } = useTranslation()
   const inventory = useQuery<InventoryResponse>({
     queryKey: ['local-models', 'inventory'],
     queryFn: getLocalModelInventory,
@@ -106,14 +109,23 @@ function LocalModelsWorkspace() {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['local-models', 'benchmarks'] }),
   })
   const cancel = useMutation({
+    // v0.8.130 — reported here, not per call: a per-call onError is skipped if the page
+    // has unmounted by the time the request fails, and the error would go unreported.
+    onError: () => toast.error('This desktop runtime cannot cancel the running benchmark.'),
     mutationFn: async (jobId: string) => (await apiClient.post<BenchmarkJob>(`/local-models/benchmarks/${jobId}/cancel`)).data,
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['local-models', 'benchmarks'] }),
   })
   const reset = useMutation({
+    // v0.8.130 — reported here, not per call: a per-call onError is skipped if the page
+    // has unmounted by the time the request fails, and the error would go unreported.
+    onError: () => toast.error('This desktop runtime cannot reset benchmark history.'),
     mutationFn: async () => apiClient.delete('/local-models/benchmarks'),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['local-models', 'benchmarks'] }),
   })
   const saveSettings = useMutation({
+    // v0.8.130 — reported here, not per call: a per-call onError is skipped if the page
+    // has unmounted by the time the request fails, and the error would go unreported.
+    onError: () => toast.error('Could not save local execution settings.'),
     mutationFn: updateLocalModelSettings,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['local-models', 'settings'] })
@@ -134,7 +146,8 @@ function LocalModelsWorkspace() {
         await inventory.refetch()
       } else toast.error(`Could not switch chat model: ${response.data.detail}`)
     } catch (error) {
-      toast.error(`Could not switch chat model: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      markErrorReported(error) // v0.8.130 — this caller reports the failure itself
+      toast.error('Could not switch chat model', { description: getApiErrorMessage(error, t) })
     } finally {
       setActivatingPath(null)
     }
@@ -150,7 +163,8 @@ function LocalModelsWorkspace() {
         await inventory.refetch()
       } else toast.error(response.data.detail)
     } catch (error) {
-      toast.error(`Could not set launch default: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      markErrorReported(error) // v0.8.130 — this caller reports the failure itself
+      toast.error('Could not set launch default', { description: getApiErrorMessage(error, t) })
     } finally {
       setLaunchDefaultRef(null)
     }
@@ -171,7 +185,7 @@ function LocalModelsWorkspace() {
       settings={settings.data}
       settingsError={settings.isError}
       onRescan={() => { void inventory.refetch(); void readiness.refetch() }}
-      onSave={next => settings.data && saveSettings.mutate({ ...settings.data, ...next }, { onError: () => toast.error('Could not save local execution settings.') })}
+      onSave={next => settings.data && saveSettings.mutate({ ...settings.data, ...next })}
       isSaving={saveSettings.isPending}
       researchPlan={researchChatPlan.data}
       embeddingPlan={embeddingPlan.data}
@@ -187,8 +201,8 @@ function LocalModelsWorkspace() {
       isStarting={benchmark.isPending}
       onBenchmarkAll={() => benchmark.mutate(BENCHMARK_ROLES)}
       onBenchmarkRole={role => benchmark.mutate([role])}
-      onCancel={() => currentBenchmark && cancel.mutate(currentBenchmark.job_id, { onError: () => toast.error('This desktop runtime cannot cancel the running benchmark.') })}
-      onReset={() => reset.mutate(undefined, { onError: () => toast.error('This desktop runtime cannot reset benchmark history.') })}
+      onCancel={() => currentBenchmark && cancel.mutate(currentBenchmark.job_id)}
+      onReset={() => reset.mutate(undefined)}
       routes={[]}
     />
     <RouteReceiptPanel isError={receipts.isError} isLoading={receipts.isLoading} receipts={receipts.data?.receipts ?? []} />

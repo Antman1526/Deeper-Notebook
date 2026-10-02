@@ -39,7 +39,8 @@ describe('confirmations', () => {
       return /window\.confirm\(/.test(source) || (!declaresConfirm && /(^|[^\w.])confirm\(/m.test(source))
     })
     expect(offenders.map((file) => file.replace(SRC, ''))).toEqual([])
-  })
+    // A synchronous read of every source file: well over 5s while the full suite runs.
+  }, 30_000)
 
   it('Import notebook uses an icon, not an emoji', () => {
     const source = readFileSync(join(SRC, 'app/(dashboard)/notebooks/components/ImportNotebookDialog.tsx'), 'utf8')
@@ -75,11 +76,13 @@ describe('toasts', () => {
 
 vi.mock('next/navigation', () => ({ usePathname: vi.fn(() => '/notebooks/notebook:1') }))
 
+// Imported up front: loading the command bar's module tree inside the test body took
+// over the 5s test timeout on a busy machine.
+import { usePathname } from 'next/navigation'
+import { CommandBar } from '@/components/deeper-notebook/shell/CommandBar'
+
 describe('command bar route label', () => {
   it('names the route the way the rail does, translated', async () => {
-    const { usePathname } = await import('next/navigation')
-    const { CommandBar } = await import('@/components/deeper-notebook/shell/CommandBar')
-
     const label = (pathname: string) => {
       vi.mocked(usePathname).mockReturnValue(pathname)
       const { container, unmount } = render(<CommandBar showBrand={false} />)
