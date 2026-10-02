@@ -1017,7 +1017,7 @@ html[data-theme^='high-contrast'] [data-dn-ruled] {
 
 /* V2 presentation raises reachable controls without changing legacy or disabled behavior. */
 /* v0.8.130 — Phase 3b: rail links fill their row like navigator links did. */
-[data-dn-visual-system='v2'] a[href]:not([aria-disabled='true']):not(.dn-navigator-link):not(.dn-rail-link):not(.dn-rail-brand) {
+[data-dn-visual-system='v2'] a[href]:not([aria-disabled='true']):not(.dn-navigator-link):not(.dn-rail-link):not(.dn-rail-brand):not(.dn-command-health) {
   display: inline-flex;
   max-inline-size: 100%;
   align-items: center;
@@ -1500,8 +1500,34 @@ html[data-theme^='high-contrast'] [data-dn-ruled] {
 
 .dn-command-menu,
 .dn-rail-scrim,
-.dn-command-bar .dn-command-title--compact {
+.dn-command-bar .dn-command-title--compact,
+.dn-command-health {
   display: none;
+}
+
+/* v0.8.130 — model health in the bar while the rail is a sheet (it lists health). */
+.dn-command-health {
+  position: relative;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--dn-radius-control);
+  color: var(--muted-foreground);
+}
+
+.dn-command-health:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.dn-command-health-dot {
+  position: absolute;
+  inset-block-start: 0.6875rem;
+  inset-inline-end: 0.6875rem;
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px var(--background);
 }
 
 /* Below 1024px the rail is a sheet behind the command bar's Menu button. */
@@ -1536,7 +1562,8 @@ html[data-theme^='high-contrast'] [data-dn-ruled] {
     background: color-mix(in oklab, var(--foreground) 32%, transparent);
   }
 
-  .dn-command-menu {
+  .dn-command-menu,
+  .dn-command-health {
     display: inline-flex;
   }
 
@@ -1549,6 +1576,11 @@ html[data-theme^='high-contrast'] [data-dn-ruled] {
 @media (max-width: 767px) {
   .dn-command-bar .dn-command-title--compact + .dn-command-kicker {
     display: none;
+  }
+
+  /* v0.8.130 — 16px, so the whole name fits beside a model-health link. */
+  .dn-command-bar .dn-command-title--compact {
+    font-size: 1rem;
   }
 }
 

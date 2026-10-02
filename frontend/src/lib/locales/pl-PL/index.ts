@@ -226,6 +226,8 @@ export const plPL = {
     connectErrorHint: "Nie można połączyć się z serwerem. Sprawdź, czy API jest uruchomione.",
   },
   navigation: {
+    modelHealthDegraded: "Niektóre modele lokalne wymagają uwagi",
+    modelHealthDown: "Modele lokalne są niedostępne",
     home: "Strona główna",
     primary: "Główna",
     destinations: "Sekcje",

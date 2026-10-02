@@ -20,6 +20,8 @@ vi.mock('@/components/guided-tips', () => ({ GuidedTipsProvider: () => <div data
 vi.mock('@/components/podcasts/GlobalAudioPlayer', () => ({ GlobalAudioPlayer: () => <div data-testid="legacy-audio" /> }))
 vi.mock('@/components/deeper-notebook/shell/shell.css', () => ({}))
 vi.mock('@/components/chat/LocalModelHealthBadges', () => ({ LocalModelHealthBadges: () => null }))
+// The phone-bar model-health link reads the same health query; stubbed like the rail's badges.
+vi.mock('@/components/deeper-notebook/shell/ModelHealthIndicator', () => ({ ModelHealthIndicator: () => null }))
 vi.mock('@/components/deeper-notebook/ThemeSwitcher', () => ({ ThemeSwitcher: () => <button type="button">Theme</button> }))
 vi.mock('@/components/deeper-notebook/GmailSidebarButton', () => ({ GmailSidebarButton: () => <button type="button">Gmail</button> }))
 vi.mock('@/components/common/LanguageToggle', () => ({ LanguageToggle: () => <button type="button">Language</button> }))

@@ -223,6 +223,8 @@ export const bnIN = {
     connectErrorHint: "সার্ভারে সংযোগ করতে অক্ষম। API চালু আছে কিনা চেক করুন।",
   },
   navigation: {
+    modelHealthDegraded: "কিছু লোকাল মডেলে মনোযোগ দরকার",
+    modelHealthDown: "লোকাল মডেল উপলব্ধ নেই",
     home: "হোম",
     primary: "প্রধান নেভিগেশন",
     destinations: "বিভাগ",

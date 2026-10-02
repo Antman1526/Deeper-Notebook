@@ -226,6 +226,8 @@ export const trTR = {
     connectErrorHint: "Sunucuya bağlanılamıyor. API'nin çalışıp çalışmadığını kontrol edin.",
   },
   navigation: {
+    modelHealthDegraded: "Bazı yerel modeller ilgi bekliyor",
+    modelHealthDown: "Yerel modeller kullanılamıyor",
     home: "Ana sayfa",
     primary: "Ana gezinme",
     destinations: "Bölümler",

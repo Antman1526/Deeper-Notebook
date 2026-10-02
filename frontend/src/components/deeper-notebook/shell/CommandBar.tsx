@@ -1,5 +1,6 @@
 'use client'
 
+import { ModelHealthIndicator } from '@/components/deeper-notebook/shell/ModelHealthIndicator'
 import { getNavigation } from '@/components/layout/AppSidebar'
 import { Menu, Search } from 'lucide-react'
 import { usePathname } from 'next/navigation'
@@ -19,9 +20,11 @@ interface CommandBarProps {
   menuOpen?: boolean
   /** v0.8.130 — Phase 3b: V2 shows one keyboard hint, on Quick actions. */
   focusShortcut?: boolean
+  /** v0.8.130 — model health while the rail is a sheet (below 1024px). */
+  modelHealth?: boolean
 }
 
-export function CommandBar({ showBrand = true, onMenu, menuOpen = false, focusShortcut = true }: CommandBarProps = {}) {
+export function CommandBar({ showBrand = true, onMenu, menuOpen = false, focusShortcut = true, modelHealth = false }: CommandBarProps = {}) {
   const pathname = usePathname()
   const { t } = useTranslation()
   const isMac = useIsMac()
@@ -88,6 +91,7 @@ export function CommandBar({ showBrand = true, onMenu, menuOpen = false, focusSh
           sync, nothing to drift when a shell's DOM changes. The legacy shell has
           no command bar and still renders it as a floated sibling. */}
       <div className="dn-command-actions">
+        {modelHealth ? <ModelHealthIndicator /> : null}
         <Button
           type="button"
           variant="outline"

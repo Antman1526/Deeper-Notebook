@@ -223,6 +223,8 @@ export const jaJP = {
     connectErrorHint: "サーバーに接続できません。APIが起動しているか確認してください。",
   },
   navigation: {
+    modelHealthDegraded: "一部のローカルモデルに対応が必要です",
+    modelHealthDown: "ローカルモデルを利用できません",
     home: "ホーム",
     primary: "メインナビゲーション",
     destinations: "セクション",

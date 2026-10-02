@@ -223,6 +223,8 @@ export const zhCN = {
     connectErrorHint: "无法连接到服务器。请检查 API 是否正在运行。",
   },
   navigation: {
+    modelHealthDegraded: "部分本地模型需要处理",
+    modelHealthDown: "本地模型不可用",
     home: "首页",
     primary: "主导航",
     destinations: "栏目",

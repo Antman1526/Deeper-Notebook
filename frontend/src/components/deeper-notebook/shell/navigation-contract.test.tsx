@@ -17,6 +17,8 @@ vi.mock('@/lib/hooks/use-create-dialogs', () => ({
 vi.mock('@/components/chat/LocalModelHealthBadges', () => ({
   LocalModelHealthBadges: () => <div data-testid="local-model-health" />,
 }))
+// The phone-bar model-health link reads the same health query; stubbed like the rail's badges.
+vi.mock('@/components/deeper-notebook/shell/ModelHealthIndicator', () => ({ ModelHealthIndicator: () => null }))
 vi.mock('@/components/deeper-notebook/ThemeSwitcher', () => ({
   ThemeSwitcher: () => <button type="button">Theme</button>,
 }))

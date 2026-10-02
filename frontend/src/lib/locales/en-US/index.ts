@@ -227,6 +227,8 @@ export const enUS = {
     connectErrorHint: "Unable to connect to server. Please check if the API is running.",
   },
   navigation: {
+    modelHealthDegraded: "Some local models need attention",
+    modelHealthDown: "Local models are unavailable",
     home: "Home",
     primary: "Primary",
     destinations: "Destinations",

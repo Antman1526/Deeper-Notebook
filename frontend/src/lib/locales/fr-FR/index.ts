@@ -223,6 +223,8 @@ export const frFR = {
     connectErrorHint: "Impossible de se connecter au serveur. Veuillez vérifier si l'API est lancée.",
   },
   navigation: {
+    modelHealthDegraded: "Certains modèles locaux demandent votre attention",
+    modelHealthDown: "Les modèles locaux sont indisponibles",
     home: "Accueil",
     primary: "Principale",
     destinations: "Sections",

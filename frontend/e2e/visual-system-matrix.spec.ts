@@ -94,7 +94,9 @@ test.describe('visual system matrix contract', () => {
     })
     // Navigation mounts the dashboard hook once; this test then probes the
     // same handler directly, so the fixture must record both exact calls.
-    expect(fixture.ledger.seen['GET /api/features']).toBe(2)
+    // v0.8.130 — polled: the page's own request can land just after the probe's
+    // (it failed once under load with 1 of the 2 exact calls recorded).
+    await expect.poll(() => fixture.ledger.seen['GET /api/features']).toBe(2)
     expect(fixture.ledger.unexpected).toEqual([])
   })
 

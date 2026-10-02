@@ -223,6 +223,8 @@ export const esES = {
     connectErrorHint: "No se puede conectar al servidor. Por favor, verifica si la API está funcionando.",
   },
   navigation: {
+    modelHealthDegraded: "Algunos modelos locales requieren atención",
+    modelHealthDown: "Los modelos locales no están disponibles",
     home: "Inicio",
     primary: "Principal",
     destinations: "Secciones",

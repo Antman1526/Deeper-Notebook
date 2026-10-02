@@ -223,6 +223,8 @@ export const itIT = {
     connectErrorHint: "Impossibile connettersi al server. Verifica che l'API sia in esecuzione.",
   },
   navigation: {
+    modelHealthDegraded: "Alcuni modelli locali richiedono attenzione",
+    modelHealthDown: "I modelli locali non sono disponibili",
     home: "Home",
     primary: "Principale",
     destinations: "Sezioni",

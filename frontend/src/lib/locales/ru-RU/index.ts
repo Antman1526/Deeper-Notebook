@@ -223,6 +223,8 @@ export const ruRU = {
     connectErrorHint: "Не удаётся подключиться к серверу. Проверьте, запущен ли API.",
   },
   navigation: {
+    modelHealthDegraded: "Некоторые локальные модели требуют внимания",
+    modelHealthDown: "Локальные модели недоступны",
     home: "Главная",
     primary: "Основная навигация",
     destinations: "Разделы",

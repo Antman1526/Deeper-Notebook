@@ -27,6 +27,7 @@ export function WorkspaceAppShell({ children }: { children: ReactNode }) {
         <CommandBar
           showBrand={false}
           focusShortcut={false}
+          modelHealth
           onMenu={() => setRailOpen((open) => !open)}
           menuOpen={railOpen}
         />

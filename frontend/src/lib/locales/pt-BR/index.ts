@@ -223,6 +223,8 @@ export const ptBR = {
     connectErrorHint: "Não foi possível conectar ao servidor. Verifique se a API está rodando.",
   },
   navigation: {
+    modelHealthDegraded: "Alguns modelos locais precisam de atenção",
+    modelHealthDown: "Os modelos locais estão indisponíveis",
     home: "Início",
     primary: "Principal",
     destinations: "Seções",

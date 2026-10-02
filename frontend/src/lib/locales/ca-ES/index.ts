@@ -226,6 +226,8 @@ export const caES = {
     connectErrorHint: "No es pot connectar al servidor. Comprova si l'API s'està executant.",
   },
   navigation: {
+    modelHealthDegraded: "Alguns models locals requereixen atenció",
+    modelHealthDown: "Els models locals no estan disponibles",
     home: "Inici",
     primary: "Principal",
     destinations: "Seccions",

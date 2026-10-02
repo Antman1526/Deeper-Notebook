@@ -243,14 +243,12 @@ for (const state of STUDY_STATES) {
         await expect(page.locator('main').getByText(state, { exact: true }).first()).toBeVisible()
       }
       if (state === 'degraded-model') {
-        // v0.8.130 — Phase 3b: model health sits in the rail footer; below 1024px the
-        // rail is a sheet behind the Menu button.
-        const sheet = viewport.width < 1024
-        if (sheet) await page.getByRole('button', { name: 'Menu' }).click()
-        await expect(page.getByRole('navigation', { name: 'Primary' }).getByText(/degraded/i).first()).toBeVisible()
-        if (sheet) {
-          await page.keyboard.press('Escape')
-          await expect(page.getByRole('button', { name: 'Menu' })).toHaveAttribute('aria-expanded', 'false')
+        // v0.8.130 — model health sits in the rail footer; below 1024px, where the rail is
+        // a sheet, the command bar shows it instead (no menu to open).
+        if (viewport.width < 1024) {
+          await expect(page.getByRole('banner', { name: 'Command bar' }).getByRole('link', { name: 'Some local models need attention' })).toBeVisible()
+        } else {
+          await expect(page.getByRole('navigation', { name: 'Primary' }).getByText(/degraded/i).first()).toBeVisible()
         }
       }
       if (state === 'offline') await expect(page.getByTestId('network-status-badge').getByText(/offline/i)).toBeVisible()

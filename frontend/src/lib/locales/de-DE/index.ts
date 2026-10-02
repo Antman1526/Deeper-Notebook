@@ -226,6 +226,8 @@ export const deDE = {
     connectErrorHint: "Keine Verbindung zum Server möglich. Bitte prüfe, ob die API läuft.",
   },
   navigation: {
+    modelHealthDegraded: "Einige lokale Modelle brauchen Aufmerksamkeit",
+    modelHealthDown: "Lokale Modelle sind nicht verfügbar",
     home: "Startseite",
     primary: "Hauptnavigation",
     destinations: "Bereiche",
