@@ -10,7 +10,7 @@
 
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -20,6 +20,8 @@ import {
   RefreshCw,
   ArrowRight,
   Loader2,
+  ChevronRight,
+  Clock,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -34,10 +36,11 @@ import {
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useDeepHealth } from '@/lib/hooks/use-deep-health'
 import { useNotebooks } from '@/lib/hooks/use-notebooks'
-import type { SubsystemKey, SubsystemCheck } from '@/lib/api/health'
+import type { DeepHealthResponse, SubsystemKey, SubsystemCheck } from '@/lib/api/health'
 import { SystemRouteFrame } from '@/components/deeper-notebook/route-frames/SystemRouteFrames'
 import { WorkspacePage } from '@/components/deeper-notebook/workspace/WorkspacePage'
 import { isVisualSystemV2Enabled } from '@/lib/features'
+import { cn } from '@/lib/utils'
 
 const SUBSYSTEM_ORDER: SubsystemKey[] = [
   'database',
@@ -175,6 +178,170 @@ function SubsystemRow({
   )
 }
 
+// v0.8.130 — Phase 3c: the V2 first run. A new user used to land on a developer health
+// table (red "offline / error / missing" pills, "Command registry", a raw shell
+// command). Now the screen says what is happening in plain words; the per-check
+// diagnostics are one click away, behind "Show details". The legacy route keeps the
+// table. New copy is English until the Phase 4 i18n pass.
+const FIRST_RUN_COPY = {
+  loading: { title: 'Checking your setup', body: 'This takes a few seconds.' },
+  healthy: { title: 'Everything is ready', body: 'Opening your notebooks.' },
+  degraded: {
+    title: 'Almost ready',
+    body: "You can start now. Some features won't work until the checks below are set up.",
+  },
+  not_ready: {
+    title: 'Waiting for the database',
+    body: 'Your notebooks open once the database is running. Check again in a moment.',
+  },
+} as const
+
+function FirstRunCheck({
+  name,
+  check,
+  label,
+  fixPath,
+  fixLabel,
+  fixHint,
+}: {
+  name: SubsystemKey
+  check?: SubsystemCheck
+  label: string
+  fixPath?: string
+  fixLabel: string
+  fixHint?: string
+}) {
+  const isOk = Boolean(check?.ok)
+  return (
+    <li className="dn-first-run-check">
+      {isOk ? (
+        <CheckCircle2 className="h-4 w-4 shrink-0 text-success" aria-hidden />
+      ) : (
+        <AlertTriangle className="h-4 w-4 shrink-0 text-warning" aria-hidden />
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="flex flex-wrap items-baseline gap-x-2">
+          <span className="font-medium">{label}</span>
+          <span className="text-sm text-muted-foreground">{isOk ? 'Ready' : 'Needs attention'}</span>
+        </p>
+        {check?.error ? (
+          <p className="mt-1 break-words text-sm text-muted-foreground" data-testid={`subsystem-error-${name}`}>
+            {check.error}
+          </p>
+        ) : null}
+        {!isOk && fixHint ? (
+          <code className="dn-first-run-hint break-words" data-testid={`subsystem-hint-${name}`}>
+            {fixHint}
+          </code>
+        ) : null}
+      </div>
+      {!isOk && fixPath ? (
+        <Button variant="outline" size="sm" asChild className="shrink-0">
+          <Link href={fixPath}>
+            {fixLabel}
+            <ArrowRight className="ml-2 h-4 w-4" aria-hidden />
+          </Link>
+        </Button>
+      ) : null}
+    </li>
+  )
+}
+
+function FirstRun({
+  data,
+  isFetching,
+  onRecheck,
+  onContinue,
+  canContinue,
+}: {
+  data?: DeepHealthResponse
+  isFetching: boolean
+  onRecheck: () => void
+  onContinue: () => void
+  canContinue: boolean
+}) {
+  const { t } = useTranslation()
+  const [showDetails, setShowDetails] = useState(false)
+  const detailsId = useId()
+
+  const copy = data ? FIRST_RUN_COPY[data.status] : FIRST_RUN_COPY.loading
+  const failing = data ? SUBSYSTEM_ORDER.filter((name) => !data.checks[name]?.ok).length : 0
+  const attention =
+    failing === 0
+      ? null
+      : `${failing} of ${SUBSYSTEM_ORDER.length} checks ${failing === 1 ? 'needs' : 'need'} attention`
+
+  return (
+    <div className="dn-first-run">
+      <Card>
+        <CardContent className="dn-workspace-setup-card-content dn-first-run-summary">
+          <span className="dn-first-run-icon" aria-hidden>
+            {!data ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : data.status === 'healthy' ? (
+              <CheckCircle2 className="h-5 w-5 text-success" />
+            ) : data.status === 'degraded' ? (
+              <AlertTriangle className="h-5 w-5 text-warning" />
+            ) : (
+              <Clock className="h-5 w-5" />
+            )}
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="dn-first-run-title">{copy.title}</h2>
+            <p className="dn-first-run-body">{copy.body}</p>
+            {/* The line is always laid out, so the card does not grow when the check returns. */}
+            <p className="dn-first-run-attention">{attention ?? ' '}</p>
+            <div className="dn-first-run-actions">
+              <Button onClick={onContinue} disabled={!canContinue} data-testid="continue-button">
+                {t('setupWizard.continueButton')}
+                <ArrowRight className="ml-2 h-4 w-4" aria-hidden />
+              </Button>
+              <Button variant="outline" onClick={onRecheck} disabled={isFetching}>
+                {isFetching ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                ) : (
+                  <RefreshCw className="h-4 w-4" aria-hidden />
+                )}
+                <span className="ml-2">{t('setupWizard.recheckButton')}</span>
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="dn-first-run-disclosure"
+          aria-expanded={showDetails}
+          aria-controls={detailsId}
+          disabled={!data}
+          onClick={() => setShowDetails((open) => !open)}
+        >
+          <ChevronRight className={cn('h-4 w-4 transition-transform', showDetails && 'rotate-90')} aria-hidden />
+          {showDetails ? 'Hide details' : 'Show details'}
+        </Button>
+        {showDetails && data ? (
+          <ul id={detailsId} data-testid="subsystem-list" className="dn-first-run-checks">
+            {SUBSYSTEM_ORDER.map((name) => (
+              <FirstRunCheck
+                key={name}
+                name={name}
+                check={data.checks[name]}
+                label={t(SUBSYSTEM_LABEL_KEYS[name])}
+                fixPath={FIX_PATHS[name]}
+                fixHint={FIX_HINT_KEYS[name] ? t(FIX_HINT_KEYS[name]) : undefined}
+                fixLabel={t('setupWizard.fixButton')}
+              />
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 export default function SetupWizardPage() {
   const { t } = useTranslation()
   const router = useRouter()
@@ -263,13 +430,7 @@ export default function SetupWizardPage() {
                 <span className="ml-2">{t('setupWizard.recheckButton')}</span>
               </Button>
             </CardHeader>
-            <CardContent
-              className={
-                isVisualSystemV2Enabled()
-                  ? 'dn-workspace-setup-card-content'
-                  : undefined
-              }
-            >
+            <CardContent>
               {isLoading || !data ? (
                 <div className="py-6 min-h-[22rem] flex items-center justify-center text-center text-muted-foreground">
                   {t('common.loading')}
@@ -319,13 +480,18 @@ export default function SetupWizardPage() {
     <>
       {isVisualSystemV2Enabled() ? (
         <WorkspacePage
-          title={t('setupWizard.title')}
-          eyebrow="Setup"
-          description={t('setupWizard.subtitle')}
+          title="Getting ready"
+          description="Deeper Notebook checks your local setup before you open your first notebook."
           data-testid="visual-system-v2-setup"
           data-dn-visual-system="v2"
         >
-          {wizardContent}
+          <FirstRun
+            data={isLoading ? undefined : data}
+            isFetching={isFetching}
+            onRecheck={() => refetch()}
+            onContinue={handleContinue}
+            canContinue={canContinue}
+          />
         </WorkspacePage>
       ) : (
         <SystemRouteFrame

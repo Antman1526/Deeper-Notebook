@@ -82,7 +82,7 @@ for (const route of ROUTES) {
         const out: string[] = []
         const selectors = [
           '.dn-workspace-page-eyebrow', '.dn-workspace-hero-eyebrow', '.dn-state-panel-kind',
-          '.dn-navigator-section-title', '.dn-command-kicker', '.dn-workspace-auth-eyebrow',
+          '.dn-navigator-section-title', '.dn-command-kicker',
           '[data-dn-folio-page-eyebrow]', '[data-dn-folio-state-kind-label]',
           '[data-dn-runtime-status] header p:first-child',
         ]

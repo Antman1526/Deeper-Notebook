@@ -646,7 +646,8 @@ test('first-launch setup retains a named main landmark and page heading at every
   for (const viewport of canonicalViewports) {
     await page.setViewportSize(viewport)
     await page.goto('/setup-wizard')
-    await expect(page.getByRole('heading', { name: 'Setup Wizard', exact: true })).toBeVisible()
+    // v0.8.130 — Phase 3c: the V2 first run is titled "Getting ready".
+    await expect(page.getByRole('heading', { name: 'Getting ready', exact: true })).toBeVisible()
     await expect(page.locator('main')).toHaveCount(1)
     await expect(page.locator('h1')).toHaveCount(1)
     await expect(page.locator('h1').first()).toBeVisible()

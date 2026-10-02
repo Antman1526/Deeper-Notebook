@@ -13,12 +13,16 @@ export function WorkspaceAuthFrame({ children }: { children: ReactNode }) {
       className="dn-workspace-auth-frame"
     >
       <section className="dn-workspace-auth-panel">
-        <p className="dn-workspace-auth-eyebrow">Deeper Notebook</p>
+        {/* v0.8.130 — Phase 3c: the one place the login names the product. */}
+        <p className="dn-workspace-auth-brand">
+          <span className="dn-rail-brand-mark" aria-hidden="true">DN</span>
+          Deeper Notebook
+        </p>
         <h1 id="workspace-auth-title" className="dn-workspace-auth-title">
           Welcome back
         </h1>
         <p className="dn-workspace-auth-description">
-          Continue working with your local sources, notebooks, and grounded questions.
+          Enter your password to open your notebooks.
         </p>
         <div className="dn-workspace-auth-content">{children}</div>
       </section>

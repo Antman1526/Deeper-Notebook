@@ -61,9 +61,9 @@ describe('shared workspace primitives', () => {
           <body>
             <main class="dn-workspace-auth-frame" data-dn-visual-system="v2">
               <section class="dn-workspace-auth-panel">
-                <p class="dn-workspace-auth-eyebrow">Deeper Notebook</p>
+                <p class="dn-workspace-auth-brand"><span class="dn-rail-brand-mark">DN</span>Deeper Notebook</p>
                 <h1 class="dn-workspace-auth-title">Welcome back</h1>
-                <p class="dn-workspace-auth-description">Continue working with your local sources, notebooks, and grounded questions.</p>
+                <p class="dn-workspace-auth-description">Enter your password to open your notebooks.</p>
                 <div class="dn-workspace-auth-content" data-testid="auth-content"></div>
               </section>
             </main>
@@ -74,7 +74,8 @@ describe('shared workspace primitives', () => {
       const before = await page.locator('.dn-workspace-auth-panel').boundingBox()
       await page.locator('[data-testid="auth-content"]').evaluate((element) => {
         const form = document.createElement('form')
-        form.style.blockSize = '255px'
+        // v0.8.130 — Phase 3c: the embedded LoginForm measures 190px (it was a 255px card).
+        form.style.blockSize = '190px'
         element.appendChild(form)
       })
       const after = await page.locator('.dn-workspace-auth-panel').boundingBox()
@@ -82,7 +83,7 @@ describe('shared workspace primitives', () => {
         (element) => getComputedStyle(element).minBlockSize,
       )
 
-      expect(minBlockSize).toBe('256px')
+      expect(minBlockSize).toBe('192px')
       expect(before).not.toBeNull()
       expect(after).not.toBeNull()
       expect(after!.height).toBeCloseTo(before!.height, 0)
@@ -92,13 +93,15 @@ describe('shared workspace primitives', () => {
     }
   })
 
-  it('reserves setup health geometry in short desktop windows without affecting roomy desktops', async () => {
+  // v0.8.130 — Phase 3c: the six-row health table moved behind "Show details", so the
+  // 55rem reservation for it is gone; e2e/phase3-firstrun.spec.ts measures that the
+  // summary card keeps its height when the check returns.
+  it('no longer reserves the old health-table height on the setup summary', async () => {
     const browser = await chromium.launch({ headless: true })
 
     try {
       const shortPage = await browser.newPage({ viewport: { width: 1020, height: 631 } })
-      const roomyPage = await browser.newPage({ viewport: { width: 1020, height: 900 } })
-      const markup = `
+      await shortPage.setContent(`
         <!doctype html>
         <html>
           <head><style>${workspaceStyles}</style></head>
@@ -106,15 +109,9 @@ describe('shared workspace primitives', () => {
             <div class="dn-workspace-setup-card-content">Setup health</div>
           </body>
         </html>
-      `
-
-      await shortPage.setContent(markup)
-      await roomyPage.setContent(markup)
+      `)
 
       await expect(shortPage.locator('.dn-workspace-setup-card-content').evaluate(
-        (element) => getComputedStyle(element).minBlockSize,
-      )).resolves.toBe('880px')
-      await expect(roomyPage.locator('.dn-workspace-setup-card-content').evaluate(
         (element) => getComputedStyle(element).minBlockSize,
       )).resolves.toBe('0px')
     } finally {

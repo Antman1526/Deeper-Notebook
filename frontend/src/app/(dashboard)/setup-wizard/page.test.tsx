@@ -263,6 +263,38 @@ describe('SetupWizardPage', () => {
     expect(useNotebooks).toHaveBeenCalledTimes(1)
   })
 
+  // v0.8.130 — Phase 3c: V2 is a "Getting ready" screen; the checks are behind a disclosure.
+  it('V2 says "Getting ready" and keeps the checks behind Show details', () => {
+    process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2 = '1'
+    mockDeepHealth(NOT_READY)
+    render(<SetupWizardPage />)
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Getting ready' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'Waiting for the database' })).toBeInTheDocument()
+    expect(screen.getByText('6 of 6 checks need attention')).toBeInTheDocument()
+    expect(screen.getByTestId('continue-button')).toBeDisabled()
+    expect(screen.queryByTestId('subsystem-list')).toBeNull()
+
+    const details = screen.getByRole('button', { name: 'Show details' })
+    expect(details).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(details)
+
+    expect(screen.getByRole('button', { name: 'Hide details' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByTestId('subsystem-list').querySelectorAll('li')).toHaveLength(6)
+    expect(screen.getByTestId('subsystem-hint-worker')).toHaveTextContent('setupWizard.fixes.worker')
+    expect(document.querySelector('[data-slot="badge"]')).toBeNull()
+  })
+
+  it('V2 counts a single failing check in the singular', () => {
+    process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2 = '1'
+    mockDeepHealth({ ...DEGRADED })
+    render(<SetupWizardPage />)
+
+    expect(screen.getByRole('heading', { level: 2, name: 'Almost ready' })).toBeInTheDocument()
+    expect(screen.getByText('1 of 6 checks needs attention')).toBeInTheDocument()
+    expect(screen.getByTestId('continue-button')).toBeEnabled()
+  })
+
   it('marks only the V2 setup content for async geometry reservation', () => {
     process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2 = '1'
     mockDeepHealth(NOT_READY)

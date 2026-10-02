@@ -4,10 +4,12 @@ import React from 'react'
 
 import LoginPage from './page'
 
+// v0.8.130 — Phase 3c: inside the V2 frame the form is embedded and renders no heading
+// of its own; the legacy card keeps its h1.
 vi.mock('@/components/auth/LoginForm', () => ({
-  LoginForm: ({ headingLevel = 1 }: { headingLevel?: 1 | 2 }) => (
-    <form data-testid="login-form" onSubmit={(event) => event.preventDefault()}>
-      {headingLevel === 1 ? <h1>Deeper Notebook</h1> : <h2>Deeper Notebook</h2>}
+  LoginForm: ({ embedded = false }: { embedded?: boolean }) => (
+    <form data-testid="login-form" data-embedded={String(embedded)} onSubmit={(event) => event.preventDefault()}>
+      {embedded ? null : <h1>Deeper Notebook</h1>}
       <button type="submit">Sign in</button>
     </form>
   ),
@@ -44,8 +46,10 @@ describe('LoginPage visual presentation boundary', () => {
       'v2',
     )
     expect(screen.getAllByRole('main')).toHaveLength(1)
-    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
-    expect(screen.getByRole('heading', { level: 2, name: 'Deeper Notebook' })).toBeInTheDocument()
+    expect(screen.getAllByRole('heading')).toHaveLength(1)
+    expect(screen.getByRole('heading', { level: 1, name: 'Welcome back' })).toBeInTheDocument()
+    expect(screen.getByTestId('login-form')).toHaveAttribute('data-embedded', 'true')
+    expect(screen.getAllByText('Deeper Notebook')).toHaveLength(1)
 
     const submit = screen.getByRole('button', { name: 'Sign in' })
     expect(submit).toBeEnabled()
@@ -62,6 +66,7 @@ describe('LoginPage visual presentation boundary', () => {
     expect(screen.queryByTestId('visual-system-v2-auth-frame')).toBeNull()
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(2)
     expect(screen.queryByRole('heading', { level: 2 })).toBeNull()
+    expect(screen.getByTestId('login-form')).toHaveAttribute('data-embedded', 'false')
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeEnabled()
   })
 })
