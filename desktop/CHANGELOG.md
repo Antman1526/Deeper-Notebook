@@ -189,6 +189,16 @@ Frontend UI audit (2026-09-30): the concrete defects behind the "unfinished" fee
 
 🛠 **Tests.** New `e2e/phase3-firstrun.spec.ts`: "Getting ready" with the checks closed by default and no pills; every check behind the disclosure; the degraded count; the summary height across the check at 1440 and 390; no sideways scroll on a phone; the login brand once with one heading, the version behind the disclosure, the labelled field and the announced error. The setup and login unit tests cover the V2 first run and the embedded form; the auth-geometry test uses the embedded form's 190px. The new copy is English until the Phase 4 i18n pass.
 
+**Test repairs — the suites that were red or never ran.**
+
+🐛 **Vault search results never opened from the palette.** The backend sends a vault hash as `sha256:<hex>` and the response decoder requires that form, but the palette's open check required bare hex, so every indexed vault result was dropped and the "Indexed results" group never appeared. It accepts both now; a test runs a backend-shaped response through the real decoder.
+
+🐛 **A source card's cover could not be seen whole in the tabbed notebook.** At compact width the Sources tab is full width, so a card's 16:9 cover grew to 954×537, taller than the panel that scrolls it. Compact covers are capped at 160px.
+
+🛠 **Five failing browser tests, three of them failing on main.** Focus mode at phone and tablet width now reaches the routes through the Menu button (the rail is a sheet below 1024px since Phase 3b). The Study fixture mocks `/api/features`, and its empty state expects the ExamLab attempts request (ExamLab shipped in v0.8.97); with that fixed, the 13 Study states it had been skipping run and pass, with the degraded-model check reading model health from the rail, and the error-retry state waiting for its retried requests before the next width navigates (under load the navigation aborted them). The evidence-receipt test installs the shared notebook fixture (about 20 shell requests answered 500 and a "Server error" toast covered the receipt), fails on any 5xx, and snapshots the receipt itself: the guided-research region sits in a scrolling 274px Studio column, so a capture of the whole region stitched in page chrome. The knowledge fixture sends the backend's hash form.
+
+🛠 **The source-gallery contract runs in CI.** Its 39 enabled-build tests only run when `NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2` and `NEXT_PUBLIC_DN_SOURCE_VISUALS` are set, which the mocked-browser job never did; it sets both (they are the build defaults). Its 44px target check allows 0.01px of sub-pixel error.
+
 ## v0.8.129 — 2026-09-12 — SurrealDB live integration suite, live service verification & test setting hardening
 
 🛠 **SurrealDB live integration test suite (132 passed).** Resolved a schema migration head stepping issue in `tests/integration/test_search_quality_benchmark.py`: migration 51 round-trip stepping now uses `runner.run_one_up()` against the migration 52 head. Full suite passed 100% against real SurrealDB 2.6.5.
