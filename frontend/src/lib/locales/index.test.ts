@@ -161,7 +161,7 @@ describe('Read-only editor mode locale contracts', () => {
   it('keeps the exact English editor mode copy', () => {
     expect(enUS.knowledge).toMatchObject({
       source: 'Source',
-      livePreview: 'Live Preview',
+      livePreview: 'Live preview',
       emptyNote: 'This note is empty.',
       pageInvalid: 'The projected page data is invalid.',
       canonicalPathUnavailable: 'The canonical vault path is unavailable.',
@@ -263,7 +263,7 @@ describe('Command-navigation locale contracts', () => {
       commandUnavailable: 'Command unavailable', exactResults: 'Exact matches',
       indexedSearchResults: 'Indexed results', semanticSearch: 'Semantic search',
       commands: {
-        viewReading: 'Reading', viewSource: 'Source', viewLivePreview: 'Live Preview', viewGraph: 'Graph',
+        viewReading: 'Reading', viewSource: 'Source', viewLivePreview: 'Live preview', viewGraph: 'Graph',
         splitRight: 'Split pane right', splitDown: 'Split pane down', closePane: 'Close pane',
         closeTab: 'Close active tab', previousTab: 'Previous tab', nextTab: 'Next tab', scanVault: 'Scan vault',
         focusFiles: 'Focus vault files', focusPane: 'Focus active pane', focusLinks: 'Focus note links',
@@ -278,11 +278,11 @@ describe('Command-navigation locale contracts', () => {
     expect(enUS.knowledge.navigation).toEqual({
       sources: 'Sources',
       bookmarks: 'Bookmarks',
-      randomNote: 'Random Note',
+      randomNote: 'Random note',
       workspaces: 'Workspaces',
-      currentSession: 'Current Session',
-      saveCurrentAs: 'Save Current As',
-      replaceWithCurrent: 'Replace With Current',
+      currentSession: 'Current session',
+      saveCurrentAs: 'Save current as',
+      replaceWithCurrent: 'Replace with current',
       openAvailable: 'Open available',
       targetAvailable: 'Available',
       targetStale: 'Stale',

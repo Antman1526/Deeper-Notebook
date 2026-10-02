@@ -1,10 +1,15 @@
+'use client'
+
 import type { ReactNode } from 'react'
+
+import { useTranslation } from '@/lib/hooks/use-translation'
 
 /**
  * Presentation-only authentication frame. LoginForm remains the sole owner of
  * authentication state, requests, and submit behavior.
  */
 export function WorkspaceAuthFrame({ children }: { children: ReactNode }) {
+  const { t } = useTranslation()
   return (
     <main
       aria-labelledby="workspace-auth-title"
@@ -19,10 +24,10 @@ export function WorkspaceAuthFrame({ children }: { children: ReactNode }) {
           Deeper Notebook
         </p>
         <h1 id="workspace-auth-title" className="dn-workspace-auth-title">
-          Welcome back
+          {t('auth.welcomeBack')}
         </h1>
         <p className="dn-workspace-auth-description">
-          Enter your password to open your notebooks.
+          {t('auth.welcomeDescription')}
         </p>
         <div className="dn-workspace-auth-content">{children}</div>
       </section>

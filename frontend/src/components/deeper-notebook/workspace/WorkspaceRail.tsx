@@ -117,7 +117,7 @@ export function WorkspaceRail({ open, onClose }: WorkspaceRailProps) {
   return (
     <>
       {open ? <div data-dn-rail-scrim="" className="dn-rail-scrim" aria-hidden="true" onClick={onClose} /> : null}
-      <nav id="dn-rail" aria-label="Primary" className={cn('dn-rail', open && 'is-open')}>
+      <nav id="dn-rail" aria-label={t('navigation.primary')} className={cn('dn-rail', open && 'is-open')}>
         <div className="dn-rail-brand" data-guided-tip-anchor="/">
           <span className="dn-rail-brand-mark" aria-hidden="true">DN</span>
           <span className="dn-rail-brand-name">Deeper Notebook</span>
@@ -144,17 +144,17 @@ export function WorkspaceRail({ open, onClose }: WorkspaceRailProps) {
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <ul aria-label="Destinations" className="dn-rail-list">
+        <ul aria-label={t('navigation.destinations')} className="dn-rail-list">
           {destinations.map((item) => renderLink(item))}
         </ul>
 
         <div className="dn-rail-footer">
           {settings ? (
-            <ul aria-label="Settings" className="dn-rail-list">
+            <ul aria-label={t('navigation.settings')} className="dn-rail-list">
               {renderLink(settings)}
               {inSettings ? (
                 <li>
-                  <ul aria-label="Settings pages" className="dn-rail-sublist">
+                  <ul aria-label={t('navigation.settingsPages')} className="dn-rail-sublist">
                     {settingsFamily.map((item) => renderLink(item, true))}
                   </ul>
                 </li>
@@ -174,10 +174,8 @@ export function WorkspaceRail({ open, onClose }: WorkspaceRailProps) {
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Sign out?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    You will need to sign in again to open your notebooks.
-                  </AlertDialogDescription>
+                  <AlertDialogTitle>{t('auth.signOutTitle')}</AlertDialogTitle>
+                  <AlertDialogDescription>{t('auth.signOutDescription')}</AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>

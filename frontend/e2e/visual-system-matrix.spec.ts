@@ -488,7 +488,7 @@ test.describe('visual system matrix contract', () => {
     )
     expect(Object.values(LOWER_CONTENT_SELECTOR_BY_ROUTE)).not.toContain('main')
     expect(LOWER_CONTENT_SELECTOR_BY_ROUTE['/notebooks']).toBe(
-      'main [aria-label$="Archived Notebooks"]',
+      'main [aria-label$="Archived notebooks"]',
     )
     expect(LOWER_CONTENT_SELECTOR_BY_ROUTE['/knowledge']).toBe(
       'main.research-core-editorial-workspace [role="tabpanel"][aria-label^="Knowledge pane"]',
@@ -550,7 +550,7 @@ const LOWER_CONTENT_SELECTOR_BY_ROUTE = {
   '/login': 'main form',
   '/': 'main [aria-labelledby="workspace-recent-title"]',
   '/setup-wizard': 'main [data-testid="continue-button"]',
-  '/notebooks': 'main [aria-label$="Archived Notebooks"]',
+  '/notebooks': 'main [aria-label$="Archived notebooks"]',
   '/notebooks/[id]': 'main textarea[name="chat-message"]:visible',
   '/sources': 'main [data-dn-source-gallery="true"] [role="listitem"]:last-child button:last-child',
   '/sources/[id]': 'main textarea[name="chat-message"]',
@@ -1165,7 +1165,7 @@ test('explicit rollback preserves the legacy route and shell contract', async ({
       } else if (pathname === '/') {
         await expect(rollbackPage.locator('[data-dn-horizon-page="true"]')).toBeVisible()
         await expect(rollbackPage.getByRole('link', { name: 'Studio', exact: true })).toHaveAttribute('href', '/studio')
-        await expect(rollbackPage.getByRole('button', { name: 'New Notebook', exact: true })).toBeVisible()
+        await expect(rollbackPage.getByRole('button', { name: 'New notebook', exact: true })).toBeVisible()
         await expect(rollbackPage.getByRole('button', { name: 'Podcast', exact: true })).toBeVisible()
         await expect(rollbackPage.getByRole('link', { name: 'Ask', exact: true })).toHaveAttribute('href', '/search')
         await rollbackPage.getByRole('button', { name: 'Switch theme' }).click()

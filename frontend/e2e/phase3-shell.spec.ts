@@ -11,7 +11,7 @@ test.beforeEach(async ({ page }) => {
   await installVisualSystemFixture(page, { theme: 'gemini-forward-light' })
 })
 
-const SETTINGS_FAMILY = ['Models', 'Transformations', 'MCP Servers', 'Launch Preferences', 'Advanced']
+const SETTINGS_FAMILY = ['Models', 'Transformations', 'MCP servers', 'Launch preferences', 'Advanced']
 
 test.describe('3b — one rail', () => {
   test('a single 240px rail replaces the dock and the notebook index', async ({ page }) => {
@@ -45,7 +45,7 @@ test.describe('3b — one rail', () => {
     for (const name of SETTINGS_FAMILY) {
       await expect(page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name, exact: true }), name).toBeVisible()
     }
-    await expect(page.getByRole('link', { name: 'MCP Servers', exact: true })).toHaveAttribute('aria-current', 'page')
+    await expect(page.getByRole('link', { name: 'MCP servers', exact: true })).toHaveAttribute('aria-current', 'page')
   })
 
   test('the shell stays mounted across navigation', async ({ page }) => {
@@ -87,7 +87,7 @@ test.describe('3b — command bar and accessibility', () => {
   test('signing out asks first', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.goto('/notebooks')
-    await page.getByRole('button', { name: 'Sign Out' }).click()
+    await page.getByRole('button', { name: 'Sign out' }).click()
     const confirm = page.getByRole('alertdialog')
     await expect(confirm).toBeVisible()
     await confirm.getByRole('button', { name: 'Cancel' }).click()

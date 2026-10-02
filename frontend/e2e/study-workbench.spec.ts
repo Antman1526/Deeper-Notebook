@@ -193,8 +193,13 @@ for (const state of STUDY_STATES) {
         failedResponses.push(`${response.status()} ${response.request().method()} ${canonicalStudyApiPath(new URL(response.url()).pathname)}`)
       }
     })
+    // Study requests still waiting for a response; navigating away aborts them.
+    const studyInFlight = new Set<object>()
+    page.on('requestfinished', (request) => studyInFlight.delete(request))
+    page.on('requestfailed', (request) => studyInFlight.delete(request))
     page.on('request', (request) => {
       const url = new URL(request.url())
+      if (url.pathname.startsWith('/api/study/')) studyInFlight.add(request)
       if (!['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) externalRequests.push(request.url())
       if (url.pathname.startsWith('/api/')) apiRequests.push(`${request.method()} ${canonicalStudyApiPath(url.pathname)}`)
     })
@@ -260,12 +265,14 @@ for (const state of STUDY_STATES) {
         await expect(page.locator('h1')).toBeVisible()
         const planCallsAfterRetry = ledger.seen.filter((call) => call === `GET ${'/api/study/plans/' + STUDY_PLAN_ID}`).length
         expect(planCallsAfterRetry).toBeGreaterThan(planCallsBeforeRetry)
-        // v0.8.130 — settle the retried plan requests before the next width navigates;
-        // under load the navigation aborted them and the ledger recorded them as failed.
+        // v0.8.130 — let the retried plan requests finish before the next width
+        // navigates; under load the navigation aborted them and the ledger recorded
+        // them as failed. (networkidle cannot do this: it resolves at once if the page
+        // was idle earlier, as it was while showing the error.)
         const width = String(viewport.width)
         await expect.poll(() => callCounts(ledger.seenByViewport?.[width] ?? []))
           .toEqual(callCounts(ledger.expectedByViewport?.[width] ?? []))
-        await page.waitForLoadState('networkidle')
+        await expect.poll(() => studyInFlight.size).toBe(0)
       }
       if (state === 'tutor') {
         await expect(page.getByRole('region', { name: 'Tutor dock' })).toBeVisible()

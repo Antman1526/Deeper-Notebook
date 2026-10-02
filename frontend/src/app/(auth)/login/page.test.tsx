@@ -47,7 +47,7 @@ describe('LoginPage visual presentation boundary', () => {
     )
     expect(screen.getAllByRole('main')).toHaveLength(1)
     expect(screen.getAllByRole('heading')).toHaveLength(1)
-    expect(screen.getByRole('heading', { level: 1, name: 'Welcome back' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'auth.welcomeBack' })).toBeInTheDocument()
     expect(screen.getByTestId('login-form')).toHaveAttribute('data-embedded', 'true')
     expect(screen.getAllByText('Deeper Notebook')).toHaveLength(1)
 

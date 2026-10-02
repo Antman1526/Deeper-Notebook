@@ -20,7 +20,7 @@ const SOURCE_GALLERY_LOWER_CONTENT_SELECTOR_BY_ROUTE = {
 
 const ROLLBACK_LEGACY_LANDMARK_BY_ROUTE = {
   '/sources': '[data-dn-sources-table="true"]',
-  '/notebooks/[id]': 'role=button[name="Add Source"]',
+  '/notebooks/[id]': 'role=button[name="Add source"]',
   '/knowledge': 'role=button[name="Split pane right"]',
   '/search': 'main #search-query',
   '/capture': 'main input[aria-label="Capture folder path"]',
@@ -164,7 +164,7 @@ async function expectRollbackLegacyLandmark(
 ): Promise<void> {
   const selector = ROLLBACK_LEGACY_LANDMARK_BY_ROUTE[route]
   const landmark = route === '/notebooks/[id]'
-    ? page.getByRole('button', { name: 'Add Source', exact: true })
+    ? page.getByRole('button', { name: 'Add source', exact: true })
     : route === '/knowledge'
       ? page.getByRole('button', { name: 'Split pane right', exact: true })
       : page.locator(selector)

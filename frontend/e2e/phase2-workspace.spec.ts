@@ -430,7 +430,7 @@ test.describe('Phase 2 exit gate', () => {
     const unringed = inMain.filter((stop) => stop.outline !== 'solid' || stop.width !== '3px')
     expect(unringed, 'every focus stop in the workspace draws the 3px ring').toEqual([])
     const names = inMain.map((stop) => stop.name)
-    for (const control of ['Add Source', 'chat-message', 'Add note', 'Report']) {
+    for (const control of ['Add source', 'chat-message', 'Add note', 'Report']) {
       expect(names, `${control} is reachable by Tab`).toContain(control)
     }
   })

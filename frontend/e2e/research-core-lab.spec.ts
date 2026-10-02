@@ -331,7 +331,7 @@ test.describe('Research Core Lab browser acceptance', () => {
     await expect(page.getByRole('tab', { name: 'Graph: Podcast', exact: true })).toBeVisible()
 
     await page.getByRole('button', { name: 'Workspaces', exact: true }).click()
-    await page.getByRole('button', { name: 'Save Current As' }).click()
+    await page.getByRole('button', { name: 'Save current as' }).click()
     await page.getByLabel('Workspace name').fill('Research Core restore')
     await page.getByRole('button', { name: 'Save workspace' }).click()
     await expect.poll(() => fixture.state.namedWorkspaces.length).toBe(1)
@@ -349,7 +349,7 @@ test.describe('Research Core Lab browser acceptance', () => {
     await expect(page.getByRole('tab', { name: 'Ask: Ask', exact: true })).toBeVisible()
     await expect(page.getByRole('tab', { name: 'Podcast: Podcast', exact: true })).toBeVisible()
     await expect(page.getByRole('tab', { name: 'Graph: Podcast', exact: true })).toBeVisible()
-    await page.getByRole('button', { name: 'Replace With Current' }).click()
+    await page.getByRole('button', { name: 'Replace with current' }).click()
     await expect.poll(() => fixture.state.namedWorkspaces[0]?.revision).toBe(2)
     await expect.poll(() => JSON.stringify(fixture.state.namedWorkspaces[0]?.snapshot)).toContain('"root_document_id":null')
     await page.reload()

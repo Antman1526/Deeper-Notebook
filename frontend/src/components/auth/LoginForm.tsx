@@ -247,7 +247,7 @@ export function LoginForm({ embedded = false }: LoginFormProps) {
                 <summary role="button" className="inline-flex min-h-11 cursor-pointer select-none items-center gap-1">
                   {/* inline-flex drops the native marker; the chevron replaces it. */}
                   <ChevronRight className="h-3.5 w-3.5 transition-transform group-open:rotate-90" aria-hidden="true" />
-                  Connection details
+                  {t('auth.connectionDetails')}
                 </summary>
                 <div className="mt-2 space-y-1">
                   <div>{t('common.version')} {configInfo.version}</div>

@@ -199,7 +199,7 @@ describe('shared workspace primitives', () => {
     expect(screen.getAllByTestId('v2-page-slot')).toHaveLength(1)
     expect(screen.getAllByTestId('focus-mode-control')).toHaveLength(1)
     // v0.8.130 — Phase 3b: one rail replaces the instrument dock and the notebook index.
-    expect(screen.getAllByRole('navigation', { name: 'Primary' })).toHaveLength(1)
+    expect(screen.getAllByRole('navigation', { name: 'navigation.primary' })).toHaveLength(1)
     expect(screen.queryByRole('navigation', { name: 'Primary tools' })).toBeNull()
     expect(screen.queryByRole('navigation', { name: 'Notebook index' })).toBeNull()
     expect(document.querySelectorAll('.dn-workspace-canvas')).toHaveLength(1)

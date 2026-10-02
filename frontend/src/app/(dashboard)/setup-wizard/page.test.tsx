@@ -269,17 +269,17 @@ describe('SetupWizardPage', () => {
     mockDeepHealth(NOT_READY)
     render(<SetupWizardPage />)
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Getting ready' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 2, name: 'Waiting for the database' })).toBeInTheDocument()
-    expect(screen.getByText('6 of 6 checks need attention')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'setupWizard.firstRun.title' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'setupWizard.firstRun.notReadyTitle' })).toBeInTheDocument()
+    expect(screen.getByText('setupWizard.firstRun.attentionOther')).toBeInTheDocument()
     expect(screen.getByTestId('continue-button')).toBeDisabled()
     expect(screen.queryByTestId('subsystem-list')).toBeNull()
 
-    const details = screen.getByRole('button', { name: 'Show details' })
+    const details = screen.getByRole('button', { name: 'setupWizard.firstRun.showDetails' })
     expect(details).toHaveAttribute('aria-expanded', 'false')
     fireEvent.click(details)
 
-    expect(screen.getByRole('button', { name: 'Hide details' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: 'setupWizard.firstRun.hideDetails' })).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByTestId('subsystem-list').querySelectorAll('li')).toHaveLength(6)
     expect(screen.getByTestId('subsystem-hint-worker')).toHaveTextContent('setupWizard.fixes.worker')
     expect(document.querySelector('[data-slot="badge"]')).toBeNull()
@@ -290,8 +290,8 @@ describe('SetupWizardPage', () => {
     mockDeepHealth({ ...DEGRADED })
     render(<SetupWizardPage />)
 
-    expect(screen.getByRole('heading', { level: 2, name: 'Almost ready' })).toBeInTheDocument()
-    expect(screen.getByText('1 of 6 checks needs attention')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'setupWizard.firstRun.degradedTitle' })).toBeInTheDocument()
+    expect(screen.getByText('setupWizard.firstRun.attentionOne')).toBeInTheDocument()
     expect(screen.getByTestId('continue-button')).toBeEnabled()
   })
 

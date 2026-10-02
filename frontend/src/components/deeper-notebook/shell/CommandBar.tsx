@@ -41,7 +41,7 @@ export function CommandBar({ showBrand = true, onMenu, menuOpen = false, focusSh
             variant="ghost"
             size="icon"
             className="dn-command-menu"
-            aria-label="Menu"
+            aria-label={t('common.menu')}
             aria-controls="dn-rail"
             aria-expanded={menuOpen}
             onClick={onMenu}

@@ -181,19 +181,13 @@ function SubsystemRow({
 // v0.8.130 — Phase 3c: the V2 first run. A new user used to land on a developer health
 // table (red "offline / error / missing" pills, "Command registry", a raw shell
 // command). Now the screen says what is happening in plain words; the per-check
-// diagnostics are one click away, behind "Show details". The legacy route keeps the
-// table. New copy is English until the Phase 4 i18n pass.
+// diagnostics are one click away, behind a details disclosure. The legacy route keeps the
+// table. Keys are literal (not built from the status) so the locale tests can see them.
 const FIRST_RUN_COPY = {
-  loading: { title: 'Checking your setup', body: 'This takes a few seconds.' },
-  healthy: { title: 'Everything is ready', body: 'Opening your notebooks.' },
-  degraded: {
-    title: 'Almost ready',
-    body: "You can start now. Some features won't work until the checks below are set up.",
-  },
-  not_ready: {
-    title: 'Waiting for the database',
-    body: 'Your notebooks open once the database is running. Check again in a moment.',
-  },
+  loading: { title: 'setupWizard.firstRun.loadingTitle', body: 'setupWizard.firstRun.loadingBody' },
+  healthy: { title: 'setupWizard.firstRun.healthyTitle', body: 'setupWizard.firstRun.healthyBody' },
+  degraded: { title: 'setupWizard.firstRun.degradedTitle', body: 'setupWizard.firstRun.degradedBody' },
+  not_ready: { title: 'setupWizard.firstRun.notReadyTitle', body: 'setupWizard.firstRun.notReadyBody' },
 } as const
 
 function FirstRunCheck({
@@ -211,6 +205,7 @@ function FirstRunCheck({
   fixLabel: string
   fixHint?: string
 }) {
+  const { t } = useTranslation()
   const isOk = Boolean(check?.ok)
   return (
     <li className="dn-first-run-check">
@@ -222,7 +217,7 @@ function FirstRunCheck({
       <div className="min-w-0 flex-1">
         <p className="flex flex-wrap items-baseline gap-x-2">
           <span className="font-medium">{label}</span>
-          <span className="text-sm text-muted-foreground">{isOk ? 'Ready' : 'Needs attention'}</span>
+          <span className="text-sm text-muted-foreground">{isOk ? t('setupWizard.firstRun.checkReady') : t('setupWizard.firstRun.checkNeedsAttention')}</span>
         </p>
         {check?.error ? (
           <p className="mt-1 break-words text-sm text-muted-foreground" data-testid={`subsystem-error-${name}`}>
@@ -269,7 +264,10 @@ function FirstRun({
   const attention =
     failing === 0
       ? null
-      : `${failing} of ${SUBSYSTEM_ORDER.length} checks ${failing === 1 ? 'needs' : 'need'} attention`
+      : t(failing === 1 ? 'setupWizard.firstRun.attentionOne' : 'setupWizard.firstRun.attentionOther', {
+          count: failing,
+          total: SUBSYSTEM_ORDER.length,
+        })
 
   return (
     <div className="dn-first-run">
@@ -287,8 +285,8 @@ function FirstRun({
             )}
           </span>
           <div className="min-w-0 flex-1">
-            <h2 className="dn-first-run-title">{copy.title}</h2>
-            <p className="dn-first-run-body">{copy.body}</p>
+            <h2 className="dn-first-run-title">{t(copy.title)}</h2>
+            <p className="dn-first-run-body">{t(copy.body)}</p>
             {/* The line is always laid out, so the card does not grow when the check returns. */}
             <p className="dn-first-run-attention">{attention ?? ' '}</p>
             <div className="dn-first-run-actions">
@@ -320,7 +318,7 @@ function FirstRun({
           onClick={() => setShowDetails((open) => !open)}
         >
           <ChevronRight className={cn('h-4 w-4 transition-transform', showDetails && 'rotate-90')} aria-hidden />
-          {showDetails ? 'Hide details' : 'Show details'}
+          {showDetails ? t('setupWizard.firstRun.hideDetails') : t('setupWizard.firstRun.showDetails')}
         </Button>
         {showDetails && data ? (
           <ul id={detailsId} data-testid="subsystem-list" className="dn-first-run-checks">
@@ -480,8 +478,8 @@ export default function SetupWizardPage() {
     <>
       {isVisualSystemV2Enabled() ? (
         <WorkspacePage
-          title="Getting ready"
-          description="Deeper Notebook checks your local setup before you open your first notebook."
+          title={t('setupWizard.firstRun.title')}
+          description={t('setupWizard.firstRun.description')}
           data-testid="visual-system-v2-setup"
           data-dn-visual-system="v2"
         >
