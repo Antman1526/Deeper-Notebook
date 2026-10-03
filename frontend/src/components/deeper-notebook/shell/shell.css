@@ -559,10 +559,11 @@
 /* v0.8.130 — phones: the bar may carry a model-health link (a 44px slot) beside
  * Quick actions and Focus, so it uses the compact spacing and square icon buttons
  * that used to start at 360px, and the actions sit 4px apart. The product name
- * stays whole at 360px and up. V2 only: the pre-V2 bar is unchanged. */
+ * stays whole at 360px and up — on Linux too, where the same font renders ~3px wider,
+ * hence 8px side padding rather than 12px. V2 only: the pre-V2 bar is unchanged. */
 @media (max-width: 47.99rem) {
   [data-dn-visual-system='v2'] .dn-command-bar {
-    padding-inline: var(--dn-space-3);
+    padding-inline: var(--dn-space-2);
     gap: var(--dn-space-2);
   }
 

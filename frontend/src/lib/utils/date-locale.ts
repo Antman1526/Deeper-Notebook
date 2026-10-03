@@ -39,8 +39,18 @@ export function getDateLocale(language: string): Locale {
  * language is already a valid BCP-47 tag, so trust it when `Intl` accepts
  * it and only fall back to en-US for empty or malformed input.
  */
+// BCP-47 tag for each app language. v0.8.130 — the table had omitted de-DE, ca-ES,
+// pl-PL and tr-TR, so those silently formatted as en-US; it now lists all 14, and any
+// other valid tag is passed through.
+const LOCALE_BCP47_MAP: Record<string, string> = {
+  'en-US': 'en-US', 'zh-CN': 'zh-CN', 'zh-TW': 'zh-TW', 'pt-BR': 'pt-BR', 'ja-JP': 'ja-JP',
+  'it-IT': 'it-IT', 'fr-FR': 'fr-FR', 'ru-RU': 'ru-RU', 'bn-IN': 'bn-IN', 'ca-ES': 'ca-ES',
+  'es-ES': 'es-ES', 'de-DE': 'de-DE', 'pl-PL': 'pl-PL', 'tr-TR': 'tr-TR',
+}
+
 export function resolveIntlLocale(language: string | null | undefined): string {
   if (!language) return 'en-US'
+  if (LOCALE_BCP47_MAP[language]) return LOCALE_BCP47_MAP[language]
   try {
     return Intl.getCanonicalLocales(language)[0] ?? 'en-US'
   } catch {
