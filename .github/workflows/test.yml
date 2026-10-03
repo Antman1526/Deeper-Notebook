@@ -44,6 +44,18 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
+      # v0.8.130 — two tests need the runner set up like a desktop: the Study
+      # Workbench verifier generates its media fixture with ffmpeg, and the vault Git
+      # tests commit (macOS git derives an identity from the host; a Linux runner
+      # refuses without one). Both failed on main for this reason alone.
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+
+      - name: Set a Git identity for vault Git tests
+        run: |
+          git config --global user.name "Deeper Notebook CI"
+          git config --global user.email "ci@deeper-notebook.invalid"
+
       - name: Run tests
         run: uv run pytest tests/ -v --ignore=tests/integration
 
@@ -181,6 +193,11 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # v0.8.130 — the shell, folio and workspace layout tests measure real layout in
+      # headless Chromium; without the browser they failed on main.
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
 
       - name: Run tests
         run: npm test
