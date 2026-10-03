@@ -273,6 +273,15 @@ The command-bar Focus button now speaks the selected language too; it was the on
 
 (Tests: `e2e/i18n-locales.spec.ts`: an English page downloads no other language, a German page only German; `src/lib/utils/format.test.ts` and `date-locale.test.ts`: de-DE and en-US numbers and dates.)
 
+🛠 **CI matches the desktop.** The pull request's first CI run failed in the same three jobs as `main`. The fixes:
+- **Frontend Tests:** now installs the Chromium that the shell, folio and workspace layout tests measure with.
+- **Backend Tests:** installs ffmpeg for the Study Workbench verifier, and gives git an identity through environment variables. `tests/conftest.py` points `HOME` at a temp dir, so global git config is invisible; macOS git invents an identity from the host, a Linux runner refuses.
+- **The phone command bar** uses 8px side padding instead of 12px, because on Linux the product name rendered 3px wider and was cut off at 360px.
+- **The evidence-receipt screenshot** gained its missing Linux baseline.
+- **Restored date-helper table:** the locale formatting change had replaced the date helper's `LOCALE_BCP47_MAP` table, which a source guard test requires. The table is back, now listing all 14 languages.
+
+One backend failure remains on Linux and on `main`, and it is a real bug: overlay storage detects a swapped file by device and inode, and Linux reuses a freed inode at once, so a file replaced mid-edit can go unnoticed. It is left for a separate fix.
+
 🐛 **Checkboxes were 44px squares.** V2 gives every control a 44px target, and checkboxes and radios filled it: the Checkbox component rendered as a 44px filled square (Advanced, Settings, Ask and search), and a source candidate's native checkbox also stretched to its label's height. They keep the 44px target but draw a 16px box in its middle (with a 16px footprint, so they line up with the text around them), with the focus ring on the box; the candidate's box sits on its title's first line. Rows that spaced a checkbox from its label with `space-x-*` use `gap`, which the new margins don't override. The pre-V2 screens are unchanged.
 
 🐛 **The evidence receipt had no room in the Studio column.** Studio is narrow (274px at 1440 with four columns), and five nested paddings (the card, the research band, the approval panel, the candidate row, the receipt) left the receipt 148px at 1440, 109px at 1280 and 93px at 1024: fingerprints broke mid-value, the source title wrapped one word per line, and at 1280 and 1024 the receipt overflowed the column. In a narrow column the research band now bleeds to the card edges, the approval panel drops its own frame, and rows and the receipt tighten (container queries; full-width layouts are unchanged): 218px at 1440, 179px at 1280, 163px at 1024, no overflow. Studio can no longer be dragged below 22% of the workspace (was 18%), nor the shared Notes/Studio panel at 1024–1279 below 28% (was 22%); at the old minimums the receipt still overflowed. Default widths are unchanged.
