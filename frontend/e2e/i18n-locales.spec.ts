@@ -51,3 +51,10 @@ test('German Knowledge utilities fit their buttons', async ({ page }) => {
   })
   expect(problems).toEqual([])
 })
+
+test('the browser tab title speaks the selected language, and follows navigation', async ({ page }) => {
+  await open(page, 'de-DE', '/notebooks')
+  await expect(page).toHaveTitle('Notizbücher · Deeper Notebook')
+  await page.getByRole('navigation', { name: 'Hauptnavigation' }).getByRole('link', { name: 'Fragen und Suchen' }).click()
+  await expect(page).toHaveTitle('Fragen und Suchen · Deeper Notebook')
+})

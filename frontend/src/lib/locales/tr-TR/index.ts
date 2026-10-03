@@ -854,7 +854,7 @@ export const trTR = {
     deleteEpisodeTitle: "Bölüm silinsin mi?",
     deleteEpisodeDesc: "Bu işlem \"{name}\" ve ses dosyasını kalıcı olarak kaldıracak.",
     audioUnavailable: "Ses mevcut değil",
-    segment: "Bölüm",
+    segment: "Kesit",
     speaker: "Konuşmacı",
     profile: "Profil",
     link: "Bağlantı",
@@ -1588,7 +1588,7 @@ const chatSection = ensureSection(rootNode, 'chat');
 Object.assign(ensureSection(chatSection, 'agentState'), {
   clarifyLabel: "Yanıtınız gerekiyor",
   truncatedLabel: "Kesildi",
-  clarifyTooltip: "Asistan işi bitirmek yerine size bir soru sormak için duraklattı.",
+  clarifyTooltip: "Asistan işi bitirmek yerine size bir soru sormak için durakladı.",
   truncatedTooltip: "Asistan araç çağırma sınırına ulaştı — yanıt eksik olabilir.",
 });
 
@@ -1922,7 +1922,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'chat'), 'localModelHealthBa
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'common'), 'audioDictateButton'), {
   clickToStop: "Kaydı durdurmak için tıklayın",
-  dictateLocal: "Yerel konuşmadan metne ile dikte et",
+  dictateLocal: "Yerel konuşmadan metne dönüştürmeyle dikte et",
   micDenied: "Mikrofon erişimi reddedildi veya ses girişi kullanılamıyor",
   noSpeech: "Konuşma algılanmadı",
   notSupported: "Mikrofon kaydı bu ortamda desteklenmiyor",
@@ -2119,7 +2119,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'knowledge'), 'knowledgeInte
 Object.assign(ensureSection(ensureSection(rootNode, 'knowledge'), 'knowledgeModeLauncher'), {
   modeAria: "{{label}} (Alt+{{shortcut}})",
   modes: "Araştırma modları",
-  unsavedDraft: "Kaydedilmemiş yer paylaşımı taslağı açık kalıyor",
+  unsavedDraft: "Kaydedilmemiş katman taslağı açık kalıyor",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'knowledge'), 'knowledgePaneContent'), {
   modesRegion: "Bilgi bölmesi modları {{id}}",
@@ -2280,7 +2280,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'knowledge'), 'vaultSourceVi
   unknown: "bilinmiyor",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'knowledge'), 'workspaceRestoreDialog'), {
-  description: "“Kullanılabilenleri aç”ı seçene kadar geçerli oturum değişmez.",
+  description: "“Kullanılabilenleri aç” seçeneğini seçene kadar geçerli oturum değişmez.",
   opening: "Açılıyor…",
   targets: "Kullanılamayan çalışma alanı hedefleri",
   title: "Çalışma alanını kullanılamayan hedeflerle aç",
@@ -2300,7 +2300,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'executiveSynt
   copiedToast: "Yönetici sentezi panoya kopyalandı",
   copyFailed: "Metin panoya kopyalanamadı",
   copySynthesis: "Sentezi kopyala",
-  descriptionLead: "Şunun için ortam düzeyinde kaynaklar arası zekâ, tematik uzlaşı, gerilimler ve sonraki adımlar:",
   evaluating: "Kesişen temalar, görüş ayrılıkları ve stratejik çıkarımlar değerlendiriliyor",
   generateFailed: "Kaynaklar arası yönetici sentezi oluşturulamadı.",
   noteTitle: "Yönetici sentezi — {{name}}",
@@ -2372,7 +2371,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'editorialBrief
 Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'episodeCard'), {
   listen: "Dinle",
   stageDraftingTranscript: "Döküm taslağı hazırlanıyor…",
-  stageDraftingTranscriptProgress: "Döküm taslağı hazırlanıyor ({{built}}/{{total}} bölüm)…",
+  stageDraftingTranscriptProgress: "Döküm taslağı hazırlanıyor ({{built}}/{{total}} kesit)…",
   stageGeneratingOutline: "Taslak oluşturuluyor…",
   stageQueued: "Sırada",
   stageReady: "Hazır",
@@ -2394,7 +2393,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'episodeLab'), 
   playbackNotice: "Oynatma, sayfalar arasında kalıcı olan genel oynatıcıda sürer.",
   retry: "Bölümü yeniden dene",
   retrying: "Bölüm yeniden deneniyor…",
-  segmentDescriptionUnavailable: "Bu bölüm için açıklama yok.",
+  segmentDescriptionUnavailable: "Bu kesit için açıklama yok.",
   segmentFallback: "Kesit {{number}}",
   stageHistory: "Aşama geçmişi",
   title: "Episode Lab",
@@ -2450,7 +2449,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'knowledgePodca
   evidenceRoute: "Kanıt yolu",
   loadingStudio: "Podcast zekâ stüdyosu yükleniyor…",
   scriptRoute: "Metin yolu",
-  storyboardRoute: "Hikâye taslağı yolu",
+  storyboardRoute: "Hikâye akışı yolu",
   studioTitle: "Podcast zekâ stüdyosu",
   title: "Bilgi podcast'i",
   verificationRoute: "Doğrulama yolu",
@@ -2463,9 +2462,9 @@ Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'outlineStorybo
   moveLater: "Sona taşı",
   moveLaterLabel: "{{label}} öğesini sona taşı",
   movedAnnouncement: "{{label}} {{position}}. konuma taşındı",
-  segments: "Taslak bölümleri",
+  segments: "Taslak kesitleri",
   title: "Taslak hikâye akışı",
-  untitledSegment: "Adsız bölüm",
+  untitledSegment: "Adsız kesit",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'podcastLibrary'), {
   allAuthority: "Tüm yetkiler",
@@ -2778,7 +2777,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'apiKeysPage'),
   slotTools: "Araçlar",
   slotTransform: "Dönüştürme",
   slotTts: "TTS",
-  test: "Sına",
+  test: "Test et",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'deleteCredentialDialog'), {
   deleteWithModels: "Modellerle birlikte sil",
@@ -2812,7 +2811,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'launcherPrefsP
   tokensCount: "{{value}} belirteç",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'localExecutionPolicyPanel'), {
-  cloudFallbackProposedLead: "Bulut yedeği şunun için öneriliyor:",
   computeProfile: "Hesaplama profili",
   confirmAction: "Bulutla devam etmeyi onayla",
   confirmDescription: "Onaylı bir devam kaydı oluşturmak için önerilen aşamayı ve içerik sınıfını aynen yazın. Bu işlem bir görev çalıştırmaz veya bir bulut sağlayıcısını çağırmaz.",
@@ -3218,11 +3216,9 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'stu
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'overview'), {
   approvedVersion: "Onaylanan sürüm",
   description: "Plan incelemeden geçerken bu hedefi ve kaynak sınırını görünür tutun.",
-  existingCardsLead: "Mevcut tekrar kartlarınız şurada kullanılabilir kalır:",
   linkedSources: "Bağlı kaynaklar",
   notApproved: "Onaylanmadı",
   startingLevel: "Başlangıç düzeyi",
-  studyHome: "Çalışma ana sayfası",
   title: "Plan genel bakışı",
 });
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'reserved'), {
@@ -3362,9 +3358,9 @@ Object.assign(ensureSection(ensureSection(rootNode, 'study'), 'studyWorkbench'),
 Object.assign(ensureSection(ensureSection(rootNode, 'study'), 'syllabusEditor'), {
   allCovered: "Bağlı tüm kaynaklar kapsanıyor ve hazır.",
   approveDialogDescription: "{{version}}. sürüm, {{total}} kaynaktan {{covered}} tanesi kapsanmış hâliyle açıkça onaylanmış müfredat olacak. Onay, bu değiştirilemez sürümün üzerine yazamaz.",
-  approveDialogTitle: "Müfredat sürüm {{version}} onaylansın mı?",
-  approveVersion: "Müfredat sürüm {{version}} sürümünü onayla",
-  approvedVersion: "Müfredat sürüm {{version}} onaylandı.",
+  approveDialogTitle: "{{version}}. müfredat sürümü onaylansın mı?",
+  approveVersion: "{{version}}. müfredat sürümünü onayla",
+  approvedVersion: "{{version}}. müfredat sürümü onaylandı.",
   approving: "Onaylanıyor…",
   confirmApproval: "Onayı doğrula",
   coverageCount: "{{total}} kaynaktan {{covered}} tanesi kapsandı",
@@ -3380,7 +3376,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'study'), 'syllabusEditor'),
   refreshSyllabus: "Müfredatı yenile",
   reorderAria: "{{title}} öğesini yeniden sırala",
   saveNewVersion: "Yeni müfredat sürümünü kaydet",
-  savedVersion: "Değiştirilemez müfredat sürüm {{version}} kaydedildi.",
+  savedVersion: "Değiştirilemez {{version}}. müfredat sürümü kaydedildi.",
   savingVersion: "Sürüm kaydediliyor…",
   sourceCoverage: "Kaynak kapsamı",
   sourceFingerprintDrift: "{{title}}: kaynak parmak izi değişmiş olabilir",
@@ -3540,7 +3536,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'catalog'), {
   settingsOverviewTitle: "Ayarlar",
   sourcesOverviewBody: "Deeper Notebook'un yanıtlarda ve çıktılarda alıntı yapabileceği materyali ekleyin ve düzenleyin.",
   sourcesOverviewTitle: "Kaynaklar",
-  studioOverviewBody: "Bir çıktıyı incelemeden önce her Kanıt Ekini sağlayıcısı, güncelliği, alınma zamanı ve parmak izi açısından okuyun.",
+  studioOverviewBody: "Bir çıktıyı incelemeden önce her kanıt ekinin sağlayıcısını, güncelliğini, alınma zamanını ve parmak izini okuyun.",
   studioOverviewTitle: "Kanıt ekleri",
   studyOverviewBody: "Seçili not defteri kaynaklarından odaklı tekrar materyali oluşturun.",
   studyOverviewTitle: "Çalışma",
@@ -3677,17 +3673,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'gmailIntegrat
   sendingTo: "Gönderilen adres:",
   sentFallback: "Gönderildi.",
   setupIntro: "Tek seferlik kurulum: bir Google Cloud OAuth istemcisi oluşturun.",
-  setupStep1Lead: "Şunu açın:",
-  setupStep1Link: "Google Cloud Console",
-  setupStep2Lead: "Bir OAuth 2.0 istemci kimliği oluşturun (tür:",
-  setupStep2Type: "Masaüstü uygulaması",
-  setupStep3Lead: "Yetkili yönlendirme URI'lerine şunu ekleyin:",
-  setupStep3Tail: "(bağlantı noktasını dinamik olarak eşleştiririz)",
-  setupStep4Lead: "Projenizde",
-  setupStep4Tail: "hizmetini etkinleştirin",
   setupStep5: "İstemci kimliğini ve gizli anahtarı aşağıya yapıştırın",
-  signInNoteLead: "Bir Google oturum açma penceresi açar. Yalnızca şunu isteriz:",
-  signInNoteTail: "— gelen kutunuza asla okuma erişimi istemeyiz.",
   title: "E-posta özetleri",
   waitingForGoogle: "Google oturum açma işleminin tamamlanması bekleniyor…",
 });
@@ -3714,7 +3700,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceH
   coverDescription: "Son sayfalarınız, güvenli çalışma zamanı sinyalleri ve sonraki eylemler tek bir sakin görünümde duruyor — siz hazır olduğunuzda hazır.",
   coverEyebrow: "Not defteri kapağı · çalışma masası",
   coverTitle: "Bugün önemli olan soruyla devam edin.",
-  dataLead: "Tüm veriler şurada tutulur:",
   emptyDescription: "Henüz not defteri yok. İlkini başlatmak için Studio'ya bir PDF bırakın.",
   emptyTitle: "Not defteriniz başlamaya hazır",
   eyebrow: "Zekâ ufku",
@@ -3738,8 +3723,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceH
   studio: "Studio",
   studioHint: "Dosyaları bırakın → not defteri veya podcast",
   subtitle: "Her kaynakla daha da derine inin",
-  tipLead: "İpucu:",
-  tipTail: "tuşlarına basarak her yerden bir not defterine, kaynağa veya eyleme atlayın.",
   todayDescription: "Bir kaynakla, not defteriyle, kaynağa dayalı bir soruyla veya açıkça incelenmiş bir podcast yönergesiyle başlayın.",
   todayEyebrow: "Bugün",
   todayTitle: "Bir çalışma görünümü açın",
@@ -3751,9 +3734,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'modelFleetBad
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'reasoningSlotCard'), {
   currentlyUsing: "Şu anda kullanılan",
-  descriptionEmphasis: "derinlemesine düşünmesini",
-  descriptionLead: "Zor sorular ve çok adımlı analizler için. Gündelik sohbetiniz hızlı kalsın diye sohbet modelinden ayrıdır — yalnızca asistandan bir konuda açıkça",
-  descriptionTail: "istediğinizde buraya yönlendirilir.",
   noModel: "Atanmış model yok. Aşağıdaki akıl yürütme modeli açılır listesinden birini seçin.",
   title: "Akıl yürütme modeli",
 });
@@ -3923,7 +3903,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome
   allNotebooks: "Tüm not defterleri",
   ask: "Sor",
   askHint: "Kanıtlarınız üzerinden arayın ve sentezleyin.",
-  dataLead: "Tüm veriler şurada tutulur:",
   description: "Sakin, yerel öncelikli tek bir masada her kaynakla daha da derine inin.",
   emptyDescription: "Henüz not defteri yok. İlkini başlatmak için Studio'ya bir PDF bırakın.",
   emptyTitle: "Not defteriniz başlamaya hazır",
@@ -3948,8 +3927,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome
   shortcutsAriaLabel: "Not defteri kısayolları ve veri yolu",
   studio: "Studio",
   studioHint: "Dosyaları bir not defterine veya podcast yönergesine bırakın.",
-  tipLead: "İpucu:",
-  tipTail: "tuşlarına basarak her yerden bir not defterine, kaynağa veya eyleme atlayın.",
   todayDescription: "Bir kaynakla, not defteriyle, kaynağa dayalı bir soruyla veya açıkça incelenmiş bir podcast yönergesiyle başlayın.",
   todayEyebrow: "Bugün",
   todayTitle: "Bir çalışma görünümü açın",
@@ -4007,7 +3984,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'modelRoles'), 
 Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'modelSelectionSources'), {
   automatic: "otomatik",
   productionOverride: "üretim geçersiz kılması",
-  roleOverride: "role özel geçersiz kılma",
+  roleOverride: "rol geçersiz kılması",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'modelTiers'), {
   heavyweight: "ağır",
@@ -4056,4 +4033,40 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'workspace'), 
   chatModelScan: "sohbet modelleri taranıyor",
   coreReady: "çekirdek hazır",
   launcherStart: "başlatıcı başlangıcı",
+});
+
+// v0.8.130 — strings moved out of components in the whole-app i18n pass.
+Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'executiveSynthesisDialog'), {
+  description: "<name/> için ortam düzeyinde kaynaklar arası zekâ, tematik uzlaşı, gerilimler ve sonraki adımlar.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'podcastStudio'), {
+  defaultEpisodeName: "Deeper Notebook podcast'i",
+  outlineFindings: "Bulgular",
+  outlineIntroduction: "Giriş",
+  outlineTakeaway: "Ana çıkarım",
+  untitledSegment: "Başlıksız bölüm",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'localExecutionPolicyPanel'), {
+  cloudFallbackProposed: "<stage/> · <content/> için bulut yedeği öneriliyor.",
+});
+Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'overview'), {
+  existingCards: "Mevcut tekrar kartlarınıza <link>Çalışma ana sayfası</link> üzerinden erişmeye devam edebilirsiniz.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'gmailIntegration'), {
+  setupStep1: "<link>Google Cloud Console</link> sayfasını açın",
+  setupStep2: "Bir OAuth 2.0 istemci kimliği oluşturun (tür: <em>Masaüstü uygulaması</em>)",
+  setupStep3: "<url/> adresini yetkili yönlendirme URI'lerine ekleyin (bağlantı noktasını dinamik olarak eşleştiririz)",
+  setupStep4: "Projenizde <api/> hizmetini etkinleştirin",
+  signInNote: "Bir Google oturum açma penceresi açar. Yalnızca <scope/> iznini isteriz — gelen kutunuza asla okuma erişimi istemeyiz.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceHorizon'), {
+  data: "Tüm veriler <path/> konumunda tutulur.",
+  tip: "İpucu: Herhangi bir yerden bir not defterine, kaynağa veya eyleme atlamak için <key/> tuşuna basın.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'reasoningSlotCard'), {
+  description: "Zor sorular ve çok adımlı analizler için. Gündelik sohbetiniz hızlı kalsın diye sohbet modelinden ayrıdır — yalnızca asistandan bir konuda açıkça <em>derinlemesine düşünmesini</em> istediğinizde buraya yönlendirilir.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome'), {
+  data: "Tüm veriler <path/> konumunda tutulur.",
+  tip: "İpucu: Herhangi bir yerden bir not defterine, kaynağa veya eyleme atlamak için <key/> tuşuna basın.",
 });

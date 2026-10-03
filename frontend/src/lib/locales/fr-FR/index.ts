@@ -1735,7 +1735,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'artifacts'), 'artifactRail'
 });
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'artifacts'), 'artifactRail'), 'quickType'), {
   briefing: "Brief",
-  coursePack: "Pack de cours",
+  coursePack: "Course Pack",
   dataTable: "Tableau de données",
   faq: "FAQ",
   flashcards: "Cartes mémoire",
@@ -1760,7 +1760,7 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'artifacts'), 
 });
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'artifacts'), 'artifactRail'), 'typeLabel'), {
   briefing: "brief",
-  coursePack: "Pack de cours",
+  coursePack: "Course Pack",
   dataTable: "tableau de données",
   faq: "faq",
   flashcards: "cartes mémoire",
@@ -1790,7 +1790,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'artifacts'), 'mindMapArtifa
 });
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'artifacts'), 'mindMapArtifactViewer'), 'type'), {
   briefing: "Brief",
-  coursePack: "Pack de cours",
+  coursePack: "Course Pack",
   dataTable: "Tableau de données",
   faq: "FAQ",
   flashcards: "Cartes mémoire",
@@ -1819,7 +1819,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'artifacts'), 'studyArtifact
   correct: "Correct",
   correctAnswer: "Bonne réponse : {{answer}}",
   coursePackIntro: "Parcourez les modules, suivez votre progression et basculez entre les vues apprenant et animateur.",
-  coursePackWorkspace: "Espace de travail du Pack de cours",
+  coursePackWorkspace: "Espace de travail Course Pack",
   dataTableTitle: "Tableau de données",
   facilitatorHiddenHint: "Les notes réservées à l’animateur sont masquées dans les supports pour apprenants.",
   facilitatorNotes: "Notes de l’animateur",
@@ -1843,7 +1843,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'artifacts'), 'studyArtifact
   previousQuestion: "Question précédente",
   prompt: "Consigne",
   questionPosition: "Question {{current}} sur {{total}}",
-  quizRunner: "Exécuteur de quiz",
+  quizRunner: "Session de quiz",
   researchRunIntro: "Synthèse de l’investigation par étapes issue de l’artefact généré.",
   researchRunWorkspace: "Espace de travail de l’exécution de recherche",
   revealAnswer: "Afficher la réponse",
@@ -1857,7 +1857,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'artifacts'), 'studyArtifact
   stageCountOther: "{{count}} étapes",
   stageSourceParsed: "Markdown analysé",
   stageSourceStructured: "Métadonnées structurées",
-  viewModeLabel: "Mode d’affichage du Pack de cours",
+  viewModeLabel: "Mode d’affichage du Course Pack",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'artifacts'), 'visualArtifactViewers'), {
   hideNotes: "Masquer les notes",
@@ -1982,14 +1982,14 @@ Object.assign(ensureSection(ensureSection(rootNode, 'common'), 'studioPage'), {
   rejectedFallback: "rejeté",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'common'), 'useStudio'), {
-  artifactTitle: "Pack de cours {{title}}",
+  artifactTitle: "Course Pack {{title}}",
   atLeastOneSource: "Au moins un fichier ou un lien est requis",
-  defaultNotebookTitle: "Pack de cours - {{name}}",
-  notebookDescription: "Pack de cours prêt pour l’instructeur, mis en file d’attente à partir des sources de Studio.",
+  defaultNotebookTitle: "Course Pack - {{name}}",
+  notebookDescription: "Course Pack prêt pour l’instructeur, mis en file d’attente à partir des sources de Studio.",
   sourceFailedToQueue: "{{name}} n’a pas pu être mis en file d’attente",
   sourcesFailedProcessing: "{{count}} source(s) en échec lors du traitement",
-  warningQueued: "Les sources sont en file d’attente. La génération du Pack de cours sera disponible depuis le carnet une fois l’extraction terminée.",
-  warningStillProcessing: "Les sources sont encore en cours de traitement. Ouvrez le carnet pour générer le Pack de cours une fois l’extraction terminée.",
+  warningQueued: "Les sources sont en file d’attente. La génération du Course Pack sera disponible depuis le carnet une fois l’extraction terminée.",
+  warningStillProcessing: "Les sources sont encore en cours de traitement. Ouvrez le carnet pour générer le Course Pack une fois l’extraction terminée.",
   workflowRunTitle: "Générer {{title}}",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'evaluation'), 'claimReviewDrawer'), {
@@ -2302,7 +2302,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'executiveSynt
   copiedToast: "Synthèse exécutive copiée dans le presse-papiers",
   copyFailed: "Échec de la copie du texte dans le presse-papiers",
   copySynthesis: "Copier la synthèse",
-  descriptionLead: "Intelligence transversale des sources, consensus thématiques, tensions et prochaines étapes pour",
   evaluating: "Évaluation des thèmes transversaux, des désaccords et des implications stratégiques",
   generateFailed: "Échec de la génération de la synthèse exécutive transversale.",
   noteTitle: "Synthèse exécutive — {{name}}",
@@ -2814,11 +2813,10 @@ Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'launcherPrefsP
   tokensCount: "{{value}} jetons",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'localExecutionPolicyPanel'), {
-  cloudFallbackProposedLead: "Repli cloud proposé pour",
   computeProfile: "Profil de calcul",
   confirmAction: "Confirmer la poursuite dans le cloud",
   confirmDescription: "Saisissez exactement l’étape et la classe de contenu proposées pour enregistrer une poursuite approuvée. Cela n’exécute aucune tâche et n’appelle aucun fournisseur cloud.",
-  confirmTitle: "Confirmer la route cloud en attente de la politique local préféré",
+  confirmTitle: "Confirmer la route cloud en attente pour la politique Local préféré",
   contentClass: "Classe de contenu",
   contentClassAria: "classe de contenu",
   custom: "Personnalisé",
@@ -3114,7 +3112,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'study'), 'examLab'), {
   noQuizzes: "Aucun quiz terminé — générez-en un dans Studio",
   notAnswered: "Sans réponse",
   notebook: "Carnet",
-  overtime: "Temps dépassé — toujours notable",
+  overtime: "Temps dépassé — correction toujours possible",
   pickNotebookFirst: "Choisissez d’abord un carnet",
   quiz: "Quiz",
   recentAttempts: "Tentatives récentes",
@@ -3145,7 +3143,7 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'stu
   planToday: "Planifier la séance du jour",
   practiceTest: "Créer un test d’entraînement",
   quizMe: "Interroge-moi",
-  researchGap: "Étudier cette lacune",
+  researchGap: "Faire des recherches sur cette lacune",
   reviewWriting: "Relire ce texte",
   socratic: "Mode socratique",
   solveWithMe: "Résoudre avec moi",
@@ -3220,11 +3218,9 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'stu
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'overview'), {
   approvedVersion: "Version approuvée",
   description: "Gardez cet objectif et la limite de ses sources visibles pendant que le plan passe en revue.",
-  existingCardsLead: "Vos cartes de révision existantes restent disponibles depuis la page",
   linkedSources: "Sources liées",
   notApproved: "Non approuvé",
   startingLevel: "Niveau de départ",
-  studyHome: "Accueil Étude",
   title: "Vue d’ensemble du plan",
 });
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'reserved'), {
@@ -3340,7 +3336,7 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'stu
   voiceTimeout: "La parole locale ne s’est pas terminée. Réessayez.",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'study'), 'studyWorkbench'), {
-  activePlansDescription: "Gardez chaque objectif d’apprentissage, ses sources approuvées et la prochaine révision dans un seul espace de travail reprenable.",
+  activePlansDescription: "Gardez chaque objectif d’apprentissage, ses sources approuvées et la prochaine révision dans un seul espace de travail que vous pouvez reprendre à tout moment.",
   activePlansHeading: "Plans d’étude actifs",
   cardsLoadError: "Impossible de charger les cartes d’étude. Vos cartes existantes n’ont pas été modifiées.",
   createFirstPlan: "Créer votre premier plan",
@@ -3437,7 +3433,7 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'tut
   cancelled: "Appel au tuteur annulé.",
   generic: "Le tuteur n’a pas pu terminer cette demande. Rien n’a été modifié ; réessayez.",
   outsideAuthority: "Cette demande au tuteur dépasse l’autorité d’étude approuvée.",
-  timeout: "Le tuteur a expiré avant de terminer. Réessayez la même demande.",
+  timeout: "Le délai de réponse du tuteur a été dépassé. Réessayez la même demande.",
   webUnavailable: "La recherche web est indisponible pour cette demande. Demandez l’autorisation et réessayez.",
 });
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'tutorDock'), 'prompt'), {
@@ -3679,17 +3675,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'gmailIntegrat
   sendingTo: "Envoi à",
   sentFallback: "Envoyé.",
   setupIntro: "Configuration unique : créez un client OAuth Google Cloud.",
-  setupStep1Lead: "Ouvrez la",
-  setupStep1Link: "Google Cloud Console",
-  setupStep2Lead: "Créez un ID client OAuth 2.0 (type :",
-  setupStep2Type: "Application de bureau",
-  setupStep3Lead: "Ajoutez",
-  setupStep3Tail: "aux URI de redirection autorisées (nous adapterons le port dynamiquement)",
-  setupStep4Lead: "Activez l’",
-  setupStep4Tail: "dans votre projet",
   setupStep5: "Collez ci-dessous l’ID client et le secret",
-  signInNoteLead: "Ouvre une fenêtre de connexion Google. Nous ne demandons que",
-  signInNoteTail: "— jamais l’accès en lecture à votre boîte de réception.",
   title: "Résumés par e-mail",
   waitingForGoogle: "En attente de la fin de la connexion Google…",
 });
@@ -3716,7 +3702,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceH
   coverDescription: "Vos folios récents, les signaux d’exécution sans risque et les prochaines actions restent réunis sur une seule page calme — prêts quand vous l’êtes.",
   coverEyebrow: "Couverture du carnet · bureau de travail",
   coverTitle: "Reprenez la question qui compte aujourd’hui.",
-  dataLead: "Toutes les données sont stockées dans",
   emptyDescription: "Aucun carnet pour le moment. Déposez un PDF dans Studio pour créer le premier.",
   emptyTitle: "Votre carnet est prêt à commencer",
   eyebrow: "Horizon d’intelligence",
@@ -3740,8 +3725,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceH
   studio: "Studio",
   studioHint: "Déposez des fichiers → carnet ou podcast",
   subtitle: "Allez plus loin avec chaque source",
-  tipLead: "Astuce : appuyez sur",
-  tipTail: "depuis n’importe où pour accéder à un carnet, une source ou une action.",
   todayDescription: "Commencez par une source, un carnet, une question fondée sur vos sources ou un brief de podcast explicitement révisé.",
   todayEyebrow: "Aujourd’hui",
   todayTitle: "Ouvrir une double page de travail",
@@ -3753,9 +3736,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'modelFleetBad
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'reasoningSlotCard'), {
   currentlyUsing: "Actuellement utilisé",
-  descriptionEmphasis: "réfléchir en profondeur",
-  descriptionLead: "Pour les questions difficiles et les analyses en plusieurs étapes. Distinct du modèle de chat pour que vos conversations courantes restent rapides — utilisé uniquement lorsque vous demandez explicitement à l’assistant de",
-  descriptionTail: "sur un sujet.",
   noModel: "Aucun modèle attribué. Choisissez-en un dans la liste déroulante du modèle de raisonnement ci-dessous.",
   title: "Modèle de raisonnement",
 });
@@ -3925,7 +3905,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome
   allNotebooks: "Tous les carnets",
   ask: "Demander",
   askHint: "Recherchez et synthétisez à partir de vos preuves.",
-  dataLead: "Toutes les données sont stockées dans",
   description: "Allez plus loin avec chaque source dans un bureau calme, pensé d’abord pour le local.",
   emptyDescription: "Aucun carnet pour le moment. Déposez un PDF dans Studio pour créer le premier.",
   emptyTitle: "Votre carnet est prêt à commencer",
@@ -3950,8 +3929,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome
   shortcutsAriaLabel: "Raccourcis du carnet et chemin des données",
   studio: "Studio",
   studioHint: "Déposez des fichiers dans un carnet ou un brief de podcast.",
-  tipLead: "Astuce : appuyez sur",
-  tipTail: "depuis n’importe où pour accéder à un carnet, une source ou une action.",
   todayDescription: "Commencez par une source, un carnet, une question fondée sur vos sources ou un brief de podcast explicitement révisé.",
   todayEyebrow: "Aujourd’hui",
   todayTitle: "Ouvrir une double page de travail",
@@ -3960,7 +3937,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome
 // v0.8.130 — strings moved out of components in the whole-app i18n pass.
 Object.assign(ensureSection(ensureSection(rootNode, 'apiKeys'), 'typeLabels'), {
   embedding: "Embedding",
-  language: "Langue",
+  language: "Langage",
   speechToText: "STT",
   textToSpeech: "TTS",
 });
@@ -4058,4 +4035,40 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'workspace'), 
   chatModelScan: "analyse des modèles de chat",
   coreReady: "cœur prêt",
   launcherStart: "démarrage du lanceur",
+});
+
+// v0.8.130 — strings moved out of components in the whole-app i18n pass.
+Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'executiveSynthesisDialog'), {
+  description: "Intelligence transversale des sources, consensus thématiques, tensions et prochaines étapes pour <name/>.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'podcastStudio'), {
+  defaultEpisodeName: "Podcast Deeper Notebook",
+  outlineFindings: "Constats",
+  outlineIntroduction: "Introduction",
+  outlineTakeaway: "À retenir",
+  untitledSegment: "Segment sans titre",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'localExecutionPolicyPanel'), {
+  cloudFallbackProposed: "Repli cloud proposé pour <stage/> · <content/>.",
+});
+Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'overview'), {
+  existingCards: "Vos cartes de révision existantes restent disponibles depuis la page <link>Accueil Étude</link>.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'gmailIntegration'), {
+  setupStep1: "Ouvrez la <link>Google Cloud Console</link>",
+  setupStep2: "Créez un ID client OAuth 2.0 (type : <em>Application de bureau</em>)",
+  setupStep3: "Ajoutez <url/> aux URI de redirection autorisées (nous adapterons le port dynamiquement)",
+  setupStep4: "Activez <api/> dans votre projet",
+  signInNote: "Ouvre une fenêtre de connexion Google. Nous ne demandons que <scope/> — jamais l’accès en lecture à votre boîte de réception.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceHorizon'), {
+  data: "Toutes les données sont stockées dans <path/>.",
+  tip: "Astuce : appuyez sur <key/> depuis n’importe où pour accéder à un carnet, une source ou une action.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'reasoningSlotCard'), {
+  description: "Pour les questions difficiles et les analyses en plusieurs étapes. Distinct du modèle de chat pour que vos conversations courantes restent rapides — utilisé uniquement lorsque vous demandez explicitement à l’assistant de <em>réfléchir en profondeur</em> sur un sujet.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome'), {
+  data: "Toutes les données sont stockées dans <path/>.",
+  tip: "Astuce : appuyez sur <key/> depuis n’importe où pour accéder à un carnet, une source ou une action.",
 });

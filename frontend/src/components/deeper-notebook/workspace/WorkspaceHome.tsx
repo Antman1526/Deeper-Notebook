@@ -11,6 +11,7 @@ import { VisualCard } from './VisualCard'
 import { VisualCardGrid } from './VisualCardGrid'
 import { WorkspaceHero } from './WorkspaceHero'
 import { WorkspacePage } from './WorkspacePage'
+import { RichText } from '@/components/common/RichText'
 
 /** The V2 home consumes the exact presentation contract of IntelligenceHorizon. */
 export type WorkspaceHomeProps = IntelligenceHorizonProps
@@ -241,9 +242,9 @@ export function WorkspaceHome({
 
       <aside aria-label={t('workspace.workspaceHome.shortcutsAriaLabel')} className="dn-workspace-note">
         <span>
-          {t('workspace.workspaceHome.tipLead')} <CommandPaletteKey /> {t('workspace.workspaceHome.tipTail')}
+          <RichText text={t('workspace.workspaceHome.tip')} components={{ key: () => <CommandPaletteKey /> }} />
         </span>
-        <span>{t('workspace.workspaceHome.dataLead')} <code>{dataPath}</code>.</span>
+        <span><RichText text={t('workspace.workspaceHome.data')} components={{ path: () => <code>{dataPath}</code> }} /></span>
       </aside>
     </WorkspacePage>
   )

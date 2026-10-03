@@ -17,29 +17,29 @@ const TITLES: readonly [route: string, title: string][] = [
   ['/sources', 'Sources · Deeper Notebook'],
   ['/capture', 'Capture · Deeper Notebook'],
   ['/knowledge', 'Knowledge · Deeper Notebook'],
-  ['/search', 'Ask and Search · Deeper Notebook'],
+  ['/search', 'Ask and search · Deeper Notebook'],
   ['/studio', 'Studio · Deeper Notebook'],
   ['/podcasts', 'Podcasts · Deeper Notebook'],
-  ['/podcasts/studio', 'Podcast Studio · Deeper Notebook'],
+  ['/podcasts/studio', 'Podcast intelligence studio · Deeper Notebook'],
   ['/study', 'Study · Deeper Notebook'],
   ['/transformations', 'Transformations · Deeper Notebook'],
   ['/settings', 'Settings · Deeper Notebook'],
   ['/settings/api-keys', 'Models · Deeper Notebook'],
-  ['/settings/local-models', 'Local Models · Deeper Notebook'],
-  ['/settings/mcp', 'MCP Servers · Deeper Notebook'],
-  ['/settings/launcher-prefs', 'Launch Preferences · Deeper Notebook'],
+  ['/settings/local-models', 'Local models · Deeper Notebook'],
+  ['/settings/mcp', 'MCP servers · Deeper Notebook'],
+  ['/settings/launcher-prefs', 'Launch preferences · Deeper Notebook'],
   ['/advanced', 'Advanced · Deeper Notebook'],
   ['/setup-wizard', 'Setup · Deeper Notebook'],
 ]
 
 test.describe('3a — page titles', () => {
   test('each route names itself in the document title', async ({ page }) => {
-    const seen: string[] = []
-    for (const [route] of TITLES) {
+    // v0.8.130 — titles are set on the client from the navigation labels (so they follow
+    // the UI language), hence a polling assertion per route.
+    for (const [route, title] of TITLES) {
       await page.goto(route)
-      seen.push(await page.title())
+      await expect(page, route).toHaveTitle(title)
     }
-    expect(seen).toEqual(TITLES.map(([, title]) => title))
   })
 })
 

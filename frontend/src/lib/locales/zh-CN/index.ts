@@ -2000,10 +2000,10 @@ Object.assign(ensureSection(ensureSection(rootNode, 'evaluation'), 'claimReviewD
   partial: "部分支持",
   running: "证据审阅仍在运行。运行完成后将显示论断。",
   sourceChanged: "来源自评估后已更改",
-  supported: "已支持",
+  supported: "得到支持",
   title: "证据审阅",
   uncited: "未引用",
-  unsupported: "不受支持",
+  unsupported: "未得到支持",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'evaluation'), 'evidenceReview'), {
   checking: "正在检查证据",
@@ -2088,7 +2088,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'knowledge'), 'knowledgeExpl
   localProvider: "本地",
   memoryPressureNotReported: "未报告内存压力",
   noActiveSource: "没有当前来源",
-  noProductionQueued: "没有排队的生成任务",
+  noProductionQueued: "没有排队的制作任务",
   propertiesAppOwned: "应用自有来源",
   propertiesExternalReadOnly: "外部只读来源",
   readinessChecking: "正在检查本地模型就绪情况",
@@ -2113,7 +2113,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'knowledge'), 'knowledgeInte
   expand: "展开",
   expandRail: "展开智能侧栏",
   panels: "智能面板",
-  production: "生成",
+  production: "制作",
   researchIntelligence: "研究智能",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'knowledge'), 'knowledgeModeLauncher'), {
@@ -2300,7 +2300,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'executiveSynt
   copiedToast: "执行摘要综述已复制到剪贴板",
   copyFailed: "无法将文本复制到剪贴板",
   copySynthesis: "复制综述",
-  descriptionLead: "跨来源的整体洞察、主题共识、分歧与后续步骤，针对",
   evaluating: "正在评估贯穿性主题、分歧和战略影响",
   generateFailed: "无法生成跨来源执行摘要综述。",
   noteTitle: "执行摘要综述 — {{name}}",
@@ -2669,7 +2668,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'research'), 'contradictionT
   empty: "在已批准的来源被提取并验证后，将显示比较结果。",
   evidenceReview: "证据审阅",
   sourceChanged: "（来源已更改）",
-  supportedClaims: "{{count}} 条受支持的论断",
+  supportedClaims: "{{count}} 条得到支持的论断",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'research'), 'evidenceReceipt'), {
   evidenceFingerprint: "证据指纹",
@@ -2812,7 +2811,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'launcherPrefsP
   tokensCount: "{{value}} 个 token",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'localExecutionPolicyPanel'), {
-  cloudFallbackProposedLead: "已建议使用云端后备，针对",
   computeProfile: "计算配置",
   confirmAction: "确认继续使用云端",
   confirmDescription: "请输入所建议的确切阶段和内容类别，以记录已批准的继续使用。这不会执行任务，也不会调用云端提供商。",
@@ -2835,7 +2833,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'localExecution
   strictBlocksCloud: "“严格本地”会阻止云端路径。",
   strictLocal: "严格本地",
   title: "本地执行策略",
-  useLocalPreferred: "使用优先本地",
+  useLocalPreferred: "使用“优先本地”",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'localModelsPage'), {
   activeModelSwitched: "已切换当前聊天模型：{{detail}}",
@@ -3218,11 +3216,9 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'stu
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'overview'), {
   approvedVersion: "已批准的版本",
   description: "在计划经过审阅期间，保持显示此目标及其来源边界。",
-  existingCardsLead: "您现有的复习卡片仍保留在",
   linkedSources: "已关联的来源",
   notApproved: "未批准",
   startingLevel: "起始水平",
-  studyHome: "学习首页",
   title: "计划概览",
 });
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'reserved'), {
@@ -3677,17 +3673,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'gmailIntegrat
   sendingTo: "发送至",
   sentFallback: "已发送。",
   setupIntro: "一次性设置：创建 Google Cloud OAuth 客户端。",
-  setupStep1Lead: "打开",
-  setupStep1Link: "Google Cloud Console",
-  setupStep2Lead: "创建 OAuth 2.0 客户端 ID（类型：",
-  setupStep2Type: "桌面应用",
-  setupStep3Lead: "添加",
-  setupStep3Tail: "到已授权的重定向 URI（我们会动态匹配端口）",
-  setupStep4Lead: "启用",
-  setupStep4Tail: "（在您的项目中）",
   setupStep5: "在下方粘贴客户端 ID 和密钥",
-  signInNoteLead: "将打开 Google 登录窗口。我们仅请求",
-  signInNoteTail: "— 绝不会读取您的收件箱。",
   title: "邮件摘要",
   waitingForGoogle: "正在等待 Google 登录完成…",
 });
@@ -3714,7 +3700,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceH
   coverDescription: "您最近的册页、安全的运行时信号和后续操作都集中在一个安静的跨页中 — 随时待命。",
   coverEyebrow: "笔记本封面 · 工作台",
   coverTitle: "继续探讨今天最重要的问题。",
-  dataLead: "所有数据都保存在",
   emptyDescription: "还没有笔记本。将 PDF 拖入 Studio 即可开始第一个。",
   emptyTitle: "您的笔记本已准备就绪",
   eyebrow: "智能地平线",
@@ -3738,8 +3723,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceH
   studio: "Studio",
   studioHint: "拖入文件 → 笔记本或播客",
   subtitle: "借助每一个来源，思考得更深",
-  tipLead: "提示：随时按",
-  tipTail: "即可跳转到笔记本、来源或操作。",
   todayDescription: "从一个来源、一个笔记本、一个有据可依的问题，或一份经过明确审阅的播客简报开始。",
   todayEyebrow: "今天",
   todayTitle: "打开一个工作跨页",
@@ -3751,9 +3734,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'modelFleetBad
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'reasoningSlotCard'), {
   currentlyUsing: "当前使用",
-  descriptionEmphasis: "深入思考",
-  descriptionLead: "用于难题和多步骤分析。它与聊天模型相互独立，让您的日常对话保持快速 — 只有当您明确要求助手就某件事",
-  descriptionTail: "时，才会路由到这里。",
   noModel: "未分配模型。请在下方的推理模型下拉菜单中选择一个。",
   title: "推理模型",
 });
@@ -3923,7 +3903,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome
   allNotebooks: "所有笔记本",
   ask: "提问",
   askHint: "基于您的证据进行搜索与综合。",
-  dataLead: "所有数据都保存在",
   description: "在一张安静、本地优先的工作台上，借助每一个来源思考得更深。",
   emptyDescription: "还没有笔记本。将 PDF 拖入 Studio 即可开始第一个。",
   emptyTitle: "您的笔记本已准备就绪",
@@ -3948,8 +3927,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome
   shortcutsAriaLabel: "笔记本快捷方式和数据路径",
   studio: "Studio",
   studioHint: "将文件拖入笔记本或播客简报。",
-  tipLead: "提示：随时按",
-  tipTail: "即可跳转到笔记本、来源或操作。",
   todayDescription: "从一个来源、一个笔记本、一个有据可依的问题，或一份经过明确审阅的播客简报开始。",
   todayEyebrow: "今天",
   todayTitle: "打开一个工作跨页",
@@ -4056,4 +4033,40 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'workspace'), 
   chatModelScan: "聊天模型扫描",
   coreReady: "核心已就绪",
   launcherStart: "启动器启动",
+});
+
+// v0.8.130 — strings moved out of components in the whole-app i18n pass.
+Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'executiveSynthesisDialog'), {
+  description: "针对 <name/> 的跨来源整体洞察、主题共识、分歧与后续步骤。",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'podcastStudio'), {
+  defaultEpisodeName: "Deeper Notebook 播客",
+  outlineFindings: "主要发现",
+  outlineIntroduction: "引言",
+  outlineTakeaway: "要点",
+  untitledSegment: "未命名片段",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'localExecutionPolicyPanel'), {
+  cloudFallbackProposed: "已建议为 <stage/> · <content/> 使用云端后备。",
+});
+Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'overview'), {
+  existingCards: "您现有的复习卡片仍保留在<link>学习首页</link>。",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'gmailIntegration'), {
+  setupStep1: "打开 <link>Google Cloud Console</link>",
+  setupStep2: "创建 OAuth 2.0 客户端 ID（类型：<em>桌面应用</em>）",
+  setupStep3: "将 <url/> 添加到已授权的重定向 URI（我们会动态匹配端口）",
+  setupStep4: "在您的项目中启用 <api/>",
+  signInNote: "将打开 Google 登录窗口。我们仅请求 <scope/> — 绝不会读取您的收件箱。",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceHorizon'), {
+  data: "所有数据都保存在 <path/>。",
+  tip: "提示：随时按 <key/> 即可跳转到笔记本、来源或操作。",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'reasoningSlotCard'), {
+  description: "用于难题和多步骤分析。它与聊天模型相互独立，让您的日常对话保持快速 — 只有当您明确要求助手就某件事<em>深入思考</em>时，才会路由到这里。",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome'), {
+  data: "所有数据都保存在 <path/>。",
+  tip: "提示：随时按 <key/> 即可跳转到笔记本、来源或操作。",
 });

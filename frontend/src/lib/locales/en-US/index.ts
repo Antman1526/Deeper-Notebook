@@ -2323,7 +2323,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'executiveSynt
   copiedToast: "Executive synthesis copied to clipboard",
   copyFailed: "Failed to copy text to clipboard",
   copySynthesis: "Copy synthesis",
-  descriptionLead: "Ambient cross-source intelligence, thematic consensus, tensions, and next steps for",
   evaluating: "Evaluating cross-cutting themes, disagreements, and strategic implications",
   generateFailed: "Failed to generate executive cross-source synthesis.",
   noteTitle: "Executive synthesis — {{name}}",
@@ -2835,7 +2834,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'launcherPrefsP
   tokensCount: "{{value}} tokens",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'localExecutionPolicyPanel'), {
-  cloudFallbackProposedLead: "Cloud fallback proposed for",
   computeProfile: "Compute profile",
   confirmAction: "Confirm cloud continuation",
   confirmDescription: "Type the exact proposed stage and content class to record an approved continuation. This does not execute a task or call a cloud provider.",
@@ -3241,11 +3239,9 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'stu
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'overview'), {
   approvedVersion: "Approved version",
   description: "Keep this goal and its source boundary visible while the plan moves through review.",
-  existingCardsLead: "Your existing review cards remain available on the",
   linkedSources: "Linked sources",
   notApproved: "Not approved",
   startingLevel: "Starting level",
-  studyHome: "Study home",
   title: "Plan overview",
 });
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'reserved'), {
@@ -3700,17 +3696,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'gmailIntegrat
   sendingTo: "Sending to",
   sentFallback: "Sent.",
   setupIntro: "One-time setup: create a Google Cloud OAuth client.",
-  setupStep1Lead: "Open",
-  setupStep1Link: "Google Cloud Console",
-  setupStep2Lead: "Create an OAuth 2.0 client ID (type:",
-  setupStep2Type: "Desktop app",
-  setupStep3Lead: "Add",
-  setupStep3Tail: "to authorized redirect URIs (we'll match the port dynamically)",
-  setupStep4Lead: "Enable the",
-  setupStep4Tail: "in your project",
   setupStep5: "Paste the client ID + secret below",
-  signInNoteLead: "Opens a Google sign-in window. We request only",
-  signInNoteTail: "— never read access to your inbox.",
   title: "Email digests",
   waitingForGoogle: "Waiting for Google sign-in to complete…",
 });
@@ -3737,7 +3723,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceH
   coverDescription: "Your recent folios, safe runtime signals, and next actions stay in one quiet spread—ready when you are.",
   coverEyebrow: "Notebook cover · working desk",
   coverTitle: "Continue the question that matters today.",
-  dataLead: "All data lives in",
   emptyDescription: "No notebooks yet. Drop a PDF into Studio to start your first.",
   emptyTitle: "Your notebook is ready to begin",
   eyebrow: "Intelligence horizon",
@@ -3761,8 +3746,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceH
   studio: "Studio",
   studioHint: "Drop files → notebook or podcast",
   subtitle: "Think further with every source",
-  tipLead: "Tip: hit",
-  tipTail: "from anywhere to jump to a notebook, source, or action.",
   todayDescription: "Start with a source, a notebook, a grounded question, or an explicitly reviewed podcast brief.",
   todayEyebrow: "Today",
   todayTitle: "Open a working spread",
@@ -3774,9 +3757,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'modelFleetBad
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'reasoningSlotCard'), {
   currentlyUsing: "Currently using",
-  descriptionEmphasis: "think hard",
-  descriptionLead: "For hard questions and multi-step analysis. Distinct from the chat model so your casual conversation stays fast — only routed here when you explicitly ask the assistant to",
-  descriptionTail: "about something.",
   noModel: "No model assigned. Pick one in the reasoning model dropdown below.",
   title: "Reasoning model",
 });
@@ -3946,7 +3926,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome
   allNotebooks: "All notebooks",
   ask: "Ask",
   askHint: "Search and synthesize from your evidence.",
-  dataLead: "All data lives in",
   description: "Think further with every source in one quiet, local-first desk.",
   emptyDescription: "No notebooks yet. Drop a PDF into Studio to start your first.",
   emptyTitle: "Your notebook is ready to begin",
@@ -3971,8 +3950,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome
   shortcutsAriaLabel: "Notebook shortcuts and data path",
   studio: "Studio",
   studioHint: "Drop files into a notebook or podcast brief.",
-  tipLead: "Tip: hit",
-  tipTail: "from anywhere to jump to a notebook, source, or action.",
   todayDescription: "Start with a source, a notebook, a grounded question, or an explicitly reviewed podcast brief.",
   todayEyebrow: "Today",
   todayTitle: "Open a working spread",
@@ -4079,4 +4056,40 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'workspace'), 
   chatModelScan: "chat model scan",
   coreReady: "core ready",
   launcherStart: "launcher start",
+});
+
+// v0.8.130 — strings moved out of components in the whole-app i18n pass.
+Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'executiveSynthesisDialog'), {
+  description: "Ambient cross-source intelligence, thematic consensus, tensions, and next steps for <name/>.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'podcastStudio'), {
+  defaultEpisodeName: "Deeper Notebook podcast",
+  outlineFindings: "Findings",
+  outlineIntroduction: "Introduction",
+  outlineTakeaway: "Takeaway",
+  untitledSegment: "Untitled segment",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'localExecutionPolicyPanel'), {
+  cloudFallbackProposed: "Cloud fallback proposed for <stage/> · <content/>.",
+});
+Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'overview'), {
+  existingCards: "Your existing review cards remain available on the <link>Study home</link>.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'gmailIntegration'), {
+  setupStep1: "Open <link>Google Cloud Console</link>",
+  setupStep2: "Create an OAuth 2.0 client ID (type: <em>Desktop app</em>)",
+  setupStep3: "Add <url/> to authorized redirect URIs (we'll match the port dynamically)",
+  setupStep4: "Enable the <api/> in your project",
+  signInNote: "Opens a Google sign-in window. We request only <scope/> — never read access to your inbox.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceHorizon'), {
+  data: "All data lives in <path/>.",
+  tip: "Tip: hit <key/> from anywhere to jump to a notebook, source, or action.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'reasoningSlotCard'), {
+  description: "For hard questions and multi-step analysis. Distinct from the chat model so your casual conversation stays fast — only routed here when you explicitly ask the assistant to <em>think hard</em> about something.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome'), {
+  data: "All data lives in <path/>.",
+  tip: "Tip: hit <key/> from anywhere to jump to a notebook, source, or action.",
 });

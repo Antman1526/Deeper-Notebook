@@ -14,6 +14,7 @@ import { Sparkles } from 'lucide-react'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { RichText } from '@/components/common/RichText'
 
 interface ReasoningSlotCardProps {
   /** Optional model name currently assigned to the reasoning slot. */
@@ -37,9 +38,7 @@ export function ReasoningSlotCard({ assignedModel }: ReasoningSlotCardProps) {
       </CardHeader>
       <CardContent className="space-y-2">
         <p className="text-sm leading-relaxed text-[var(--muted-foreground)]">
-          {t('workspace.reasoningSlotCard.descriptionLead')}{' '}
-          <em>{t('workspace.reasoningSlotCard.descriptionEmphasis')}</em>{' '}
-          {t('workspace.reasoningSlotCard.descriptionTail')}
+          <RichText text={t('workspace.reasoningSlotCard.description')} components={{ em: (children) => <em>{children}</em> }} />
         </p>
         {assignedModel ? (
           <p className="text-sm text-[var(--foreground)]">

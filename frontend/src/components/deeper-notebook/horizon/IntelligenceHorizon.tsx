@@ -16,6 +16,7 @@ import { CommandPaletteKey } from '../shell/CommandPaletteKey'
 import { FolioPage } from '../folio/FolioPage'
 import { FolioSpread } from '../folio/FolioSpread'
 import { FolioState } from '../folio/FolioState'
+import { RichText } from '@/components/common/RichText'
 
 export interface HorizonNotebook {
   id: string
@@ -339,11 +340,11 @@ export function IntelligenceHorizon({
       >
         <span>
           <FileText aria-hidden="true" className="mr-1 inline h-3 w-3 align-text-bottom" />
-          {t('workspace.intelligenceHorizon.tipLead')} <CommandPaletteKey /> {t('workspace.intelligenceHorizon.tipTail')}
+          <RichText text={t('workspace.intelligenceHorizon.tip')} components={{ key: () => <CommandPaletteKey /> }} />
         </span>
         <span>
           <Database aria-hidden="true" className="mr-1 inline h-3 w-3 align-text-bottom" />
-          {t('workspace.intelligenceHorizon.dataLead')} <code className="rounded bg-background px-1">{dataPath}</code>.
+          <RichText text={t('workspace.intelligenceHorizon.data')} components={{ path: () => <code className="rounded bg-background px-1">{dataPath}</code> }} />
         </span>
       </aside>
       </FolioPage>

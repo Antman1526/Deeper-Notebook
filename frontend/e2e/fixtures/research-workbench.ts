@@ -166,9 +166,11 @@ type ResearchWorkbenchFixtures = {
 }
 
 export const test = base.extend<ResearchWorkbenchFixtures>({
-  researchWorkbench: async ({ page }, use) => {
+  // v0.8.130 — the fixture callback is named `provide`, not `use`: eslint's react-hooks
+  // rule reads any call to `use(...)` as a React hook call.
+  researchWorkbench: async ({ page }, provide) => {
     await installResearchWorkbenchMocks(page)
-    await use(researchWorkbenchFixtures)
+    await provide(researchWorkbenchFixtures)
   },
 })
 

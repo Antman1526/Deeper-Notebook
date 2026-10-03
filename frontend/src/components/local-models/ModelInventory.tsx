@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import type { InventoryResponse, LocalModel } from '@/lib/api/local-models'
 import type { LocalModelHealth } from '@/lib/hooks/use-local-models'
-import { MODEL_READINESS_KEYS, MODEL_RESOURCE_TIER_KEYS, enumLabel, spacedEnum } from '@/lib/enum-labels'
+import { MODEL_HEALTH_STATUS_KEYS, MODEL_READINESS_KEYS, MODEL_RESOURCE_TIER_KEYS, enumLabel, spacedEnum } from '@/lib/enum-labels'
 import { useTranslation } from '@/lib/hooks/use-translation'
 
 type InventoryFilter = 'all' | 'ready' | 'needs-setup'
@@ -89,7 +89,7 @@ function ModelRow({
             <Badge variant={runnerReady ? 'secondary' : 'outline'}>{runnerReady ? t('settings.modelInventory.available') : t('settings.modelInventory.setupNeeded')}</Badge>
             {model.readiness && <Badge variant={model.route_eligible ? 'secondary' : 'outline'}>{enumLabel(t, MODEL_READINESS_KEYS, model.readiness, spacedEnum(model.readiness))}</Badge>}
             {model.measured_tier && <Badge variant="outline">{t('settings.modelInventory.tierBadge', { tier: enumLabel(t, MODEL_RESOURCE_TIER_KEYS, model.measured_tier) })}</Badge>}
-            {runtimeHealth && <Badge variant={runtimeHealth.status === 'healthy' ? 'secondary' : 'outline'}>{runtimeHealth.status}</Badge>}
+            {runtimeHealth && <Badge variant={runtimeHealth.status === 'healthy' ? 'secondary' : 'outline'}>{enumLabel(t, MODEL_HEALTH_STATUS_KEYS, runtimeHealth.status, spacedEnum(runtimeHealth.status))}</Badge>}
             {model.is_live_active && <Badge>{t('settings.modelInventory.active')}</Badge>}
             {model.is_launch_default && <Badge variant="secondary">{t('settings.modelInventory.launchDefault')}</Badge>}
           </div>

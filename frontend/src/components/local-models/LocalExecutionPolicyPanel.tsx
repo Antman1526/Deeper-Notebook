@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import type { LocalModelSettings } from '@/lib/api/local-models'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { RichText } from '@/components/common/RichText'
 
 type Props = {
   policy: LocalModelSettings['execution_policy']
@@ -65,7 +66,7 @@ export function LocalExecutionPolicyPanel({ policy, computeProfile, memoryLimitB
         </Button>)}
       </div>
       {strictBlocksCloud && <p role="alert" className="text-sm text-destructive">{t('settings.localExecutionPolicyPanel.strictBlocksCloud')}</p>}
-      {canReviewCloudFallback && <div className="rounded-md border p-3 text-sm"><p>{t('settings.localExecutionPolicyPanel.cloudFallbackProposedLead')}{' '}<strong>{pendingCloudRoute!.stage}</strong> · <strong>{pendingCloudRoute!.contentClass}</strong>.</p><Button className="mt-2" onClick={() => setConfirmOpen(true)} size="sm" type="button" variant="outline">{t('settings.localExecutionPolicyPanel.reviewPendingCloudFallback')}</Button></div>}
+      {canReviewCloudFallback && <div className="rounded-md border p-3 text-sm"><p><RichText text={t('settings.localExecutionPolicyPanel.cloudFallbackProposed')} components={{ stage: () => <strong>{pendingCloudRoute!.stage}</strong>, content: () => <strong>{pendingCloudRoute!.contentClass}</strong> }} /></p><Button className="mt-2" onClick={() => setConfirmOpen(true)} size="sm" type="button" variant="outline">{t('settings.localExecutionPolicyPanel.reviewPendingCloudFallback')}</Button></div>}
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="text-sm font-medium">{t('settings.localExecutionPolicyPanel.computeProfile')}<select aria-label={t('settings.localExecutionPolicyPanel.computeProfile')} className="mt-1 w-full rounded-md border bg-background p-2" value={nextProfile} onChange={event => setNextProfile(event.target.value as LocalModelSettings['compute_profile'])}><option value="efficient">{t('settings.localExecutionPolicyPanel.profileEfficient')}</option><option value="balanced">{t('settings.localExecutionPolicyPanel.profileBalanced')}</option><option value="maximum_quality">{t('settings.localExecutionPolicyPanel.profileMaximumQuality')}</option></select></label>
         <label className="text-sm font-medium">{t('settings.localExecutionPolicyPanel.memoryLimit')}<Input aria-label={t('settings.localExecutionPolicyPanel.memoryLimitAria')} className="mt-1" inputMode="numeric" min="0" onChange={event => setNextLimit(event.target.value)} value={nextLimit} /></label>

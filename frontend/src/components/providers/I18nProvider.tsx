@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react'
 import i18n from '@/lib/i18n'
 import { LanguageLoadingOverlay } from '@/components/common/LanguageLoadingOverlay'
+import { DocumentTitle } from '@/components/providers/DocumentTitle'
 
 export function I18nProvider({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false)
@@ -28,6 +29,7 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
   return (
     <>
       <LanguageLoadingOverlay />
+      <DocumentTitle />
       {children}
     </>
   )

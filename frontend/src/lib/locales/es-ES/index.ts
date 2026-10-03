@@ -320,10 +320,10 @@ export const esES = {
     deleteExclusiveSourcesLabel: "Eliminar fuentes exclusivas",
     keepExclusiveSourcesLabel: "Desvincular y conservarlas",
     activeNotebooks: "Cuadernos activos",
-    studio: 'Estudio',
+    studio: "Studio",
     aboutNotebook: 'Acerca de este cuaderno',
     actions: 'Acciones del cuaderno',
-    notesAndStudio: 'Notas y Estudio',
+    notesAndStudio: "Notas y Studio",
     viewToggle: "Diseño de los cuadernos",
     viewGrid: "Vista de cuadrícula",
     viewList: "Vista de lista",
@@ -1275,7 +1275,7 @@ export const esES = {
   },
   studio: {
     backToNotebooks: "Volver a Notebooks",
-    title: "Estudio",
+    title: "Studio",
     subtitle: "Sube uno o más documentos (PDF, DOCX, MD, TXT, HTML, PPTX) y genera un cuaderno de estudio estructurado o un episodio de podcast con dos presentadores, basado en tus fuentes.",
     step1Title: "1. Subir documentos",
     step1Description: "Arrastra y suelta, o haz clic para examinar. Hasta {max} MB por archivo. Varios archivos se combinan en un único contexto.",
@@ -1824,7 +1824,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'artifacts'), 'studyArtifact
   dataTableTitle: "Tabla de datos",
   facilitatorHiddenHint: "Las notas solo para el facilitador se ocultan en los materiales para el alumno.",
   facilitatorNotes: "Notas del facilitador",
-  facilitatorReady: "Vista de facilitador",
+  facilitatorReady: "Listo para el facilitador",
   facilitatorVisibleHint: "Se muestran las notas del instructor y las pautas de impartición.",
   flashcardReview: "Repaso de tarjetas de estudio",
   hideAnswer: "Ocultar respuesta",
@@ -1986,7 +1986,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'common'), 'useStudio'), {
   artifactTitle: "Paquete de curso de {{title}}",
   atLeastOneSource: "Se necesita al menos un archivo o enlace",
   defaultNotebookTitle: "Paquete de curso - {{name}}",
-  notebookDescription: "Paquete de curso listo para el instructor, puesto en cola desde las fuentes de Estudio.",
+  notebookDescription: "Paquete de curso listo para el instructor, puesto en cola desde las fuentes de Studio.",
   sourceFailedToQueue: "{{name}} no se pudo poner en cola",
   sourcesFailedProcessing: "{{count}} fuente(s) fallaron durante el procesamiento",
   warningQueued: "Las fuentes están en cola. La generación del Paquete de curso estará disponible en el cuaderno cuando termine la extracción.",
@@ -2291,7 +2291,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'knowledge'), 'workspaceRest
 Object.assign(ensureSection(ensureSection(rootNode, 'navigation'), 'appSidebar'), {
   capture: "Captura",
   emailDigests: "Resúmenes por correo",
-  studio: "Estudio",
+  studio: "Studio",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'collapsibleColumn'), {
   collapse: "Contraer {{label}}",
@@ -2303,7 +2303,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'executiveSynt
   copiedToast: "Síntesis ejecutiva copiada al portapapeles",
   copyFailed: "No se pudo copiar el texto al portapapeles",
   copySynthesis: "Copiar síntesis",
-  descriptionLead: "Inteligencia ambiental entre fuentes, consenso temático, tensiones y próximos pasos para",
   evaluating: "Evaluando temas transversales, desacuerdos e implicaciones estratégicas",
   generateFailed: "No se pudo generar la síntesis ejecutiva entre fuentes.",
   noteTitle: "Síntesis ejecutiva — {{name}}",
@@ -2360,7 +2359,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'editorialBrief
   formatDebate: "Debate",
   formatDeepDive: "Análisis en profundidad",
   includeUnanswered: "Incluir preguntas sin respuesta",
-  localNotice: "Todos los cambios del guion editorial se quedan en local hasta que confirmes la producción.",
+  localNotice: "Todos los cambios del resumen editorial se quedan en local hasta que confirmes la producción.",
   purpose: "Objetivo",
   purposeAnalyze: "Analizar",
   purposeChallenge: "Cuestionar",
@@ -2370,7 +2369,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'editorialBrief
   requiredTakeaway: "Conclusión imprescindible",
   speakerProfile: "Perfil de los locutores",
   targetMinutes: "Minutos objetivo",
-  title: "Guion editorial",
+  title: "Resumen editorial",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'episodeCard'), {
   listen: "Escuchar",
@@ -2543,7 +2542,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'podcastStudio'
   description: "Crea un resumen de audio opcional basado en las fuentes. La producción requiere una confirmación aparte.",
   episodeProfile: "Perfil del episodio",
   episodeProfileForProduction: "Perfil del episodio para la producción",
-  openingNotice: "Abrir el Estudio no envía ningún trabajo de producción.",
+  openingNotice: "Abrir el Studio no envía ningún trabajo de producción.",
   outlineRoute: "Ruta del esquema",
   outlineWorkspace: "Espacio de trabajo de esquema y modelos",
   prepareReview: "Preparar la revisión de producción",
@@ -2565,7 +2564,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'podcastStudio'
   voiceRoute: "Ruta de voz",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'podcastStudioFolio'), {
-  editorialBrief: "Guion editorial",
+  editorialBrief: "Resumen editorial",
   modelPlan: "Plan de modelos",
   outlineStoryboard: "Guion gráfico del esquema",
   productionFolio: "Folio de producción del pódcast",
@@ -2577,7 +2576,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'productionTime
   controllerState: "Estado actual del controlador: {{state}}",
   lockedDetail: "Disponible tras la mejora del motor intelectual",
   lockedLabel: "{{stage}} — bloqueado",
-  stageEditorialBrief: "Guion editorial",
+  stageEditorialBrief: "Resumen editorial",
   stageEditorialBriefDetail: "Define el público, el objetivo, el formato y la conclusión.",
   stageEpisode: "Episodio",
   stageEpisodeDetail: "Reproduce y revisa el resultado de producción actual.",
@@ -2591,7 +2590,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'productionTime
   stageVerification: "Verificación",
   stages: "Etapas de producción",
   stateAwaitingOutline: "esperando el esquema",
-  stateBriefingReady: "guion editorial listo",
+  stateBriefingReady: "resumen editorial listo",
   stateCancelled: "cancelado",
   stateCompleted: "completado",
   stateFailed: "con error",
@@ -2610,7 +2609,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'quickPodcastDi
   confirmDescription: "Esto envía un único trabajo de producción local confirmado y verificado mediante huella digital.",
   confirmProduction: "Confirmar producción",
   continueToConfirmation: "Continuar a la confirmación",
-  customizeInStudio: "Personalizar en Estudio",
+  customizeInStudio: "Personalizar en Studio",
   description: "Crear un pódcast es opcional. Este paso lee una vista previa temporal y no inicia ningún modelo ni crea ningún episodio.",
   episodeProfile: "Perfil del episodio",
   policySummary: "Política de evidencias estrictamente local · revisión del guion gráfico del esquema",
@@ -2651,7 +2650,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'researchSetPan
   untitledReference: "Referencia sin título",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'studioPage'), {
-  closeStudio: "Cerrar Estudio sin producir",
+  closeStudio: "Cerrar Studio sin producir",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'syncedTranscript'), {
   autoScrollOff: "Desplazamiento automático: desactivado",
@@ -2815,7 +2814,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'launcherPrefsP
   tokensCount: "{{value}} tokens",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'localExecutionPolicyPanel'), {
-  cloudFallbackProposedLead: "Se propone recurrir a la nube para",
   computeProfile: "Perfil de cómputo",
   confirmAction: "Confirmar continuación en la nube",
   confirmDescription: "Escribe exactamente la etapa y la clase de contenido propuestas para registrar una continuación aprobada. Esto no ejecuta ninguna tarea ni llama a ningún proveedor en la nube.",
@@ -3112,7 +3110,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'study'), 'examLab'), {
   inProgress: "en curso",
   loadingQuizzes: "Cargando cuestionarios…",
   missedSeeded: "Preguntas falladas añadidas al mazo de repaso",
-  noQuizzes: "No hay cuestionarios completados: genera uno en Estudio",
+  noQuizzes: "No hay cuestionarios completados: genera uno en Studio",
   notAnswered: "Sin responder",
   notebook: "Cuaderno",
   overtime: "Tiempo agotado: aún se puede calificar",
@@ -3132,9 +3130,9 @@ Object.assign(ensureSection(ensureSection(rootNode, 'study'), 'examLab'), {
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'study'), 'planIdPage'), {
   description: "Revisa un plan de estudio basado en las fuentes y su límite de aprobación explícita del temario.",
-  planNotIdentified: "No se pudo identificar este plan de estudio. Vuelve a Estudiar y elige un plan de nuevo.",
-  routeUnavailable: "Esta ruta del plan de estudio no está disponible en la versión actual. Vuelve a la superficie de revisión de Estudiar.",
-  title: "Estudiar",
+  planNotIdentified: "No se pudo identificar este plan de estudio. Vuelve a Estudio y elige un plan de nuevo.",
+  routeUnavailable: "Esta ruta del plan de estudio no está disponible en la versión actual. Vuelve a la vista de revisión de Estudio.",
+  title: "Estudio",
 });
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyAssistants'), 'modes'), {
   askQuestion: "Hacer una pregunta",
@@ -3192,7 +3190,7 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'stu
   unavailable: "Los planes de estudio no están disponibles temporalmente. Inténtalo de nuevo en unos instantes.",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), {
-  backToStudy: "Volver a estudiar",
+  backToStudy: "Volver a Estudio",
   learnUnavailableDescription: "El tutor no estará disponible hasta que se apruebe el temario. Este plan aún se está preparando o archivando, por lo que todavía no se puede iniciar ninguna sesión de aprendizaje.",
   learnUnavailableTitle: "Sesión de aprendizaje no disponible",
   loadingPlan: "Cargando el plan de estudio…",
@@ -3221,11 +3219,9 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'stu
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'overview'), {
   approvedVersion: "Versión aprobada",
   description: "Mantén visible este objetivo y el límite de sus fuentes mientras el plan avanza por la revisión.",
-  existingCardsLead: "Tus tarjetas de repaso existentes siguen disponibles en el",
   linkedSources: "Fuentes vinculadas",
   notApproved: "No aprobado",
   startingLevel: "Nivel de partida",
-  studyHome: "Inicio de estudio",
   title: "Resumen del plan",
 });
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'reserved'), {
@@ -3546,7 +3542,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'catalog'), {
   studioOverviewBody: "Lee cada inserto de evidencia para conocer su proveedor, actualidad, hora de recuperación y huella digital antes de revisar un resultado.",
   studioOverviewTitle: "Insertos de evidencia",
   studyOverviewBody: "Crea material de repaso específico a partir de las fuentes seleccionadas del cuaderno.",
-  studyOverviewTitle: "Estudiar",
+  studyOverviewTitle: "Estudio",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'catalog2'), {
   archivePaperDescription: "Papel de archivo cálido con detalles en verde azulado y latón.",
@@ -3633,7 +3629,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'evidencePeek'
 Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'evidenceStudioFolio'), {
   ariaLabel: "Folio de Evidence Studio",
   artifactPages: "Páginas de artefactos",
-  editorialBrief: "Guion editorial",
+  editorialBrief: "Resumen editorial",
   sourceDesk: "Mesa de fuentes",
   trustMargin: "Margen de confianza",
 });
@@ -3680,17 +3676,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'gmailIntegrat
   sendingTo: "Enviando a",
   sentFallback: "Enviado.",
   setupIntro: "Configuración única: crea un cliente OAuth de Google Cloud.",
-  setupStep1Lead: "Abre",
-  setupStep1Link: "Google Cloud Console",
-  setupStep2Lead: "Crea un ID de cliente de OAuth 2.0 (tipo:",
-  setupStep2Type: "Aplicación de escritorio",
-  setupStep3Lead: "Añade",
-  setupStep3Tail: "a los URI de redireccionamiento autorizados (haremos coincidir el puerto de forma dinámica)",
-  setupStep4Lead: "Activa la",
-  setupStep4Tail: "en tu proyecto",
   setupStep5: "Pega abajo el ID y el secreto del cliente",
-  signInNoteLead: "Abre una ventana de inicio de sesión de Google. Solo solicitamos",
-  signInNoteTail: "— nunca acceso de lectura a tu bandeja de entrada.",
   title: "Resúmenes por correo",
   waitingForGoogle: "Esperando a que termine el inicio de sesión de Google…",
 });
@@ -3717,8 +3703,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceH
   coverDescription: "Tus folios recientes, las señales de ejecución seguras y los próximos pasos conviven en un espacio tranquilo, listos cuando tú lo estés.",
   coverEyebrow: "Portada del cuaderno · mesa de trabajo",
   coverTitle: "Continúa con la pregunta que importa hoy.",
-  dataLead: "Todos los datos se guardan en",
-  emptyDescription: "Aún no hay cuadernos. Suelta un PDF en Estudio para empezar el primero.",
+  emptyDescription: "Aún no hay cuadernos. Suelta un PDF en Studio para empezar el primero.",
   emptyTitle: "Tu cuaderno está listo para empezar",
   eyebrow: "Horizonte de inteligencia",
   libraryIndex: "Índice de la biblioteca",
@@ -3726,7 +3711,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceH
   loadingTitle: "Cargando tu mesa de cuadernos",
   newNotebook: "Nuevo cuaderno",
   newNotebookHint: "Lienzo en blanco",
-  openStudio: "Abrir Estudio",
+  openStudio: "Abrir Studio",
   podcast: "Pódcast",
   podcastHint: "Generar a partir de las fuentes",
   quickActions: "Acciones rápidas",
@@ -3738,12 +3723,10 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceH
   relativeJustNow: "ahora mismo",
   relativeMinutes: "hace {{count}} min",
   shortcutsAriaLabel: "Atajos del cuaderno y ruta de los datos",
-  studio: "Estudio",
+  studio: "Studio",
   studioHint: "Suelta archivos → cuaderno o pódcast",
   subtitle: "Piensa más allá con cada fuente",
-  tipLead: "Consejo: pulsa",
-  tipTail: "desde cualquier lugar para saltar a un cuaderno, una fuente o una acción.",
-  todayDescription: "Empieza con una fuente, un cuaderno, una pregunta fundamentada o un guion de pódcast revisado de forma explícita.",
+  todayDescription: "Empieza con una fuente, un cuaderno, una pregunta fundamentada o un resumen de pódcast revisado de forma explícita.",
   todayEyebrow: "Hoy",
   todayTitle: "Abre una doble página de trabajo",
   trustModelStatus: "Confianza y estado de los modelos",
@@ -3754,9 +3737,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'modelFleetBad
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'reasoningSlotCard'), {
   currentlyUsing: "En uso actualmente",
-  descriptionEmphasis: "piense a fondo",
-  descriptionLead: "Para preguntas difíciles y análisis de varios pasos. Es distinto del modelo de chat para que tus conversaciones informales sigan siendo rápidas: solo se usa cuando le pides expresamente al asistente que",
-  descriptionTail: "sobre algo.",
   noModel: "No hay ningún modelo asignado. Elige uno en el menú desplegable del modelo de razonamiento de abajo.",
   title: "Modelo de razonamiento",
 });
@@ -3926,9 +3906,8 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome
   allNotebooks: "Todos los cuadernos",
   ask: "Preguntar",
   askHint: "Busca y sintetiza a partir de tus evidencias.",
-  dataLead: "Todos los datos se guardan en",
   description: "Piensa más allá con cada fuente en una mesa tranquila y local.",
-  emptyDescription: "Aún no hay cuadernos. Suelta un PDF en Estudio para empezar el primero.",
+  emptyDescription: "Aún no hay cuadernos. Suelta un PDF en Studio para empezar el primero.",
   emptyTitle: "Tu cuaderno está listo para empezar",
   eyebrow: "Espacio de trabajo de inteligencia",
   heroDescription: "Tus folios recientes, las señales de ejecución seguras y los próximos pasos conviven en una doble página clara, listos cuando tú lo estés.",
@@ -3939,9 +3918,9 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome
   loadingTitle: "Cargando tu mesa de cuadernos",
   newNotebook: "Nuevo cuaderno",
   newNotebookHint: "Empieza con un lienzo local en blanco.",
-  openStudio: "Abrir Estudio",
+  openStudio: "Abrir Studio",
   podcast: "Pódcast",
-  podcastHint: "Genera un guion de escucha revisado a partir de las fuentes.",
+  podcastHint: "Genera un resumen de audio revisado a partir de las fuentes.",
   recentFolios: "Folios recientes",
   recentFoliosHint: "Retoma donde lo dejaste.",
   relativeDays: "hace {{count}} d",
@@ -3949,11 +3928,9 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome
   relativeJustNow: "ahora mismo",
   relativeMinutes: "hace {{count}} min",
   shortcutsAriaLabel: "Atajos del cuaderno y ruta de los datos",
-  studio: "Estudio",
-  studioHint: "Suelta archivos en un cuaderno o en un guion de pódcast.",
-  tipLead: "Consejo: pulsa",
-  tipTail: "desde cualquier lugar para saltar a un cuaderno, una fuente o una acción.",
-  todayDescription: "Empieza con una fuente, un cuaderno, una pregunta fundamentada o un guion de pódcast revisado de forma explícita.",
+  studio: "Studio",
+  studioHint: "Suelta archivos en un cuaderno o en un resumen de pódcast.",
+  todayDescription: "Empieza con una fuente, un cuaderno, una pregunta fundamentada o un resumen de pódcast revisado de forma explícita.",
   todayEyebrow: "Hoy",
   todayTitle: "Abre una doble página de trabajo",
 });
@@ -4059,4 +4036,40 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'workspace'), 
   chatModelScan: "análisis de modelos de chat",
   coreReady: "núcleo listo",
   launcherStart: "inicio del lanzador",
+});
+
+// v0.8.130 — strings moved out of components in the whole-app i18n pass.
+Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'executiveSynthesisDialog'), {
+  description: "Inteligencia ambiental entre fuentes, consenso temático, tensiones y próximos pasos para <name/>.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'podcastStudio'), {
+  defaultEpisodeName: "Podcast de Deeper Notebook",
+  outlineFindings: "Hallazgos",
+  outlineIntroduction: "Introducción",
+  outlineTakeaway: "Conclusión principal",
+  untitledSegment: "Segmento sin título",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'localExecutionPolicyPanel'), {
+  cloudFallbackProposed: "Se propone recurrir a la nube para <stage/> · <content/>.",
+});
+Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'overview'), {
+  existingCards: "Tus tarjetas de repaso existentes siguen disponibles en el <link>Inicio de Estudio</link>.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'gmailIntegration'), {
+  setupStep1: "Abre <link>Google Cloud Console</link>",
+  setupStep2: "Crea un ID de cliente de OAuth 2.0 (tipo: <em>Aplicación de escritorio</em>)",
+  setupStep3: "Añade <url/> a los URI de redireccionamiento autorizados (haremos coincidir el puerto de forma dinámica)",
+  setupStep4: "Activa la <api/> en tu proyecto",
+  signInNote: "Abre una ventana de inicio de sesión de Google. Solo solicitamos <scope/> — nunca acceso de lectura a tu bandeja de entrada.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceHorizon'), {
+  data: "Todos los datos se guardan en <path/>.",
+  tip: "Consejo: pulsa <key/> desde cualquier lugar para saltar a un cuaderno, una fuente o una acción.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'reasoningSlotCard'), {
+  description: "Para preguntas difíciles y análisis de varios pasos. Es distinto del modelo de chat para que tus conversaciones informales sigan siendo rápidas: solo se usa cuando le pides expresamente al asistente que <em>piense a fondo</em> sobre algo.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome'), {
+  data: "Todos los datos se guardan en <path/>.",
+  tip: "Consejo: pulsa <key/> desde cualquier lugar para saltar a un cuaderno, una fuente o una acción.",
 });

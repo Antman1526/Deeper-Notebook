@@ -22,6 +22,7 @@ import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { RichText } from '@/components/common/RichText'
 
 interface ExecutiveSynthesisDialogProps {
   open: boolean
@@ -126,8 +127,10 @@ export function ExecutiveSynthesisDialog({
             )}
           </div>
           <DialogDescription className="text-sm text-muted-foreground">
-            {t('notebooks.executiveSynthesisDialog.descriptionLead')}{' '}
-            <span className="font-medium text-foreground">{notebookName}</span>.
+            <RichText
+              text={t('notebooks.executiveSynthesisDialog.description')}
+              components={{ name: () => <span className="font-medium text-foreground">{notebookName}</span> }}
+            />
           </DialogDescription>
         </DialogHeader>
 

@@ -68,6 +68,13 @@ export const MODEL_READINESS_KEYS: EnumLabelKeys = {
   removed: 'settings.modelReadiness.removed',
 }
 
+export const MODEL_HEALTH_STATUS_KEYS: EnumLabelKeys = {
+  healthy: 'models.status.healthy',
+  unhealthy: 'models.status.unhealthy',
+  not_configured: 'models.status.notConfigured',
+  unknown: 'models.status.unknown',
+}
+
 export const MODEL_RESOURCE_TIER_KEYS: EnumLabelKeys = {
   light: 'settings.modelTiers.light',
   standard: 'settings.modelTiers.standard',

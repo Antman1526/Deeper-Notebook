@@ -2300,7 +2300,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'executiveSynt
   copiedToast: "エグゼクティブ総括をクリップボードにコピーしました",
   copyFailed: "テキストをクリップボードにコピーできませんでした",
   copySynthesis: "総括をコピー",
-  descriptionLead: "ソース横断のインテリジェンス、テーマごとの共通見解、対立点、次のステップ。対象:",
   evaluating: "横断的なテーマ、意見の相違、戦略的な示唆を評価しています",
   generateFailed: "ソース横断のエグゼクティブ総括を生成できませんでした。",
   noteTitle: "エグゼクティブ総括 — {{name}}",
@@ -2812,7 +2811,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'launcherPrefsP
   tokensCount: "{{value}} トークン",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'localExecutionPolicyPanel'), {
-  cloudFallbackProposedLead: "クラウドへのフォールバックの提案対象:",
   computeProfile: "計算プロファイル",
   confirmAction: "クラウドでの継続を確定",
   confirmDescription: "承認済みの継続を記録するには、提案された工程とコンテンツ区分をそのまま入力してください。これによってタスクが実行されたり、クラウドプロバイダが呼び出されたりすることはありません。",
@@ -3218,11 +3216,9 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'stu
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'overview'), {
   approvedVersion: "承認済みバージョン",
   description: "プランがレビューを進む間も、この目標とソースの範囲を表示したままにします。",
-  existingCardsLead: "既存の復習カードは、次の画面で引き続き利用できます:",
   linkedSources: "リンク済みのソース",
   notApproved: "未承認",
   startingLevel: "開始レベル",
-  studyHome: "学習ホーム",
   title: "プランの概要",
 });
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'reserved'), {
@@ -3677,17 +3673,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'gmailIntegrat
   sendingTo: "送信先:",
   sentFallback: "送信しました。",
   setupIntro: "初回のみの設定: Google Cloud の OAuth クライアントを作成します。",
-  setupStep1Lead: "次を開く:",
-  setupStep1Link: "Google Cloud Console",
-  setupStep2Lead: "OAuth 2.0 クライアント ID を作成 (種類:",
-  setupStep2Type: "デスクトップアプリ",
-  setupStep3Lead: "承認済みのリダイレクト URI に",
-  setupStep3Tail: "を追加します（ポートは動的に照合されます）",
-  setupStep4Lead: "プロジェクトで",
-  setupStep4Tail: "を有効にします",
   setupStep5: "下にクライアント ID とシークレットを貼り付けます",
-  signInNoteLead: "Google のサインインウィンドウが開きます。リクエストする権限は次のもののみです:",
-  signInNoteTail: "— 受信トレイの読み取り権限は一切リクエストしません。",
   title: "メールダイジェスト",
   waitingForGoogle: "Google のサインインが完了するのを待っています…",
 });
@@ -3714,7 +3700,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceH
   coverDescription: "最近のフォリオ、安全なランタイムの状態、次の操作を、静かな見開きにまとめました。いつでも再開できます。",
   coverEyebrow: "ノートブックの表紙 · 作業デスク",
   coverTitle: "今日大切な問いの続きから始めましょう。",
-  dataLead: "すべてのデータの保存先:",
   emptyDescription: "ノートブックはまだありません。スタジオに PDF をドロップして、最初のノートブックを作成しましょう。",
   emptyTitle: "ノートブックを始める準備ができました",
   eyebrow: "インテリジェンスホライズン",
@@ -3738,8 +3723,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceH
   studio: "スタジオ",
   studioHint: "ファイルをドロップ → ノートブックまたはポッドキャスト",
   subtitle: "すべてのソースで、さらに深く考える",
-  tipLead: "ヒント: どこからでも",
-  tipTail: "を押すと、ノートブック、ソース、操作にすばやく移動できます。",
   todayDescription: "ソース、ノートブック、根拠のある質問、または明示的にレビューしたポッドキャストのブリーフから始めましょう。",
   todayEyebrow: "今日",
   todayTitle: "作業用の見開きを開く",
@@ -3751,9 +3734,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'modelFleetBad
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'reasoningSlotCard'), {
   currentlyUsing: "現在使用中",
-  descriptionEmphasis: "じっくり考えて",
-  descriptionLead: "難しい質問や複数ステップの分析向けです。日常の会話を高速に保てるよう、チャットモデルとは別になっており、アシスタントに何かについて",
-  descriptionTail: "と明示的に依頼したときにのみ、こちらに振り分けられます。",
   noModel: "モデルが割り当てられていません。下の推論モデルのドロップダウンから選択してください。",
   title: "推論モデル",
 });
@@ -3923,7 +3903,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome
   allNotebooks: "すべてのノートブック",
   ask: "質問",
   askHint: "エビデンスから検索して総括します。",
-  dataLead: "すべてのデータの保存先:",
   description: "静かでローカルファーストな 1 つのデスクで、すべてのソースを使ってさらに深く考えます。",
   emptyDescription: "ノートブックはまだありません。スタジオに PDF をドロップして、最初のノートブックを作成しましょう。",
   emptyTitle: "ノートブックを始める準備ができました",
@@ -3948,8 +3927,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome
   shortcutsAriaLabel: "ノートブックのショートカットとデータの保存先",
   studio: "スタジオ",
   studioHint: "ファイルをノートブックやポッドキャストのブリーフにドロップします。",
-  tipLead: "ヒント: どこからでも",
-  tipTail: "を押すと、ノートブック、ソース、操作にすばやく移動できます。",
   todayDescription: "ソース、ノートブック、根拠のある質問、または明示的にレビューしたポッドキャストのブリーフから始めましょう。",
   todayEyebrow: "今日",
   todayTitle: "作業用の見開きを開く",
@@ -3969,11 +3946,11 @@ Object.assign(ensureSection(ensureSection(rootNode, 'knowledge'), 'targetStates'
   unavailable: "利用不可",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'notebookCard'), {
-  noteTitleOne: "ノート {{count}} 件",
+  noteTitleOne: "メモ {{count}} 件",
   sourceTitleOne: "ソース {{count}} 件",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'notebookRow'), {
-  noteTitleOne: "ノート {{count}} 件",
+  noteTitleOne: "メモ {{count}} 件",
   sourceTitleOne: "ソース {{count}} 件",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'modelReadiness'), {
@@ -3998,7 +3975,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'modelRoles'), 
   podcastOutline: "ポッドキャストの構成案",
   podcastScript: "ポッドキャストの台本",
   researchChat: "リサーチチャット",
-  sourceSynthesis: "ソースの統合",
+  sourceSynthesis: "ソースの総括",
   speechToText: "音声からテキスト",
   studyFast: "学習（高速）",
   textToSpeech: "テキストから音声",
@@ -4056,4 +4033,40 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'workspace'), 
   chatModelScan: "チャットモデルのスキャン",
   coreReady: "コア準備完了",
   launcherStart: "ランチャー起動",
+});
+
+// v0.8.130 — strings moved out of components in the whole-app i18n pass.
+Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'executiveSynthesisDialog'), {
+  description: "<name/> 向けの、ソース横断のインテリジェンス、テーマごとの共通見解、対立点、次のステップ。",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'podcastStudio'), {
+  defaultEpisodeName: "Deeper Notebook ポッドキャスト",
+  outlineFindings: "調査結果",
+  outlineIntroduction: "はじめに",
+  outlineTakeaway: "要点",
+  untitledSegment: "無題のセグメント",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'localExecutionPolicyPanel'), {
+  cloudFallbackProposed: "<stage/> · <content/> に対してクラウドへのフォールバックが提案されました。",
+});
+Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'overview'), {
+  existingCards: "既存の復習カードは、引き続き<link>学習ホーム</link>で利用できます。",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'gmailIntegration'), {
+  setupStep1: "<link>Google Cloud Console</link> を開く",
+  setupStep2: "OAuth 2.0 クライアント ID を作成 (種類: <em>デスクトップアプリ</em>)",
+  setupStep3: "承認済みのリダイレクト URI に <url/> を追加します（ポートは動的に照合されます）",
+  setupStep4: "プロジェクトで <api/> を有効にします",
+  signInNote: "Google のサインインウィンドウが開きます。リクエストする権限は <scope/> のみで、受信トレイの読み取り権限は一切リクエストしません。",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceHorizon'), {
+  data: "すべてのデータは <path/> に保存されます。",
+  tip: "ヒント: どこからでも <key/> を押すと、ノートブック、ソース、操作にすばやく移動できます。",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'reasoningSlotCard'), {
+  description: "難しい質問や複数ステップの分析向けです。日常の会話を高速に保てるよう、チャットモデルとは別になっており、アシスタントに何かについて<em>じっくり考えて</em>と明示的に依頼したときにのみ、こちらに振り分けられます。",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome'), {
+  data: "すべてのデータは <path/> に保存されます。",
+  tip: "ヒント: どこからでも <key/> を押すと、ノートブック、ソース、操作にすばやく移動できます。",
 });

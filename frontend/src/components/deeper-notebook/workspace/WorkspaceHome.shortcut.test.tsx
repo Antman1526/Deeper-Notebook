@@ -3,6 +3,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { WorkspaceHome } from './WorkspaceHome'
 
+// v0.8.130 — strings with inline markup (the shortcut chip, the data path) render
+// through RichText, which needs the real en-US sentence with its tags. Every other
+// key is echoed, as in the global mock.
+vi.mock('@/lib/hooks/use-translation', async () => {
+  const { enUS } = await import('@/lib/locales/en-US')
+  const t = (key: string): string => {
+    let node: unknown = enUS
+    for (const part of key.split('.')) node = (node as Record<string, unknown> | undefined)?.[part]
+    return typeof node === 'string' && /<[a-zA-Z][\w-]*\s*\/?>/.test(node) ? node : key
+  }
+  return { useTranslation: () => ({ t, i18n: { language: 'en-US' }, language: 'en-US', setLanguage: async () => 'en-US' }) }
+})
+
 // v0.8.130 — the home tip printed both platforms' shortcuts ("⌘K / Ctrl+K") in
 // unstyled <kbd> tags; it now shows the current platform's key in the shared chip.
 const runtimeSnapshot = {

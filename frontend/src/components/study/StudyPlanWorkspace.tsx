@@ -23,6 +23,7 @@ import {
 import { STUDY_PLAN_STATE_KEYS, enumLabel, spacedEnum } from '@/lib/enum-labels'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import type { StudyPlanState } from '@/lib/types/study-plans'
+import { RichText } from '@/components/common/RichText'
 
 export const STUDY_PLAN_TABS = [
   { value: 'overview', labelKey: 'study.studyPlanWorkspace.tabs.overview' },
@@ -233,7 +234,7 @@ export function StudyPlanWorkspace({ planId }: StudyPlanWorkspaceProps) {
               <div><p className="text-xs uppercase tracking-wide text-muted-foreground">{t('study.studyPlanWorkspace.overview.approvedVersion')}</p><p className="mt-1 font-medium">{currentPlan.approved_syllabus_version ?? t('study.studyPlanWorkspace.overview.notApproved')}</p></div>
             </CardContent>
           </Card>
-          <p className="text-sm text-muted-foreground">{t('study.studyPlanWorkspace.overview.existingCardsLead')} <Link href="/study" className="underline underline-offset-4">{t('study.studyPlanWorkspace.overview.studyHome')}</Link>.</p>
+          <p className="text-sm text-muted-foreground"><RichText text={t('study.studyPlanWorkspace.overview.existingCards')} components={{ link: (children) => <Link href="/study" className="underline underline-offset-4">{children}</Link> }} /></p>
         </TabsContent>
 
         <TabsContent value="syllabus" className="space-y-4">{syllabusContent}</TabsContent>

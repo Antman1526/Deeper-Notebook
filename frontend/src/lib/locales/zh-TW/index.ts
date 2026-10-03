@@ -2300,7 +2300,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'executiveSynt
   copiedToast: "已將重點綜合分析複製到剪貼簿",
   copyFailed: "無法將文字複製到剪貼簿",
   copySynthesis: "複製綜合分析",
-  descriptionLead: "跨來源的即時洞察、主題共識、分歧與後續步驟，適用於",
   evaluating: "正在評估跨領域主題、意見分歧與策略意涵",
   generateFailed: "無法產生跨來源的重點綜合分析。",
   noteTitle: "重點綜合分析 — {{name}}",
@@ -2352,7 +2351,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'editorialBrief
   evidencePolicy: "證據政策",
   evidenceStrict: "嚴格",
   format: "格式",
-  formatBrief: "簡報",
+  formatBrief: "簡要",
   formatCritique: "評論",
   formatDebate: "辯論",
   formatDeepDive: "深入探討",
@@ -2429,7 +2428,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'generatePodcas
   autoFillFailedMessage: "自動填寫失敗。",
   autoFillFromSources: "根據來源自動填寫",
   autoFillTitle: "根據所選來源建議設定檔、標題與簡介",
-  modeBrief: "簡報",
+  modeBrief: "簡要",
   modeCritique: "評論",
   modeDebate: "辯論",
   modeDeepDive: "深入探討",
@@ -2480,7 +2479,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'podcastLibrary
   evidenceFiltersUnavailable: "目前尚無法使用證據狀態篩選條件",
   externalReadOnly: "外部唯讀",
   format: "格式",
-  formatBrief: "簡報",
+  formatBrief: "簡要",
   formatCritique: "評論",
   formatDebate: "辯論",
   formatDeepDive: "深入探討",
@@ -2514,7 +2513,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'podcastLibrary
   stageProcessing: "處理中",
   stageRunning: "執行中",
   stageSubmitted: "已提交",
-  title: "Podcast 資料庫",
+  title: "Podcast 資源庫",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'podcastModelPlan'), {
   automaticRoute: "自動路由",
@@ -2812,7 +2811,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'launcherPrefsP
   tokensCount: "{{value}} 個 token",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'localExecutionPolicyPanel'), {
-  cloudFallbackProposedLead: "建議使用雲端備援的項目：",
   computeProfile: "運算設定檔",
   confirmAction: "確認繼續使用雲端",
   confirmDescription: "請輸入完全相同的建議階段與內容類別，以記錄已核准的繼續執行。這不會執行任務，也不會呼叫雲端供應商。",
@@ -2849,10 +2847,10 @@ Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'localModelsPag
   embeddingRoute: "嵌入路徑",
   launchDefaultFailed: "無法設定啟動預設值",
   launchDefaultSaved: "已儲存原生啟動器的預設值。請重新啟動 Deeper Notebook 以套用。",
-  libraryAvailable: "資料庫可用",
+  libraryAvailable: "模型庫可用",
   libraryDescription: "清單為唯讀。標準路徑只會顯示在下方的專屬清單中。",
-  libraryTitle: "模型資料庫與重新掃描",
-  libraryUnavailable: "資料庫無法使用",
+  libraryTitle: "模型庫與重新掃描",
+  libraryUnavailable: "模型庫無法使用",
   loadingSettings: "正在載入本機執行設定…",
   noAcceptedRole: "沒有已接受的角色",
   noAcceptedTier: "尚無已接受的基準測試層級。",
@@ -2864,7 +2862,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'localModelsPag
   readinessUnavailableDescription: "清單仍可使用。在能讀取就緒狀態之前，自動路由會維持封閉預設。",
   readinessUnavailableTitle: "無法取得本機就緒狀態",
   refreshing: "重新整理中",
-  rescanLibrary: "重新掃描本機資料庫",
+  rescanLibrary: "重新掃描本機模型庫",
   researchChatRoute: "研究對話路徑",
   roleRoutesDescription: "覆寫設定須明確指定；若模型未通過就緒狀態、品質、上下文或記憶體關卡，就會被拒絕。",
   roleRoutesTitle: "角色路由與覆寫",
@@ -3218,11 +3216,9 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'stu
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'overview'), {
   approvedVersion: "已核准的版本",
   description: "在計畫經過檢閱的過程中，持續顯示此目標及其來源範圍。",
-  existingCardsLead: "你現有的複習卡片仍可在以下位置使用：",
   linkedSources: "已連結的來源",
   notApproved: "尚未核准",
   startingLevel: "起始程度",
-  studyHome: "學習首頁",
   title: "計畫概覽",
 });
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'reserved'), {
@@ -3280,7 +3276,7 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'stu
   hard: "困難",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'study'), 'studySourcePicker'), {
-  description: "重複使用你資料庫中的來源，或透過現有的來源對話框加入。",
+  description: "重複使用你資源庫中的來源，或透過現有的來源對話框加入。",
   dismiss: "關閉",
   dismissLinkError: "關閉連結錯誤",
   empty: "目前沒有可用的來源。",
@@ -3677,17 +3673,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'gmailIntegrat
   sendingTo: "寄送至",
   sentFallback: "已寄送。",
   setupIntro: "一次性設定：建立 Google Cloud OAuth 用戶端。",
-  setupStep1Lead: "開啟",
-  setupStep1Link: "Google Cloud Console",
-  setupStep2Lead: "建立 OAuth 2.0 用戶端 ID（類型：",
-  setupStep2Type: "桌面應用程式",
-  setupStep3Lead: "新增",
-  setupStep3Tail: "至已授權的重新導向 URI（我們會動態比對連接埠）",
-  setupStep4Lead: "啟用",
-  setupStep4Tail: "（於你的專案中）",
   setupStep5: "在下方貼上用戶端 ID 與密鑰",
-  signInNoteLead: "會開啟 Google 登入視窗。我們僅要求",
-  signInNoteTail: "— 絕不會要求讀取你收件匣的權限。",
   title: "電子郵件摘要",
   waitingForGoogle: "正在等待 Google 登入完成…",
 });
@@ -3714,11 +3700,10 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceH
   coverDescription: "你最近的頁冊、安全的執行環境訊號與後續動作，都安靜地集中在同一個版面，隨時準備就緒。",
   coverEyebrow: "筆記本封面 · 工作桌",
   coverTitle: "延續今天最重要的問題。",
-  dataLead: "所有資料都存放在",
   emptyDescription: "尚無筆記本。將 PDF 拖入 Studio，建立你的第一個筆記本。",
   emptyTitle: "你的筆記本已準備就緒",
   eyebrow: "智慧視野",
-  libraryIndex: "資料庫索引",
+  libraryIndex: "資源庫索引",
   loadingDescription: "正在檢查本機筆記本與執行環境就緒狀態。載入期間，你的工作區不會受到變動。",
   loadingTitle: "正在載入你的筆記本桌",
   newNotebook: "新增筆記本",
@@ -3738,8 +3723,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceH
   studio: "Studio",
   studioHint: "拖放檔案 → 筆記本或 Podcast",
   subtitle: "透過每一份來源，想得更深入",
-  tipLead: "提示：隨時按下",
-  tipTail: "即可跳至筆記本、來源或動作。",
   todayDescription: "從來源、筆記本、以來源為依據的問題，或經明確檢閱的 Podcast 簡介開始。",
   todayEyebrow: "今天",
   todayTitle: "開啟工作版面",
@@ -3751,9 +3734,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'modelFleetBad
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'reasoningSlotCard'), {
   currentlyUsing: "目前使用",
-  descriptionEmphasis: "深入思考",
-  descriptionLead: "用於困難問題與多步驟分析。與對話模型分開，讓你的日常對話保持快速，只有在你明確要求助理",
-  descriptionTail: "某件事時，才會轉到這裡處理。",
   noModel: "尚未指派模型。請在下方的推理模型下拉選單中選擇一個。",
   title: "推理模型",
 });
@@ -3923,7 +3903,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome
   allNotebooks: "所有筆記本",
   ask: "提問",
   askHint: "根據你的證據進行搜尋與綜合分析。",
-  dataLead: "所有資料都存放在",
   description: "在一張安靜、以本機為優先的桌面上，透過每一份來源想得更深入。",
   emptyDescription: "尚無筆記本。將 PDF 拖入 Studio，建立你的第一個筆記本。",
   emptyTitle: "你的筆記本已準備就緒",
@@ -3931,7 +3910,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome
   heroDescription: "你最近的頁冊、安全的執行環境訊號與後續動作，都清楚地集中在同一個版面，隨時準備就緒。",
   heroEyebrow: "工作桌",
   heroTitle: "延續今天最重要的問題。",
-  libraryIndex: "資料庫索引",
+  libraryIndex: "資源庫索引",
   loadingDescription: "正在檢查本機筆記本與執行環境就緒狀態。載入期間，你的工作區不會受到變動。",
   loadingTitle: "正在載入你的筆記本桌",
   newNotebook: "新增筆記本",
@@ -3948,8 +3927,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome
   shortcutsAriaLabel: "筆記本捷徑與資料路徑",
   studio: "Studio",
   studioHint: "將檔案拖入筆記本或 Podcast 簡介。",
-  tipLead: "提示：隨時按下",
-  tipTail: "即可跳至筆記本、來源或動作。",
   todayDescription: "從來源、筆記本、以來源為依據的問題，或經明確檢閱的 Podcast 簡介開始。",
   todayEyebrow: "今天",
   todayTitle: "開啟工作版面",
@@ -3987,10 +3964,10 @@ Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'modelReadiness
   runtimeUnavailable: "執行環境無法使用",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'modelRoles'), {
-  chat: "聊天",
+  chat: "對話",
   claimVerification: "論述查核",
   codeDataAnalysis: "程式碼與資料分析",
-  codingResearch: "程式研究",
+  codingResearch: "程式碼研究",
   editorialWriting: "編輯寫作",
   embedding: "嵌入",
   embeddingRetrieval: "嵌入檢索",
@@ -4044,16 +4021,52 @@ Object.assign(ensureSection(ensureSection(rootNode, 'study'), 'planStates'), {
   syllabusProposed: "已提出課程大綱",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'catalog2'), {
-  themeNameDark: "暗色",
-  themeNameHighContrastDark: "高對比暗色",
-  themeNameHighContrastLight: "高對比亮色",
+  themeNameDark: "深色",
+  themeNameHighContrastDark: "高對比深色",
+  themeNameHighContrastLight: "高對比淺色",
   themeNameLightBlue: "淺藍",
   themeNamePaper: "紙張",
   themeNameSystem: "系統",
 });
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'workspace'), 'runtimeStatusPanel'), 'stages'), {
-  chatModelCacheHit: "聊天模型快取命中",
-  chatModelScan: "聊天模型掃描",
+  chatModelCacheHit: "對話模型快取命中",
+  chatModelScan: "對話模型掃描",
   coreReady: "核心已就緒",
   launcherStart: "啟動器啟動",
+});
+
+// v0.8.130 — strings moved out of components in the whole-app i18n pass.
+Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'executiveSynthesisDialog'), {
+  description: "針對 <name/> 的跨來源即時洞察、主題共識、分歧與後續步驟。",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'podcastStudio'), {
+  defaultEpisodeName: "Deeper Notebook 播客",
+  outlineFindings: "重點發現",
+  outlineIntroduction: "簡介",
+  outlineTakeaway: "重點",
+  untitledSegment: "未命名片段",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'localExecutionPolicyPanel'), {
+  cloudFallbackProposed: "建議為 <stage/> · <content/> 使用雲端備援。",
+});
+Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'overview'), {
+  existingCards: "你現有的複習卡片仍可在<link>學習首頁</link>使用。",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'gmailIntegration'), {
+  setupStep1: "開啟 <link>Google Cloud Console</link>",
+  setupStep2: "建立 OAuth 2.0 用戶端 ID（類型：<em>桌面應用程式</em>）",
+  setupStep3: "將 <url/> 新增至已授權的重新導向 URI（我們會動態比對連接埠）",
+  setupStep4: "在你的專案中啟用 <api/>",
+  signInNote: "會開啟 Google 登入視窗。我們僅要求 <scope/> — 絕不會要求讀取你收件匣的權限。",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceHorizon'), {
+  data: "所有資料都存放在 <path/>。",
+  tip: "提示：隨時按下 <key/> 即可跳至筆記本、來源或動作。",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'reasoningSlotCard'), {
+  description: "用於困難問題與多步驟分析。與對話模型分開，讓你的日常對話保持快速，只有在你明確要求助理對某件事<em>深入思考</em>時，才會轉到這裡處理。",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome'), {
+  data: "所有資料都存放在 <path/>。",
+  tip: "提示：隨時按下 <key/> 即可跳至筆記本、來源或動作。",
 });

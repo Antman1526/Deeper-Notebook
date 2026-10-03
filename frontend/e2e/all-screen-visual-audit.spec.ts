@@ -160,9 +160,8 @@ const canonicalViewports = [
   { width: 1440, height: 900 },
 ] as const
 
-function expectedMainLandmarks(_route: string): number {
-  return 1
-}
+// Every route renders exactly one main landmark.
+const MAIN_LANDMARKS = 1
 
 async function inspectClippedControls(page: Page) {
   return page.evaluate(() => {
@@ -533,7 +532,7 @@ test('tracked dashboard routes preserve landmarks, bounds, and hermetic browser 
       await expect(page.locator('body')).toBeVisible()
       await expect(page.locator('h1'), `${route} ${viewport.width}px heading`).toHaveCount(1)
       await expect(page.locator('h1').first(), `${route} ${viewport.width}px visible heading`).toBeVisible()
-      await expect(page.locator('main'), `${route} ${viewport.width}px main`).toHaveCount(expectedMainLandmarks(route))
+      await expect(page.locator('main'), `${route} ${viewport.width}px main`).toHaveCount(MAIN_LANDMARKS)
       await expect(
         page.locator(rollbackBuild ? '.dn-legacy-shell' : '.dn-workspace-shell, .dn-luminous-shell'),
         `${route} ${viewport.width}px shell mode`,
@@ -710,7 +709,7 @@ test('representative states and keyboard contracts remain bounded at every audit
     await expect(page.locator('body')).toBeVisible()
     await expect(page.locator('h1'), `${route} ${viewport.width}px heading`).toHaveCount(1)
     await expect(page.locator('h1').first(), `${route} ${viewport.width}px visible heading`).toBeVisible()
-    await expect(page.locator('main'), `${route} ${viewport.width}px main`).toHaveCount(expectedMainLandmarks(route))
+    await expect(page.locator('main'), `${route} ${viewport.width}px main`).toHaveCount(MAIN_LANDMARKS)
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     await expect.poll(
       () => page.locator('main').first().evaluate(element => element.getBoundingClientRect().width > 0),

@@ -1587,7 +1587,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'apiKeys'), 'osaurus'), {
 
 const chatSection = ensureSection(rootNode, 'chat');
 Object.assign(ensureSection(chatSection, 'agentState'), {
-  clarifyLabel: "Potrzebne Twoje dane",
+  clarifyLabel: "Potrzebna Twoja odpowiedź",
   truncatedLabel: "Obcięto",
   clarifyTooltip: "Asystent wstrzymał pracę, aby zadać Ci pytanie, zamiast ją dokończyć.",
   truncatedTooltip: "Asystent osiągnął limit wywołań narzędzi — odpowiedź może być niepełna.",
@@ -1930,7 +1930,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'common'), 'audioDictateButt
   startDictation: "Rozpocznij dyktowanie głosowe",
   stopDictation: "Zatrzymaj nagrywanie dyktowania",
   transcribeFailed: "Nie udało się dokonać transkrypcji dźwięku",
-  transcribed: "Dyktando zostało przepisane",
+  transcribed: "Dyktowanie zostało przepisane",
   transcribingAudio: "Transkrypcja dźwięku",
   transcriptionFailed: "Transkrypcja dyktowania nie powiodła się",
 });
@@ -1992,7 +1992,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'common'), 'useStudio'), {
   workflowRunTitle: "Generuj: {{title}}",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'evaluation'), 'claimReviewDrawer'), {
-  contradicted: "Zaprzeczone",
+  contradicted: "Sprzeczne",
   description: "Twierdzenia są wyświetlane wraz z niezmiennymi migawkami źródeł.",
   exactEvidence: "Dokładne dowody ze źródła",
   failed: "Przegląd dowodów nie powiódł się. Spróbuj ponownie, gdy usługa oceny będzie dostępna.",
@@ -2301,7 +2301,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'executiveSynt
   copiedToast: "Skopiowano syntezę wykonawczą do schowka",
   copyFailed: "Nie udało się skopiować tekstu do schowka",
   copySynthesis: "Kopiuj syntezę",
-  descriptionLead: "Ambientowa analiza wielu źródeł, konsensus tematyczny, napięcia i dalsze kroki dla",
   evaluating: "Ocenianie tematów przekrojowych, rozbieżności i implikacji strategicznych",
   generateFailed: "Nie udało się wygenerować wykonawczej syntezy wielu źródeł.",
   noteTitle: "Synteza wykonawcza — {{name}}",
@@ -2813,7 +2812,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'launcherPrefsP
   tokensCount: "Tokeny: {{value}}",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'localExecutionPolicyPanel'), {
-  cloudFallbackProposedLead: "Zaproponowano zapasową trasę w chmurze dla",
   computeProfile: "Profil obliczeń",
   confirmAction: "Potwierdź kontynuację w chmurze",
   confirmDescription: "Wpisz dokładnie zaproponowany etap i klasę treści, aby zapisać zatwierdzoną kontynuację. Nie wykonuje to zadania ani nie wywołuje dostawcy chmury.",
@@ -3190,7 +3188,7 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'stu
   unavailable: "Plany nauki są chwilowo niedostępne. Spróbuj ponownie za chwilę.",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), {
-  backToStudy: "Wróć do nauki",
+  backToStudy: "Wróć do Nauki",
   learnUnavailableDescription: "Tutor jest niedostępny do czasu zatwierdzenia programu nauczania. Ten plan jest nadal przygotowywany lub archiwizowany, więc nie można jeszcze rozpocząć sesji nauki.",
   learnUnavailableTitle: "Sesja nauki niedostępna",
   loadingPlan: "Ładowanie planu nauki…",
@@ -3219,11 +3217,9 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'stu
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'overview'), {
   approvedVersion: "Zatwierdzona wersja",
   description: "Utrzymuj ten cel i granicę źródeł na widoku, gdy plan przechodzi przegląd.",
-  existingCardsLead: "Twoje istniejące fiszki do powtórek pozostają dostępne w sekcji",
   linkedSources: "Powiązane źródła",
   notApproved: "Niezatwierdzony",
   startingLevel: "Poziom początkowy",
-  studyHome: "Strona główna Nauki",
   title: "Przegląd planu",
 });
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'reserved'), {
@@ -3234,7 +3230,7 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'stu
   ankiPackage: "Pakiet Anki",
   flashcards: "Fiszki",
   guide: "Przewodnik",
-  learn: "Nauka",
+  learn: "Ucz się",
   map: "Mapa",
   overview: "Przegląd",
   practice: "Ćwiczenia",
@@ -3523,7 +3519,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'backupProvena
   unknownTimestamp: "Nieznany znacznik czasu",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'catalog'), {
-  captureOverviewBody: "Zbierz teraz szybki pomysł lub odniesienie, a uporządkuj je, gdy będziesz gotowy.",
+  captureOverviewBody: "Zbierz teraz szybki pomysł lub odniesienie, a uporządkuj je później, kiedy będzie na to czas.",
   captureOverviewTitle: "Przechwytywanie",
   dashboardOverviewBody: "Użyj paska bocznego, aby przechodzić między swoimi pracami, tworzyć źródło, notatnik lub podcast oraz docierać do Ustawień i narzędzi, które pozostają pod ręką.",
   dashboardOverviewTitle: "Pasek boczny",
@@ -3571,14 +3567,14 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'catalog2'), {
   nordDescription: "Arktyczny grafit ze spokojnym niebieskim fokusem.",
   oneDarkDescription: "Grafit inspirowany edytorami z niebieskim i fioletowym.",
   paperDescription: "Ciepłe kremowe środowisko do czytania.",
-  researchCoreDarkDescription: "Charakterystyczny głęboko morski instrument badawczy.",
-  researchCoreLightDescription: "Ciepły mineralny papier z precyzyjną morską strukturą.",
+  researchCoreDarkDescription: "Charakterystyczny instrument badawczy w głębokiej morskiej zieleni.",
+  researchCoreLightDescription: "Ciepły mineralny papier z precyzyjną strukturą w morskiej zieleni.",
   rosePineDawnDescription: "Ciepły, rumiany papier ze stonowanym fioletem.",
   rosePineDescription: "Stonowany atrament z lawendą i różem.",
   solarizedDarkDescription: "Niebiesko-zielona paleta terminalowa o niskim odblasku.",
   solarizedLightDescription: "Krem o niskim odblasku ze zrównoważonym niebieskim i morską zielenią.",
   systemDescription: "Podążaj za wyglądem systemu operacyjnego.",
-  tokyoNightDescription: "Głęboki granat z peryndowym fokusem.",
+  tokyoNightDescription: "Głęboki granat z barwinkowym akcentem.",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'citationDrawer'), {
   close: "Zamknij dowody cytatu",
@@ -3678,17 +3674,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'gmailIntegrat
   sendingTo: "Wysyłanie do",
   sentFallback: "Wysłano.",
   setupIntro: "Jednorazowa konfiguracja: utwórz klienta OAuth w Google Cloud.",
-  setupStep1Lead: "Otwórz",
-  setupStep1Link: "Google Cloud Console",
-  setupStep2Lead: "Utwórz identyfikator klienta OAuth 2.0 (typ:",
-  setupStep2Type: "Aplikacja na komputer",
-  setupStep3Lead: "Dodaj",
-  setupStep3Tail: "do autoryzowanych identyfikatorów URI przekierowania (port dopasujemy dynamicznie)",
-  setupStep4Lead: "Włącz",
-  setupStep4Tail: "w swoim projekcie",
   setupStep5: "Wklej poniżej identyfikator klienta i klucz tajny",
-  signInNoteLead: "Otwiera okno logowania Google. Żądamy tylko",
-  signInNoteTail: "— nigdy dostępu do odczytu Twojej skrzynki odbiorczej.",
   title: "Zestawienia e-mail",
   waitingForGoogle: "Oczekiwanie na zakończenie logowania w Google…",
 });
@@ -3712,10 +3698,9 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceH
   allNotebooks: "Wszystkie notatniki",
   ask: "Pytaj",
   askHint: "Szukaj i syntezuj",
-  coverDescription: "Twoje ostatnie teczki, bezpieczne sygnały środowiska i kolejne akcje są w jednym spokojnym rozkładzie — gotowe, gdy ty będziesz gotowy.",
+  coverDescription: "Twoje ostatnie teczki, bezpieczne sygnały środowiska i kolejne akcje są w jednym spokojnym rozkładzie — gotowe, gdy tylko ich potrzebujesz.",
   coverEyebrow: "Okładka notatnika · biurko robocze",
   coverTitle: "Wróć do pytania, które dziś ma znaczenie.",
-  dataLead: "Wszystkie dane znajdują się w",
   emptyDescription: "Nie ma jeszcze notatników. Upuść plik PDF w Studio, aby zacząć pierwszy.",
   emptyTitle: "Twój notatnik jest gotowy do pracy",
   eyebrow: "Horyzont analiz",
@@ -3730,7 +3715,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceH
   quickActions: "Szybkie akcje",
   quickActionsHint: "Zacznij coś nowego",
   recentFolios: "Ostatnie teczki",
-  recentFoliosHint: "Wróć tam, gdzie skończyłeś",
+  recentFoliosHint: "Kontynuuj od miejsca, w którym przerwano pracę",
   relativeDays: "{{count}} d temu",
   relativeHours: "{{count}} godz. temu",
   relativeJustNow: "przed chwilą",
@@ -3739,8 +3724,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceH
   studio: "Studio",
   studioHint: "Upuść pliki → notatnik lub podcast",
   subtitle: "Myśl głębiej z każdym źródłem",
-  tipLead: "Wskazówka: naciśnij",
-  tipTail: "z dowolnego miejsca, aby przejść do notatnika, źródła lub akcji.",
   todayDescription: "Zacznij od źródła, notatnika, pytania opartego na źródłach lub jawnie przejrzanego briefu podcastu.",
   todayEyebrow: "Dziś",
   todayTitle: "Otwórz rozkład roboczy",
@@ -3752,9 +3735,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'modelFleetBad
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'reasoningSlotCard'), {
   currentlyUsing: "Obecnie używany",
-  descriptionEmphasis: "mocno się zastanowił",
-  descriptionLead: "Do trudnych pytań i wieloetapowej analizy. Oddzielony od modelu czatu, aby codzienne rozmowy pozostały szybkie — jest używany tylko wtedy, gdy wyraźnie poprosisz asystenta, aby",
-  descriptionTail: "nad jakimś zagadnieniem.",
   noModel: "Nie przypisano modelu. Wybierz jeden na poniższej liście modeli rozumowania.",
   title: "Model rozumowania",
 });
@@ -3924,12 +3904,11 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome
   allNotebooks: "Wszystkie notatniki",
   ask: "Pytaj",
   askHint: "Szukaj i syntezuj na podstawie swoich dowodów.",
-  dataLead: "Wszystkie dane znajdują się w",
   description: "Myśl głębiej z każdym źródłem przy jednym spokojnym, lokalnym biurku.",
   emptyDescription: "Nie ma jeszcze notatników. Upuść plik PDF w Studio, aby zacząć pierwszy.",
   emptyTitle: "Twój notatnik jest gotowy do pracy",
   eyebrow: "Obszar roboczy analiz",
-  heroDescription: "Twoje ostatnie teczki, bezpieczne sygnały środowiska i kolejne akcje są w jednym przejrzystym rozkładzie — gotowe, gdy ty będziesz gotowy.",
+  heroDescription: "Twoje ostatnie teczki, bezpieczne sygnały środowiska i kolejne akcje są w jednym przejrzystym rozkładzie — gotowe, gdy tylko ich potrzebujesz.",
   heroEyebrow: "Biurko robocze",
   heroTitle: "Wróć do pytania, które dziś ma znaczenie.",
   libraryIndex: "Indeks biblioteki",
@@ -3941,7 +3920,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome
   podcast: "Podcast",
   podcastHint: "Wygeneruj przejrzany brief do słuchania ze źródeł.",
   recentFolios: "Ostatnie teczki",
-  recentFoliosHint: "Wróć tam, gdzie skończyłeś.",
+  recentFoliosHint: "Kontynuuj od miejsca, w którym przerwano pracę.",
   relativeDays: "{{count}} d temu",
   relativeHours: "{{count}} godz. temu",
   relativeJustNow: "przed chwilą",
@@ -3949,8 +3928,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome
   shortcutsAriaLabel: "Skróty notatnika i ścieżka danych",
   studio: "Studio",
   studioHint: "Upuść pliki do notatnika lub briefu podcastu.",
-  tipLead: "Wskazówka: naciśnij",
-  tipTail: "z dowolnego miejsca, aby przejść do notatnika, źródła lub akcji.",
   todayDescription: "Zacznij od źródła, notatnika, pytania opartego na źródłach lub jawnie przejrzanego briefu podcastu.",
   todayEyebrow: "Dziś",
   todayTitle: "Otwórz rozkład roboczy",
@@ -4056,5 +4033,41 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'workspace'), 
   chatModelCacheHit: "trafienie w pamięci podręcznej modeli czatu",
   chatModelScan: "skanowanie modeli czatu",
   coreReady: "rdzeń gotowy",
-  launcherStart: "uruchomienie launchera",
+  launcherStart: "start programu uruchamiającego",
+});
+
+// v0.8.130 — strings moved out of components in the whole-app i18n pass.
+Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'executiveSynthesisDialog'), {
+  description: "Analiza wielu źródeł w tle, konsensus tematyczny, napięcia i dalsze kroki dla <name/>.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'podcastStudio'), {
+  defaultEpisodeName: "Podcast Deeper Notebook",
+  outlineFindings: "Ustalenia",
+  outlineIntroduction: "Wprowadzenie",
+  outlineTakeaway: "Wnioski",
+  untitledSegment: "Segment bez tytułu",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'localExecutionPolicyPanel'), {
+  cloudFallbackProposed: "Zaproponowano zapasową trasę w chmurze dla <stage/> · <content/>.",
+});
+Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'overview'), {
+  existingCards: "Twoje istniejące fiszki do powtórek pozostają dostępne w sekcji <link>Strona główna Nauki</link>.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'gmailIntegration'), {
+  setupStep1: "Otwórz <link>Google Cloud Console</link>",
+  setupStep2: "Utwórz identyfikator klienta OAuth 2.0 (typ: <em>Aplikacja na komputer</em>)",
+  setupStep3: "Dodaj <url/> do autoryzowanych identyfikatorów URI przekierowania (port dopasujemy dynamicznie)",
+  setupStep4: "Włącz <api/> w swoim projekcie",
+  signInNote: "Otwiera okno logowania Google. Żądamy tylko <scope/> — nigdy dostępu do odczytu Twojej skrzynki odbiorczej.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceHorizon'), {
+  data: "Wszystkie dane znajdują się w <path/>.",
+  tip: "Wskazówka: naciśnij <key/> z dowolnego miejsca, aby przejść do notatnika, źródła lub akcji.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'reasoningSlotCard'), {
+  description: "Do trudnych pytań i wieloetapowej analizy. Oddzielony od modelu czatu, aby codzienne rozmowy pozostały szybkie — jest używany tylko wtedy, gdy wyraźnie poprosisz asystenta, aby <em>mocno się zastanowił</em> nad jakimś zagadnieniem.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome'), {
+  data: "Wszystkie dane znajdują się w <path/>.",
+  tip: "Wskazówka: naciśnij <key/> z dowolnego miejsca, aby przejść do notatnika, źródła lub akcji.",
 });

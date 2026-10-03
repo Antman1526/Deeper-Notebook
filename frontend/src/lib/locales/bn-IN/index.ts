@@ -1193,7 +1193,7 @@ export const bnIN = {
 
     reasoningModelDesc: "কঠিন প্রশ্ন ও বহু-ধাপের বিশ্লেষণে ব্যবহৃত হয় - ধীর কিন্তু গভীর",
     autoRouteCloudLabel: "Auto-Route Cloud Model",
-    autoRouteCloudDesc: "DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT স্মার্ট রাউটিংয়ের জন্য ক্লাউড ফলব্যাক। লোকাল সাইডকার অসুস্থ থাকলে বা কনটেন্ট তার কনটেক্সট উইন্ডো ছাড়ালে অতিরিক্ত বড় প্রম্পট এটি গ্রহণ করে। এটিকে একটি ক্লাউড মডেলে (GPT-4o, Claude, Gemini) সেট করুন — আপনার লোকাল ডিফল্ট চ্যাট মডেলে নয়।",
+    autoRouteCloudDesc: "DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT স্মার্ট রাউটিংয়ের জন্য ক্লাউড ফলব্যাক। লোকাল সাইডকার ঠিকভাবে না চললে বা কনটেন্ট তার কনটেক্সট উইন্ডো ছাড়ালে অতিরিক্ত বড় প্রম্পট এটি গ্রহণ করে। এটিকে একটি ক্লাউড মডেলে (GPT-4o, Claude, Gemini) সেট করুন — আপনার লোকাল ডিফল্ট চ্যাট মডেলে নয়।",
     embeddingModelLabel: "এমবেডিং মডেল",
     embeddingModelDesc: "সেমান্টিক সার্চ এবং ভেক্টর এমবেডিংয়ের জন্য ব্যবহৃত",
     ttsModelLabel: "টেক্সট-টু-স্পিচ মডেল",
@@ -1283,7 +1283,7 @@ export const bnIN = {
     removeFile: "{name} সরান",
     linksLabel: "ওয়েব লিংক",
     linksPlaceholder: "লিংক পেস্ট করুন, প্রতি লাইনে একটি",
-    linksHelp: "{count}টি লিংক প্রস্তুত। Studio ওয়েব পেজ, ট্রান্সক্রিপ্টসহ ভিডিও এবং আপনার এক্সট্র্যাক্টর পড়তে পারে এমন উৎসের URL সমর্থন করে।",
+    linksHelp: "{count}টি লিংক প্রস্তুত। স্টুডিও ওয়েব পেজ, ট্রান্সক্রিপ্টসহ ভিডিও এবং আপনার এক্সট্র্যাক্টর পড়তে পারে এমন উৎসের URL সমর্থন করে।",
     step2Title: "২. আউটপুট মোড নির্বাচন করুন",
     notebookModeTitle: "স্টাডি নোটবুক",
     notebookModeDescription: "কাঠামোগত Markdown: ওভারভিউ, বিভাগ, সংজ্ঞা, প্রশ্নোত্তর। নতুন নোটবুকের সাথে সংযুক্ত AI-লিখিত নোট হিসাবে সংরক্ষিত।",
@@ -1549,7 +1549,7 @@ Object.assign(ensureSection(rootNode, 'notebooks'), {
 
 Object.assign(ensureSection(rootNode, 'common'), {
   clear: "মুছুন",
-  moreActions: "আরও কর্ম",
+  moreActions: "আরও অ্যাকশন",
 });
 
 Object.assign(ensureSection(rootNode, 'settings'), {
@@ -1658,9 +1658,9 @@ Object.assign(ensureSection(modelsSection, 'smartRouting'), {
   prefAuto: "স্বয়ংক্রিয় (প্রস্তাবিত)",
   prefLocal: "লোকাল পছন্দ",
   prefCloud: "ক্লাউড পছন্দ",
-  prefHintAuto: "লোকাল সুস্থ থাকলে ও কনটেন্ট ধরলে লোকাল ব্যবহার করে, নইলে ক্লাউড।",
+  prefHintAuto: "লোকাল ঠিকভাবে চললে ও কনটেন্ট তাতে ধরলে লোকাল ব্যবহার করে, নইলে ক্লাউড।",
   prefHintLocal: "সবসময় লোকাল ব্যবহার করে। কোনো লোকাল মডেল কনফিগার করা না থাকলে রাউটার তবুও ক্লাউডে ফিরে যায়।",
-  prefHintCloud: "লোকাল সুস্থ থাকলে ও কনটেন্ট ধরলেও সবসময় ক্লাউড ব্যবহার করে।",
+  prefHintCloud: "লোকাল ঠিকভাবে চললে ও কনটেন্ট তাতে ধরলেও সবসময় ক্লাউড ব্যবহার করে।",
   envOverrideHint: "পরামর্শ: DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT ও DEEPER_NOTEBOOK_CHAT_PROVIDER এনভায়রনমেন্ট ভেরিয়েবল (সেট করা থাকলে) এই UI সেটিংসকে ওভাররাইড করে।",
 });
 
@@ -1776,7 +1776,7 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'artifacts'), 
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'artifacts'), 'mindMapArtifactViewer'), {
   askAboutTopic: "এই বিষয়ে জিজ্ঞাসা করুন",
-  branchActionsUnavailable: "আর্টিফ্যাক্টের কনটেক্সটসহ এই ভিউ খুললে শাখার কর্মগুলি পাওয়া যাবে।",
+  branchActionsUnavailable: "আর্টিফ্যাক্টের কনটেক্সটসহ এই ভিউ খুললে শাখার অ্যাকশনগুলি পাওয়া যাবে।",
   canvasLabel: "মাইন্ড ম্যাপ ক্যানভাস। নোডগুলির মধ্যে যেতে অ্যারো কী এবং নির্বাচিত শাখা প্রসারিত বা গুটিয়ে ফেলতে Enter ব্যবহার করুন।",
   collapseBranch: "শাখা গুটিয়ে ফেলুন",
   createFromBranch: "শাখা থেকে তৈরি করুন",
@@ -1984,7 +1984,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'common'), 'useStudio'), {
   artifactTitle: "{{title}} Course Pack",
   atLeastOneSource: "অন্তত একটি ফাইল বা লিংক প্রয়োজন",
   defaultNotebookTitle: "Course Pack - {{name}}",
-  notebookDescription: "Studio-র উৎস থেকে সারিতে দেওয়া প্রশিক্ষকের জন্য প্রস্তুত Course Pack।",
+  notebookDescription: "স্টুডিও-র উৎস থেকে সারিতে দেওয়া প্রশিক্ষকের জন্য প্রস্তুত Course Pack।",
   sourceFailedToQueue: "{{name}} সারিতে দেওয়া যায়নি",
   sourcesFailedProcessing: "প্রক্রিয়াকরণের সময় {{count}}টি উৎস ব্যর্থ হয়েছে",
   warningQueued: "উৎসগুলি সারিতে আছে। এক্সট্র্যাকশন শেষ হলে নোটবুক থেকে Course Pack তৈরি করা যাবে।",
@@ -2041,7 +2041,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'knowledge'), 'knowledgeBook
   confirmFolderDeletion: "ফোল্ডার মোছা নিশ্চিত করুন",
   deleteBookmarkAria: "বুকমার্ক {{label}} মুছুন",
   deleteFolder: "ফোল্ডার মুছুন",
-  deleteFolderExplain: "সন্তান সরান বললে অধস্তন বুকমার্ক ও ফোল্ডারগুলি থেকে যায়। ট্রি মুছুন বললে এই ফোল্ডার, অধস্তন ফোল্ডার এবং সেগুলির বুকমার্ক মেটাডেটা স্থায়ীভাবে মুছে যায়; এটি কখনও উৎস ডকুমেন্ট সম্পাদনা করে না।",
+  deleteFolderExplain: "ভেতরের আইটেম সরান বেছে নিলে অধস্তন বুকমার্ক ও ফোল্ডারগুলি থেকে যায়। ট্রি মুছুন বেছে নিলে এই ফোল্ডার, অধস্তন ফোল্ডার এবং সেগুলির বুকমার্ক মেটাডেটা স্থায়ীভাবে মুছে যায়; এটি কখনও উৎস ডকুমেন্ট সম্পাদনা করে না।",
   deleteFolderTitle: "{{name}} মুছবেন?",
   deleteTree: "ট্রি মুছুন",
   editBookmark: "বুকমার্ক সম্পাদনা করুন",
@@ -2055,7 +2055,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'knowledge'), 'knowledgeBook
   graphSpaceIds: "গ্রাফ স্পেস ID",
   graphViewport: "গ্রাফ ভিউপোর্ট",
   library: "বুকমার্ক লাইব্রেরি",
-  moveChildren: "সন্তান সরান",
+  moveChildren: "ভেতরের আইটেম সরান",
   open: "{{label}} খুলুন",
   repairNote: "এই মেরামত শুধু সংরক্ষিত লক্ষ্যের রেফারেন্স হালনাগাদ করে; উৎস ডকুমেন্টে কখনও কিছু লেখে না।",
   repairTarget: "বুকমার্কের লক্ষ্য মেরামত করুন",
@@ -2301,8 +2301,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'executiveSynt
   copiedToast: "নির্বাহী সংশ্লেষণ ক্লিপবোর্ডে কপি হয়েছে",
   copyFailed: "ক্লিপবোর্ডে লেখা কপি করা যায়নি",
   copySynthesis: "সংশ্লেষণ কপি করুন",
-  descriptionLead: "বহু উৎসজুড়ে পরিবেশগত ইন্টেলিজেন্স, বিষয়ভিত্তিক ঐকমত্য, টানাপোড়েন এবং পরবর্তী পদক্ষেপ, বিষয়:",
-  evaluating: "সর্বজনীন বিষয়, মতভেদ ও কৌশলগত প্রভাব মূল্যায়ন করা হচ্ছে",
+  evaluating: "একাধিক উৎসজুড়ে বিষয়, মতভেদ ও কৌশলগত প্রভাব মূল্যায়ন করা হচ্ছে",
   generateFailed: "নির্বাহী বহু-উৎস সংশ্লেষণ তৈরি করা যায়নি।",
   noteTitle: "নির্বাহী সংশ্লেষণ — {{name}}",
   regenerate: "আবার তৈরি করুন",
@@ -2318,7 +2317,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'idPage'), {
   workspaceTitle: "নোটবুক ওয়ার্কস্পেস",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'notebookCard'), {
-  actionsFor: "{{name}}-এর কর্ম",
+  actionsFor: "{{name}}-এর অ্যাকশন",
   noReadableContent: "পাঠযোগ্য কোনো কনটেন্ট নেই",
   notesTitle: "{{count}}টি নোট",
   sourcesTitle: "{{count}}টি উৎস",
@@ -2387,7 +2386,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'episodeLab'), 
   close: "Episode Lab বন্ধ করুন",
   currentOutline: "বর্তমান রূপরেখা",
   downloadAudio: "অডিও ডাউনলোড করুন",
-  episodeActions: "পর্বের কর্ম",
+  episodeActions: "পর্বের অ্যাকশন",
   evidence: "প্রমাণ",
   lockedStageCopy: "ইন্টেলেকচুয়াল ইঞ্জিন আপগ্রেডের পর উপলব্ধ হবে",
   noOutline: "এই পর্বের জন্য এখনও কোনো রূপরেখা নেই।",
@@ -2813,7 +2812,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'launcherPrefsP
   tokensCount: "{{value}}টি টোকেন",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'localExecutionPolicyPanel'), {
-  cloudFallbackProposedLead: "ক্লাউড ফলব্যাকের প্রস্তাব করা হয়েছে:",
   computeProfile: "কম্পিউট প্রোফাইল",
   confirmAction: "ক্লাউডে চালিয়ে যাওয়া নিশ্চিত করুন",
   confirmDescription: "অনুমোদিত চালিয়ে যাওয়া রেকর্ড করতে প্রস্তাবিত ধাপ ও কনটেন্ট শ্রেণি হুবহু লিখুন। এতে কোনো কাজ চলে না বা কোনো ক্লাউড প্রদানকারীকে কল করা হয় না।",
@@ -2919,7 +2917,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'modelInventory
   tierBadge: "{{tier}} স্তর",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'modelRoutePlanPanel'), {
-  description: "ব্যাখ্যাযোগ্য, সংশোধিত নির্বাচনের তথ্য। পথ, প্রম্পট ও উৎসের লেখা পথ পরিকল্পনার বাইরে থাকে।",
+  description: "ব্যাখ্যাযোগ্য নির্বাচনের তথ্য, যেখানে সংবেদনশীল অংশ লুকানো। পথ, প্রম্পট ও উৎসের লেখা পথ পরিকল্পনার বাইরে থাকে।",
   eligibleEscalation: "যোগ্য উন্নীতকরণ: {{models}}",
   noRoute: "এখনও কোনো পথ পরিকল্পিত হয়নি।",
   outcomeApprovalRequired: "অনুমোদন প্রয়োজন",
@@ -3039,7 +3037,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'sources'), 'sourceCard'), {
   podcastNoContent: "কোনো পাঠযোগ্য উৎস কনটেন্ট উপলব্ধ নেই।",
   shared: "শেয়ার করা",
   sharedWithCount: "{{count}}টির সঙ্গে শেয়ার করা",
-  sourceActions: "উৎসের কর্ম",
+  sourceActions: "উৎসের অ্যাকশন",
   turnInsightsIntoPodcast: "উৎসের ইনসাইটকে পডকাস্টে রূপান্তর করুন",
   turnInsightsIntoPodcastDisabled: "উৎসের ইনসাইটকে পডকাস্টে রূপান্তর করুন — {{reason}}",
   turnIntoPodcast: "উৎসকে পডকাস্টে রূপান্তর করুন",
@@ -3158,7 +3156,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'study'), 'studyDashboard'),
   weakTopics: "দুর্বল বিষয়",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'study'), 'studyLearningSession'), {
-  description: "উদ্ধৃতিসহ ব্যাখ্যা, কোচিং বা সীমিত প্রস্তাবের জন্য একজন অগ্রভাগের টিউটরকে জিজ্ঞাসা করুন। মূল উৎসগুলি কেবল-পঠনযোগ্য থাকে।",
+  description: "উদ্ধৃতিসহ ব্যাখ্যা, কোচিং বা সীমিত প্রস্তাবের জন্য একজন সক্রিয় টিউটরকে জিজ্ঞাসা করুন। মূল উৎসগুলি কেবল-পঠনযোগ্য থাকে।",
   eyebrow: "শিখুন",
   heading: "শেখার সেশন",
 });
@@ -3177,7 +3175,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWizard')
   levelLabel: "শুরুর স্তর",
   loadingDraft: "সংরক্ষিত খসড়া লোড হচ্ছে…",
   saveAndContinue: "সংরক্ষণ করে এগিয়ে যান",
-  saveLater: "সংরক্ষণ করুন, পরে শেষ করব",
+  saveLater: "সংরক্ষণ করে পরে শেষ করুন",
   savingDraft: "খসড়া সংরক্ষণ হচ্ছে…",
   sourcesDescription: "বিদ্যমান উৎসের কনটেন্ট বা লোকাল পথ কপি না করেই সেগুলি যুক্ত করুন। আপনি সিদ্ধান্ত নেওয়ার সময় খসড়াটি সার্ভারেই থাকে।",
   sourcesTitle: "শেখার উৎস বেছে নিন",
@@ -3219,11 +3217,9 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'stu
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'overview'), {
   approvedVersion: "অনুমোদিত সংস্করণ",
   description: "পরিকল্পনা পর্যালোচনার মধ্য দিয়ে এগোনোর সময় এই লক্ষ্য ও এর উৎসের সীমা দৃশ্যমান রাখুন।",
-  existingCardsLead: "আপনার বিদ্যমান পুনরালোচনা কার্ড এখানে উপলব্ধ থাকে:",
   linkedSources: "যুক্ত উৎস",
   notApproved: "অনুমোদিত নয়",
   startingLevel: "শুরুর স্তর",
-  studyHome: "অধ্যয়ন হোম",
   title: "পরিকল্পনার সংক্ষিপ্ত বিবরণ",
 });
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'reserved'), {
@@ -3412,13 +3408,13 @@ Object.assign(ensureSection(ensureSection(rootNode, 'study'), 'tutorDock'), {
   cancelledStatus: "টিউটর আহ্বান বাতিল হয়েছে। কিছুই বদলায়নি।",
   citationsLabel: "টিউটরের উদ্ধৃতি",
   close: "টিউটর ডক বন্ধ করুন",
-  compact: "টিউটর ডক ছোট করা আছে। অগ্রভাগের কথোপকথন চালিয়ে যেতে এটি আবার খুলুন।",
-  description: "বিশেষজ্ঞরা এই একটি সীমিত অগ্রভাগের সেশন ভাগ করে নেন।",
+  compact: "টিউটর ডক ছোট করা আছে। সক্রিয় কথোপকথন চালিয়ে যেতে এটি আবার খুলুন।",
+  description: "বিশেষজ্ঞরা এই একটি সীমিত সক্রিয় সেশন ভাগ করে নেন।",
   evidence: "প্রমাণ",
-  foregroundTutor: "অগ্রভাগের টিউটর",
+  foregroundTutor: "সক্রিয় টিউটর",
   open: "টিউটর ডক খুলুন",
   proposalsLabel: "টিউটরের প্রস্তাব",
-  proposedActions: "প্রস্তাবিত কর্ম",
+  proposedActions: "প্রস্তাবিত অ্যাকশন",
   requestWebPermission: "ওয়েব গবেষণার অনুমতি চান",
   retry: "আবার চেষ্টা করুন",
   scopeHint: "ওয়েব অনুরোধ পাঠানোর আগে পরিকল্পনাকে একটি অনুমোদিত HTTPS পরিসর দিতে হবে।",
@@ -3430,7 +3426,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'study'), 'tutorDock'), {
   webOff: "আপনি অনুরোধ না করা পর্যন্ত ওয়েব গবেষণা বন্ধ থাকে।",
   webPermissionRequested: "এই আহ্বানের জন্য ওয়েব গবেষণার অনুমতি চাওয়া হয়েছে।",
   working: "টিউটর কাজ করছে…",
-  workingStatus: "টিউটর এই একটি অগ্রভাগের অনুরোধে কাজ করছে…",
+  workingStatus: "টিউটর এই একটি সক্রিয় অনুরোধে কাজ করছে…",
 });
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'tutorDock'), 'errors'), {
   cancelled: "টিউটর আহ্বান বাতিল হয়েছে।",
@@ -3445,13 +3441,13 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'tut
   placeholder: "চেষ্টা করুন “{{mode}}…”",
 });
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'tutorDock'), 'proposalErrors'), {
-  actionUnavailable: "Study Workbench-এর এই ধাপে এই প্রস্তাবিত কর্ম উপলব্ধ নয়। কিছুই বদলায়নি।",
+  actionUnavailable: "Study Workbench-এর এই ধাপে এই প্রস্তাবিত অ্যাকশন উপলব্ধ নয়। কিছুই বদলায়নি।",
   revisionUnavailable: "বর্তমান পরিকল্পনার সংশোধন উপলব্ধ নয়। এই প্রস্তাব নিশ্চিত করার আগে রিফ্রেশ করুন।",
 });
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'tutorDock'), 'review'), {
-  action: "কর্ম:",
+  action: "অ্যাকশন:",
   confirmProposal: "প্রস্তাব নিশ্চিত করুন",
-  description: "টিউটর শুধু এই কর্মের পরামর্শ দিয়েছে। কোনো বিদ্যমান নেভিগেশন বা পরিকল্পনা পরিবর্তন চালানোর আগে এটি পর্যালোচনা করুন।",
+  description: "টিউটর শুধু এই অ্যাকশনের পরামর্শ দিয়েছে। কোনো বিদ্যমান নেভিগেশন বা পরিকল্পনা পরিবর্তন চালানোর আগে এটি পর্যালোচনা করুন।",
   openDestination: "গন্তব্য খুলুন",
   title: "টিউটরের প্রস্তাব পর্যালোচনা করুন",
   unavailable: "পরবর্তী Study Workbench ধাপ পর্যন্ত অনুপলব্ধ। কিছুই বদলানো হবে না।",
@@ -3602,7 +3598,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'contextLens')
 Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'displayPreferencesPanel'), {
   density: "ঘনত্ব",
   densityComfortable: "আরামদায়ক",
-  densityCompact: "সংক্ষিপ্ত",
+  densityCompact: "কম্প্যাক্ট",
   description: "নির্বাচিত থিম না বদলে পরিবেশগত ফোলিও উপস্থাপনা সমন্বয় করুন।",
   enterFocusMode: "ফোকাস মোডে যান",
   exitFocusMode: "ফোকাস মোড থেকে বেরোন",
@@ -3678,17 +3674,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'gmailIntegrat
   sendingTo: "পাঠানো হচ্ছে:",
   sentFallback: "পাঠানো হয়েছে।",
   setupIntro: "একবারের সেটআপ: একটি Google Cloud OAuth ক্লায়েন্ট তৈরি করুন।",
-  setupStep1Lead: "এখানে যান:",
-  setupStep1Link: "Google Cloud Console",
-  setupStep2Lead: "একটি OAuth 2.0 ক্লায়েন্ট ID তৈরি করুন (ধরন:",
-  setupStep2Type: "ডেস্কটপ অ্যাপ",
-  setupStep3Lead: "এই URI:",
-  setupStep3Tail: "অনুমোদিত রিডাইরেক্ট URI-র তালিকায় যোগ করুন (আমরা পোর্টটি গতিশীলভাবে মিলিয়ে নেব)",
-  setupStep4Lead: "চালু করুন:",
-  setupStep4Tail: "— আপনার প্রকল্পে",
   setupStep5: "নিচে ক্লায়েন্ট ID ও সিক্রেট পেস্ট করুন",
-  signInNoteLead: "একটি Google সাইন-ইন উইন্ডো খোলে। আমরা শুধু এই অনুমতি চাই:",
-  signInNoteTail: "— আপনার ইনবক্স পড়ার অনুমতি কখনও নয়।",
   title: "ইমেল ডাইজেস্ট",
   waitingForGoogle: "Google সাইন-ইন সম্পূর্ণ হওয়ার অপেক্ষায়…",
 });
@@ -3708,14 +3694,13 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'instrumentDoc
   ariaLabel: "প্রধান টুল",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceHorizon'), {
-  actionsAriaLabel: "হরাইজন কর্ম",
+  actionsAriaLabel: "হরাইজন অ্যাকশন",
   allNotebooks: "সব নোটবুক",
   ask: "জিজ্ঞাসা",
   askHint: "অনুসন্ধান + সংশ্লেষণ",
-  coverDescription: "আপনার সাম্প্রতিক ফোলিও, নিরাপদ রানটাইম সংকেত ও পরবর্তী কর্ম একটি শান্ত বিন্যাসে থাকে — আপনি প্রস্তুত হলেই তৈরি।",
+  coverDescription: "আপনার সাম্প্রতিক ফোলিও, নিরাপদ রানটাইম সংকেত ও পরবর্তী পদক্ষেপ একটি শান্ত বিন্যাসে থাকে — আপনি প্রস্তুত হলেই তৈরি।",
   coverEyebrow: "নোটবুকের কভার · কাজের ডেস্ক",
   coverTitle: "আজ যে প্রশ্ন গুরুত্বপূর্ণ, সেটি চালিয়ে যান।",
-  dataLead: "সব ডেটা থাকে এখানে:",
   emptyDescription: "এখনও কোনো নোটবুক নেই। প্রথমটি শুরু করতে স্টুডিওতে একটি PDF ফেলুন।",
   emptyTitle: "আপনার নোটবুক শুরুর জন্য প্রস্তুত",
   eyebrow: "ইন্টেলিজেন্স হরাইজন",
@@ -3727,7 +3712,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceH
   openStudio: "স্টুডিও খুলুন",
   podcast: "পডকাস্ট",
   podcastHint: "উৎস থেকে তৈরি করুন",
-  quickActions: "দ্রুত কর্ম",
+  quickActions: "দ্রুত অ্যাকশন",
   quickActionsHint: "নতুন কিছু শুরু করুন",
   recentFolios: "সাম্প্রতিক ফোলিও",
   recentFoliosHint: "যেখানে ছেড়েছিলেন সেখান থেকে শুরু করুন",
@@ -3739,8 +3724,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceH
   studio: "স্টুডিও",
   studioHint: "ফাইল ফেলুন → নোটবুক বা পডকাস্ট",
   subtitle: "প্রতিটি উৎসের সঙ্গে আরও গভীরে ভাবুন",
-  tipLead: "পরামর্শ: যেকোনো জায়গা থেকে নোটবুক, উৎস বা কর্মে সরাসরি যেতে",
-  tipTail: "চাপুন।",
   todayDescription: "একটি উৎস, একটি নোটবুক, একটি উৎস-ভিত্তিক প্রশ্ন, অথবা স্পষ্টভাবে পর্যালোচিত একটি পডকাস্ট ব্রিফ দিয়ে শুরু করুন।",
   todayEyebrow: "আজ",
   todayTitle: "একটি কাজের বিন্যাস খুলুন",
@@ -3752,9 +3735,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'modelFleetBad
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'reasoningSlotCard'), {
   currentlyUsing: "বর্তমানে ব্যবহৃত",
-  descriptionEmphasis: "গভীরভাবে ভাবতে",
-  descriptionLead: "কঠিন প্রশ্ন ও বহু-ধাপের বিশ্লেষণের জন্য। চ্যাট মডেল থেকে আলাদা, যাতে আপনার সাধারণ কথোপকথন দ্রুত থাকে — শুধু তখনই এখানে পাঠানো হয় যখন আপনি সহকারীকে কোনো বিষয়ে স্পষ্টভাবে",
-  descriptionTail: "বলেন।",
   noModel: "কোনো মডেল বরাদ্দ নেই। নিচের রিজনিং মডেল ড্রপডাউনে একটি বেছে নিন।",
   title: "রিজনিং মডেল",
 });
@@ -3854,7 +3834,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'sourceCover')
   typeFallback: "উৎস",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'sourceCoverActions'), {
-  actionsLabel: "{{title}}-এর কর্ম",
+  actionsLabel: "{{title}}-এর অ্যাকশন",
   deleteSource: "উৎস মুছুন",
   refreshVisual: "ভিজ্যুয়াল রিফ্রেশ করুন",
   removeVisual: "ভিজ্যুয়াল সরান",
@@ -3920,16 +3900,15 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'themeSwitcher
   theme: "থিম",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome'), {
-  actionsAriaLabel: "ওয়ার্কস্পেসের কর্ম",
+  actionsAriaLabel: "ওয়ার্কস্পেসের অ্যাকশন",
   allNotebooks: "সব নোটবুক",
   ask: "জিজ্ঞাসা",
   askHint: "আপনার প্রমাণ থেকে অনুসন্ধান ও সংশ্লেষণ করুন।",
-  dataLead: "সব ডেটা থাকে এখানে:",
   description: "একটি শান্ত, লোকাল-ফার্স্ট ডেস্কে প্রতিটি উৎসের সঙ্গে আরও গভীরে ভাবুন।",
   emptyDescription: "এখনও কোনো নোটবুক নেই। প্রথমটি শুরু করতে স্টুডিওতে একটি PDF ফেলুন।",
   emptyTitle: "আপনার নোটবুক শুরুর জন্য প্রস্তুত",
   eyebrow: "ইন্টেলিজেন্স ওয়ার্কস্পেস",
-  heroDescription: "আপনার সাম্প্রতিক ফোলিও, নিরাপদ রানটাইম সংকেত ও পরবর্তী কর্ম একটি স্পষ্ট বিন্যাসে থাকে — আপনি প্রস্তুত হলেই তৈরি।",
+  heroDescription: "আপনার সাম্প্রতিক ফোলিও, নিরাপদ রানটাইম সংকেত ও পরবর্তী পদক্ষেপ একটি স্পষ্ট বিন্যাসে থাকে — আপনি প্রস্তুত হলেই তৈরি।",
   heroEyebrow: "কাজের ডেস্ক",
   heroTitle: "আজ যে প্রশ্ন গুরুত্বপূর্ণ, সেটি চালিয়ে যান।",
   libraryIndex: "লাইব্রেরি সূচি",
@@ -3949,8 +3928,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome
   shortcutsAriaLabel: "নোটবুক শর্টকাট ও ডেটার পথ",
   studio: "স্টুডিও",
   studioHint: "ফাইল ফেলে নোটবুক বা পডকাস্ট ব্রিফ তৈরি করুন।",
-  tipLead: "পরামর্শ: যেকোনো জায়গা থেকে নোটবুক, উৎস বা কর্মে সরাসরি যেতে",
-  tipTail: "চাপুন।",
   todayDescription: "একটি উৎস, একটি নোটবুক, একটি উৎস-ভিত্তিক প্রশ্ন, অথবা স্পষ্টভাবে পর্যালোচিত একটি পডকাস্ট ব্রিফ দিয়ে শুরু করুন।",
   todayEyebrow: "আজ",
   todayTitle: "একটি কাজের বিন্যাস খুলুন",
@@ -4045,8 +4022,8 @@ Object.assign(ensureSection(ensureSection(rootNode, 'study'), 'planStates'), {
   syllabusProposed: "সিলেবাস প্রস্তাবিত",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'catalog2'), {
-  themeNameDark: "অন্ধকার",
-  themeNameHighContrastDark: "উচ্চ কনট্রাস্ট অন্ধকার",
+  themeNameDark: "গাঢ়",
+  themeNameHighContrastDark: "উচ্চ কনট্রাস্ট গাঢ়",
   themeNameHighContrastLight: "উচ্চ কনট্রাস্ট হালকা",
   themeNameLightBlue: "হালকা নীল",
   themeNamePaper: "কাগজ",
@@ -4057,4 +4034,40 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'workspace'), 
   chatModelScan: "চ্যাট মডেল স্ক্যান",
   coreReady: "কোর প্রস্তুত",
   launcherStart: "লঞ্চার চালু",
+});
+
+// v0.8.130 — strings moved out of components in the whole-app i18n pass.
+Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'executiveSynthesisDialog'), {
+  description: "<name/>-এর জন্য বহু উৎসজুড়ে পরিবেশগত ইন্টেলিজেন্স, বিষয়ভিত্তিক ঐকমত্য, টানাপোড়েন এবং পরবর্তী পদক্ষেপ।",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'podcastStudio'), {
+  defaultEpisodeName: "Deeper Notebook পডকাস্ট",
+  outlineFindings: "ফলাফল",
+  outlineIntroduction: "ভূমিকা",
+  outlineTakeaway: "মূল সারকথা",
+  untitledSegment: "শিরোনামহীন অংশ",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'localExecutionPolicyPanel'), {
+  cloudFallbackProposed: "<stage/> · <content/>-এর জন্য ক্লাউড ফলব্যাকের প্রস্তাব করা হয়েছে।",
+});
+Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'overview'), {
+  existingCards: "আপনার বিদ্যমান পুনরালোচনা কার্ড <link>অধ্যয়ন হোম</link>-এ উপলব্ধ থাকবে।",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'gmailIntegration'), {
+  setupStep1: "<link>Google Cloud Console</link> খুলুন",
+  setupStep2: "একটি OAuth 2.0 ক্লায়েন্ট ID তৈরি করুন (ধরন: <em>ডেস্কটপ অ্যাপ</em>)",
+  setupStep3: "অনুমোদিত রিডাইরেক্ট URI-র তালিকায় <url/> যোগ করুন (আমরা পোর্টটি গতিশীলভাবে মিলিয়ে নেব)",
+  setupStep4: "আপনার প্রকল্পে <api/> চালু করুন",
+  signInNote: "একটি Google সাইন-ইন উইন্ডো খোলে। আমরা শুধু <scope/> অনুমতি চাই — আপনার ইনবক্স পড়ার অনুমতি কখনও নয়।",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceHorizon'), {
+  data: "সব ডেটা <path/>-এ থাকে।",
+  tip: "পরামর্শ: যেকোনো জায়গা থেকে নোটবুক, উৎস বা অ্যাকশনে সরাসরি যেতে <key/> চাপুন।",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'reasoningSlotCard'), {
+  description: "কঠিন প্রশ্ন ও বহু-ধাপের বিশ্লেষণের জন্য। চ্যাট মডেল থেকে আলাদা, যাতে আপনার সাধারণ কথোপকথন দ্রুত থাকে — শুধু তখনই এখানে পাঠানো হয় যখন আপনি সহকারীকে কোনো বিষয়ে স্পষ্টভাবে <em>গভীরভাবে ভাবতে</em> বলেন।",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome'), {
+  data: "সব ডেটা <path/>-এ থাকে।",
+  tip: "পরামর্শ: যেকোনো জায়গা থেকে নোটবুক, উৎস বা অ্যাকশনে সরাসরি যেতে <key/> চাপুন।",
 });

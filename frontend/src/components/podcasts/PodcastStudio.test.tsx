@@ -269,10 +269,10 @@ describe('PodcastStudio', () => {
   it('moves outline segments with explicit keyboard-accessible controls', () => {
     render(<PodcastStudio seedDocumentIds={['knowledge_engine_document:plan']} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'podcasts.outlineStoryboard.moveEarlierLabel {"label":"Findings"}' }))
+    fireEvent.click(screen.getByRole('button', { name: 'podcasts.outlineStoryboard.moveEarlierLabel {"label":"podcasts.podcastStudio.outlineFindings"}' }))
 
-    expect(screen.getByRole('status')).toHaveTextContent('podcasts.outlineStoryboard.movedAnnouncement {"label":"Findings","position":1}')
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'podcasts.outlineStoryboard.moveEarlierLabel {"label":"Findings"}' }))
+    expect(screen.getByRole('status')).toHaveTextContent('podcasts.outlineStoryboard.movedAnnouncement {"label":"podcasts.podcastStudio.outlineFindings","position":1}')
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'podcasts.outlineStoryboard.moveEarlierLabel {"label":"podcasts.podcastStudio.outlineFindings"}' }))
   })
 
   it('checks readiness only after explicit review and submits the editorial brief after confirmation', async () => {
@@ -326,7 +326,8 @@ describe('PodcastStudio', () => {
         evidencePolicy: 'strict',
         episodeProfileName: 'Local Episode',
         speakerProfileName: 'Local Voice',
-        outline: ['Introduction', 'Findings', 'Takeaway'],
+        // v0.8.130 — the default outline starts in the UI language (keys under the test mock).
+        outline: ['podcasts.podcastStudio.outlineIntroduction', 'podcasts.podcastStudio.outlineFindings', 'podcasts.podcastStudio.outlineTakeaway'],
       },
       reviewOutline: true,
     })))

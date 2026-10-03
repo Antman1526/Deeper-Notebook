@@ -2074,7 +2074,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'knowledge'), 'knowledgeBook
   tagsLabel: "Etiquetes del marcador",
   targetBlockId: "ID del bloc de destinació",
   targetDocumentId: "ID del document de destinació",
-  targetStateReason: "La destinació del marcador està {{state}}.",
+  targetStateReason: "Estat de la destinació del marcador: {{state}}.",
   turnFolderIntoPodcast: "Converteix la carpeta en pòdcast",
   unavailableState: "no disponible",
   updateConflict: "L’actualització del marcador ha entrat en conflicte o no s’ha pogut desar.",
@@ -2190,7 +2190,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'knowledge'), 'researchCoreH
   queuedWork: "Feina a la cua",
   readinessDetails: "Detalls de disponibilitat local",
   readinessLoading: "Disponibilitat local: carregant — {{detail}}",
-  readinessReady: "Disponibilitat local: llest — {{detail}}",
+  readinessReady: "Disponibilitat local: llesta — {{detail}}",
   readinessUnavailable: "Disponibilitat local: no disponible — {{detail}}",
   saveState: "Estat del desament",
   workspace: "Espai de treball de Research Core",
@@ -2207,7 +2207,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'knowledge'), 'researchModes
 Object.assign(ensureSection(ensureSection(rootNode, 'knowledge'), 'vaultDocumentView'), {
   livePreviewView: "Previsualització en directe de {{title}}",
   readingView: "Vista de lectura de {{title}}",
-  sourceView: "Font de {{title}}",
+  sourceView: "Codi font de {{title}}",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'knowledge'), 'vaultGitHistoryDialog'), {
   change: "Canvia",
@@ -2278,7 +2278,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'knowledge'), 'vaultSourceVi
   path: "Ruta",
   size: "Mida",
   sizeBytes: "{{size}} bytes",
-  source: "Font de {{title}}",
+  source: "Codi font de {{title}}",
   unknown: "desconegut",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'knowledge'), 'workspaceRestoreDialog'), {
@@ -2302,7 +2302,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'executiveSynt
   copiedToast: "Síntesi executiva copiada al porta-retalls",
   copyFailed: "No s’ha pogut copiar el text al porta-retalls",
   copySynthesis: "Copia la síntesi",
-  descriptionLead: "Intel·ligència ambiental entre fonts, consens temàtic, tensions i properes passes per a",
   evaluating: "Avaluant temes transversals, desacords i implicacions estratègiques",
   generateFailed: "No s’ha pogut generar la síntesi executiva entre fonts.",
   noteTitle: "Síntesi executiva — {{name}}",
@@ -2450,10 +2449,10 @@ Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'globalAudioPla
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'knowledgePodcastPane'), {
   evidenceRoute: "Ruta d’evidències",
-  loadingStudio: "Carregant l’estudi d’intel·ligència de pòdcasts…",
+  loadingStudio: "Carregant l’Studio d’intel·ligència de pòdcasts…",
   scriptRoute: "Ruta del guió",
   storyboardRoute: "Ruta del guió gràfic",
-  studioTitle: "Estudi d’intel·ligència de pòdcasts",
+  studioTitle: "Studio d’intel·ligència de pòdcasts",
   title: "Pòdcast de coneixement",
   verificationRoute: "Ruta de verificació",
   voiceRoute: "Ruta de veu",
@@ -2557,7 +2556,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'podcastStudio'
   scriptRoute: "Ruta del guió",
   submitFailed: "No s’ha pogut enviar la producció. Revisa la disponibilitat i torna-ho a provar.",
   submitting: "Enviant…",
-  title: "Estudi d’intel·ligència de pòdcasts",
+  title: "Studio d’intel·ligència de pòdcasts",
   transcriptionRoute: "Ruta de transcripció",
   voiceProfile: "Perfil de veu",
   voiceProfileForProduction: "Perfil de veu per a la producció",
@@ -2699,7 +2698,7 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'research'), '
   complete: "completar",
   discover: "descobrir",
   extract: "extreure",
-  ingest: "ingerir",
+  ingest: "importar",
   plan: "planificar",
   synthesize: "sintetitzar",
   validate: "validar",
@@ -2814,7 +2813,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'launcherPrefsP
   tokensCount: "{{value}} tokens",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'localExecutionPolicyPanel'), {
-  cloudFallbackProposedLead: "S’ha proposat una alternativa al núvol per a",
   computeProfile: "Perfil de còmput",
   confirmAction: "Confirma la continuació al núvol",
   confirmDescription: "Escriu exactament l’etapa i la classe de contingut proposades per registrar una continuació aprovada. Això no executa cap tasca ni crida cap proveïdor al núvol.",
@@ -2950,13 +2948,13 @@ Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'roleBenchmarkP
   rawChecks: "Comprovacions en brut",
   reset: "Restableix",
   roleChat: "Xat predeterminat",
-  roleCodingResearch: "Recerca de programació",
+  roleCodingResearch: "Recerca de codi",
   roleSourceSynthesis: "Síntesi de fonts",
   roleStudyFast: "Eines d’estudi ràpides",
   scoreOutOf100: "{{score}} / 100",
   speed: "Velocitat",
   speedOnly: "Només velocitat",
-  speedOnlyLegacy: "Resultat antic només de velocitat. No pot ser el guanyador de qualitat fins que es tornin a mesurar aquest rol.",
+  speedOnlyLegacy: "Resultat antic només de velocitat. No pot ser el guanyador de qualitat fins que es torni a mesurar aquest rol.",
   title: "Rols de models mesurats",
   tokensPerSecond: "{{value}} tok/s",
 });
@@ -3220,11 +3218,9 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'stu
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'overview'), {
   approvedVersion: "Versió aprovada",
   description: "Mantén visibles aquest objectiu i el seu límit de fonts mentre el pla passa per la revisió.",
-  existingCardsLead: "Les teves targetes de repàs existents continuen disponibles a la",
   linkedSources: "Fonts enllaçades",
   notApproved: "No aprovat",
   startingLevel: "Nivell de partida",
-  studyHome: "pàgina d’inici d’Estudi",
   title: "Resum del pla",
 });
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'reserved'), {
@@ -3371,7 +3367,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'study'), 'syllabusEditor'),
   confirmApproval: "Confirma l’aprovació",
   coverageCount: "{{covered}} de {{total}} fonts cobertes",
   coverageGaps: "Llacunes de cobertura",
-  immutableHint: "Reordenar o editar crea una versió nova; la versió mostrada mai no se sobreescriu.",
+  immutableHint: "Reordenar o editar crea una versió nova; la versió mostrada mai no es sobreescriu.",
   moveDown: "Mou avall",
   moveDownAria: "Mou {{title}} avall",
   moveUp: "Mou amunt",
@@ -3679,17 +3675,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'gmailIntegrat
   sendingTo: "S’envia a",
   sentFallback: "Enviat.",
   setupIntro: "Configuració única: crea un client OAuth de Google Cloud.",
-  setupStep1Lead: "Obre",
-  setupStep1Link: "Google Cloud Console",
-  setupStep2Lead: "Crea un ID de client OAuth 2.0 (tipus:",
-  setupStep2Type: "Aplicació d’escriptori",
-  setupStep3Lead: "Afegeix",
-  setupStep3Tail: "als URI de redirecció autoritzats (farem coincidir el port dinàmicament)",
-  setupStep4Lead: "Activa la",
-  setupStep4Tail: "al teu projecte",
   setupStep5: "Enganxa a sota l’ID i el secret del client",
-  signInNoteLead: "S’obre una finestra d’inici de sessió de Google. Només sol·licitem",
-  signInNoteTail: "— mai accés de lectura a la teva safata d’entrada.",
   title: "Resums per correu",
   waitingForGoogle: "Esperant que s’acabi l’inici de sessió de Google…",
 });
@@ -3716,7 +3702,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceH
   coverDescription: "Els teus fulls recents, els senyals segurs de l’execució i les properes accions es mantenen en un sol espai tranquil, a punt quan tu ho estiguis.",
   coverEyebrow: "Coberta del quadern · taula de treball",
   coverTitle: "Continua la pregunta que importa avui.",
-  dataLead: "Totes les dades es troben a",
   emptyDescription: "Encara no hi ha cap quadern. Deixa anar un PDF a Studio per començar el primer.",
   emptyTitle: "El teu quadern està a punt per començar",
   eyebrow: "Horitzó d’intel·ligència",
@@ -3740,8 +3725,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceH
   studio: "Studio",
   studioHint: "Deixa anar fitxers → quadern o pòdcast",
   subtitle: "Pensa més enllà amb cada font",
-  tipLead: "Consell: prem",
-  tipTail: "des de qualsevol lloc per saltar a un quadern, una font o una acció.",
   todayDescription: "Comença amb una font, un quadern, una pregunta fonamentada o una proposta de pòdcast revisada explícitament.",
   todayEyebrow: "Avui",
   todayTitle: "Obre un espai de treball",
@@ -3753,9 +3736,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'modelFleetBad
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'reasoningSlotCard'), {
   currentlyUsing: "S’està utilitzant",
-  descriptionEmphasis: "pensi a fons",
-  descriptionLead: "Per a preguntes difícils i anàlisis de diversos passos. És diferent del model de xat perquè les converses informals siguin ràpides: només s’hi encamina quan demanes explícitament a l’assistent que",
-  descriptionTail: "sobre alguna cosa.",
   noModel: "No hi ha cap model assignat. Tria’n un al desplegable del model de raonament de sota.",
   title: "Model de raonament",
 });
@@ -3925,7 +3905,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome
   allNotebooks: "Tots els quaderns",
   ask: "Pregunta",
   askHint: "Cerca i sintetitza a partir de les teves evidències.",
-  dataLead: "Totes les dades es troben a",
   description: "Pensa més enllà amb cada font en una taula de treball tranquil·la i local.",
   emptyDescription: "Encara no hi ha cap quadern. Deixa anar un PDF a Studio per començar el primer.",
   emptyTitle: "El teu quadern està a punt per començar",
@@ -3950,8 +3929,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome
   shortcutsAriaLabel: "Dreceres del quadern i ruta de les dades",
   studio: "Studio",
   studioHint: "Deixa anar fitxers en un quadern o una proposta de pòdcast.",
-  tipLead: "Consell: prem",
-  tipTail: "des de qualsevol lloc per saltar a un quadern, una font o una acció.",
   todayDescription: "Comença amb una font, un quadern, una pregunta fonamentada o una proposta de pòdcast revisada explícitament.",
   todayEyebrow: "Avui",
   todayTitle: "Obre un espai de treball",
@@ -3966,7 +3943,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'apiKeys'), 'typeLabels'), {
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'knowledge'), 'targetStates'), {
   available: "disponible",
-  missing: "falta",
+  missing: "absent",
   stale: "obsolet",
   unavailable: "no disponible",
 });
@@ -4017,7 +3994,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'modelTiers'), 
   standard: "estàndard",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'sources'), 'kinds'), {
-  deepResearchReport: "Informe de recerca profunda",
+  deepResearchReport: "Informe de recerca en profunditat",
   link: "Enllaç",
   text: "Text",
   upload: "Pujada",
@@ -4058,4 +4035,40 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'workspace'), 
   chatModelScan: "exploració de models de xat",
   coreReady: "nucli llest",
   launcherStart: "inici del llançador",
+});
+
+// v0.8.130 — strings moved out of components in the whole-app i18n pass.
+Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'executiveSynthesisDialog'), {
+  description: "Intel·ligència ambiental entre fonts, consens temàtic, tensions i properes passes per a <name/>.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'podcastStudio'), {
+  defaultEpisodeName: "Pòdcast de Deeper Notebook",
+  outlineFindings: "Resultats",
+  outlineIntroduction: "Introducció",
+  outlineTakeaway: "Idea clau",
+  untitledSegment: "Segment sense títol",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'localExecutionPolicyPanel'), {
+  cloudFallbackProposed: "S’ha proposat una alternativa al núvol per a <stage/> · <content/>.",
+});
+Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'overview'), {
+  existingCards: "Les teves targetes de repàs existents continuen disponibles a la <link>pàgina d’inici d’Estudi</link>.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'gmailIntegration'), {
+  setupStep1: "Obre la <link>Google Cloud Console</link>",
+  setupStep2: "Crea un ID de client OAuth 2.0 (tipus: <em>Aplicació d’escriptori</em>)",
+  setupStep3: "Afegeix <url/> als URI de redirecció autoritzats (farem coincidir el port dinàmicament)",
+  setupStep4: "Activa la <api/> al teu projecte",
+  signInNote: "S’obre una finestra d’inici de sessió de Google. Només sol·licitem <scope/> — mai accés de lectura a la teva safata d’entrada.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceHorizon'), {
+  data: "Totes les dades es troben a <path/>.",
+  tip: "Consell: prem <key/> des de qualsevol lloc per saltar a un quadern, una font o una acció.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'reasoningSlotCard'), {
+  description: "Per a preguntes difícils i anàlisis de diversos passos. És diferent del model de xat perquè les converses informals siguin ràpides: només s’hi encamina quan demanes explícitament a l’assistent que <em>pensi a fons</em> sobre alguna cosa.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome'), {
+  data: "Totes les dades es troben a <path/>.",
+  tip: "Consell: prem <key/> des de qualsevol lloc per saltar a un quadern, una font o una acció.",
 });

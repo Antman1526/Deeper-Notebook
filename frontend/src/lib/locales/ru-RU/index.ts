@@ -1282,7 +1282,7 @@ export const ruRU = {
     removeFile: "Удалить {name}",
     linksLabel: "Веб-ссылки",
     linksPlaceholder: "Вставьте ссылки, по одной в строке",
-    linksHelp: "Готово ссылок: {count}. Студия поддерживает веб-страницы, видео с транскрипциями и URL источников, которые может прочитать ваш извлекатель.",
+    linksHelp: "Готово ссылок: {count}. Студия поддерживает веб-страницы, видео с транскрипциями и URL источников, которые может прочитать ваше средство извлечения.",
     step2Title: "2. Выберите режим вывода",
     notebookModeTitle: "Учебный блокнот",
     notebookModeDescription: "Структурированный Markdown: обзор, разделы, определения, вопросы и ответы. Сохраняется как заметка, созданная ИИ и прикреплённая к новому блокноту.",
@@ -1451,7 +1451,7 @@ Object.assign(ensureSection(rootNode, 'updates'), {
   privacyNote: "Когда включено, Deeper Notebook при запуске проверяет GitHub на наличие новых выпусков (примерно раз в день). Это отправляет запрос в GitHub; никакие другие данные не передаются.",
   checkNow: "Проверить сейчас",
   title: "Доступно обновление: {{version}}",
-  description: "У вас установлена версия {{current}}. Доступен проверенный выпуск для ручной установки.",
+  description: "У вас установлена версия {{current}}. Доступен проверенный выпуск для ручной проверки.",
   openRelease: "Открыть проверенный выпуск (вручную)",
   skip: "Пропустить эту версию",
   later: "Позже",
@@ -1637,7 +1637,7 @@ Object.assign(ensureSection(modelsSection, 'sidecarLog'), {
   restartFailedDetail: "Не удалось перезапустить: {{detail}}",
   title: "Журнал sidecar ({{kind}})",
   fetchError: "Не удалось загрузить журнал sidecar",
-  unavailable: "Для этого sidecar журнал не записан. Попробуйте перезапустить приложение — запускатор записывает для каждого sidecar файл с последними строками во время работы.",
+  unavailable: "Для этого sidecar журнал не записан. Попробуйте перезапустить приложение — лаунчер записывает для каждого sidecar файл с последними строками во время работы.",
   empty: "Sidecar запустился без ошибок — stderr не записан.",
   restartHintInline: "Перезапустить этот sidecar, не закрывая приложение.",
   restarting: "Перезапуск…",
@@ -2068,7 +2068,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'knowledge'), 'knowledgeBook
   searchQuery: "Поисковый запрос",
   searchSpaceIds: "ID пространств поиска",
   searchTags: "Поиск по тегам",
-  sourceRevisionId: "ID ревизии источника",
+  sourceRevisionId: "ID версии источника",
   tagsLabel: "Теги закладки",
   targetBlockId: "ID целевого блока",
   targetDocumentId: "ID целевого документа",
@@ -2300,7 +2300,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'executiveSynt
   copiedToast: "Обобщающая сводка скопирована в буфер обмена",
   copyFailed: "Не удалось скопировать текст в буфер обмена",
   copySynthesis: "Копировать сводку",
-  descriptionLead: "Фоновая межисточниковая аналитика, тематический консенсус, противоречия и следующие шаги для",
   evaluating: "Оценка сквозных тем, разногласий и стратегических следствий",
   generateFailed: "Не удалось создать обобщающую межисточниковую сводку.",
   noteTitle: "Обобщающая сводка — {{name}}",
@@ -2425,8 +2424,8 @@ Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'episodeResearc
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'generatePodcastDialog'), {
   autoFillApplied: "Автозаполнение применено",
-  autoFillFailed: "Автозаполнение не удалось",
-  autoFillFailedMessage: "Автозаполнение не удалось.",
+  autoFillFailed: "Не удалось выполнить автозаполнение",
+  autoFillFailedMessage: "Не удалось выполнить автозаполнение.",
   autoFillFromSources: "Автозаполнение по источникам",
   autoFillTitle: "Предложить профиль, название и бриф на основе выбранных источников",
   modeBrief: "Краткий",
@@ -2812,7 +2811,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'launcherPrefsP
   tokensCount: "{{value}} токенов",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'localExecutionPolicyPanel'), {
-  cloudFallbackProposedLead: "Предложен облачный запасной вариант для",
   computeProfile: "Профиль вычислений",
   confirmAction: "Подтвердить переход в облако",
   confirmDescription: "Введите точно предложенные этап и класс содержимого, чтобы записать одобренный переход. Это не выполняет задачу и не обращается к облачному провайдеру.",
@@ -3203,7 +3201,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspac
   proposalAfterAnalysis: "Предложение учебной программы станет доступно, когда анализ источников сообщит, что все связанные источники готовы.",
   proposeSyllabus: "Предложить учебную программу",
   retry: "Повторить",
-  retrySyllabus: "Повторить для программы",
+  retrySyllabus: "Повторить загрузку программы",
   sectionsLabel: "Разделы плана обучения",
   sourceSummaryOne: "{{count}} связанный источник",
   sourceSummaryOther: "Связанных источников: {{count}}",
@@ -3218,11 +3216,9 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'stu
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'overview'), {
   approvedVersion: "Одобренная версия",
   description: "Пока план проходит проверку, цель и границы её источников остаются на виду.",
-  existingCardsLead: "Ваши существующие карточки для повторения остаются доступными на странице",
   linkedSources: "Связанные источники",
   notApproved: "Не одобрено",
   startingLevel: "Начальный уровень",
-  studyHome: "Главная учёбы",
   title: "Обзор плана",
 });
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'reserved'), {
@@ -3677,17 +3673,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'gmailIntegrat
   sendingTo: "Отправка на",
   sentFallback: "Отправлено.",
   setupIntro: "Разовая настройка: создайте клиент OAuth в Google Cloud.",
-  setupStep1Lead: "Откройте",
-  setupStep1Link: "Google Cloud Console",
-  setupStep2Lead: "Создайте идентификатор клиента OAuth 2.0 (тип:",
-  setupStep2Type: "Приложение для ПК",
-  setupStep3Lead: "Добавьте",
-  setupStep3Tail: "в список разрешённых URI перенаправления (порт мы подберём автоматически)",
-  setupStep4Lead: "Включите",
-  setupStep4Tail: "в своём проекте",
   setupStep5: "Вставьте ниже ID клиента и секрет",
-  signInNoteLead: "Открывает окно входа Google. Мы запрашиваем только",
-  signInNoteTail: "— никогда не доступ для чтения вашей почты.",
   title: "Дайджесты по email",
   waitingForGoogle: "Ожидание завершения входа через Google…",
 });
@@ -3714,7 +3700,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceH
   coverDescription: "Ваши недавние страницы, безопасные сигналы среды выполнения и следующие действия собраны в одном спокойном развороте — всё готово, когда вы готовы.",
   coverEyebrow: "Обложка блокнота · рабочий стол",
   coverTitle: "Продолжите вопрос, который важен сегодня.",
-  dataLead: "Все данные хранятся в",
   emptyDescription: "Блокнотов пока нет. Перетащите PDF в Студию, чтобы создать первый.",
   emptyTitle: "Ваш блокнот готов к началу",
   eyebrow: "Горизонт аналитики",
@@ -3738,8 +3723,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceH
   studio: "Студия",
   studioHint: "Перетащите файлы → блокнот или подкаст",
   subtitle: "Думайте глубже с каждым источником",
-  tipLead: "Совет: нажмите",
-  tipTail: "в любом месте, чтобы перейти к блокноту, источнику или действию.",
   todayDescription: "Начните с источника, блокнота, вопроса на основе источников или явно проверенного брифа подкаста.",
   todayEyebrow: "Сегодня",
   todayTitle: "Откройте рабочий разворот",
@@ -3751,9 +3734,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'modelFleetBad
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'reasoningSlotCard'), {
   currentlyUsing: "Сейчас используется",
-  descriptionEmphasis: "хорошенько подумать",
-  descriptionLead: "Для сложных вопросов и многошагового анализа. Отделена от модели чата, чтобы обычный разговор оставался быстрым — сюда запросы направляются, только когда вы явно просите ассистента",
-  descriptionTail: "над каким-либо вопросом.",
   noModel: "Модель не назначена. Выберите её в списке моделей рассуждения ниже.",
   title: "Модель рассуждения",
 });
@@ -3923,7 +3903,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome
   allNotebooks: "Все блокноты",
   ask: "Спросить",
   askHint: "Ищите и обобщайте на основе своих доказательств.",
-  dataLead: "Все данные хранятся в",
   description: "Думайте глубже с каждым источником за одним спокойным локальным рабочим столом.",
   emptyDescription: "Блокнотов пока нет. Перетащите PDF в Студию, чтобы создать первый.",
   emptyTitle: "Ваш блокнот готов к началу",
@@ -3948,8 +3927,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome
   shortcutsAriaLabel: "Быстрые действия блокнота и путь к данным",
   studio: "Студия",
   studioHint: "Перетащите файлы в блокнот или бриф подкаста.",
-  tipLead: "Совет: нажмите",
-  tipTail: "в любом месте, чтобы перейти к блокноту, источнику или действию.",
   todayDescription: "Начните с источника, блокнота, вопроса на основе источников или явно проверенного брифа подкаста.",
   todayEyebrow: "Сегодня",
   todayTitle: "Откройте рабочий разворот",
@@ -3991,7 +3968,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'modelRoles'), 
   claimVerification: "Проверка утверждений",
   codeDataAnalysis: "Анализ кода и данных",
   codingResearch: "Исследование кода",
-  editorialWriting: "Редакторское письмо",
+  editorialWriting: "Написание редакционных текстов",
   embedding: "Эмбеддинги",
   embeddingRetrieval: "Поиск по эмбеддингам",
   evidenceExtraction: "Извлечение доказательств",
@@ -4056,4 +4033,40 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'workspace'), 
   chatModelScan: "сканирование моделей чата",
   coreReady: "ядро готово",
   launcherStart: "запуск лаунчера",
+});
+
+// v0.8.130 — strings moved out of components in the whole-app i18n pass.
+Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'executiveSynthesisDialog'), {
+  description: "Фоновая межисточниковая аналитика, тематический консенсус, противоречия и следующие шаги для <name/>.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'podcastStudio'), {
+  defaultEpisodeName: "Подкаст Deeper Notebook",
+  outlineFindings: "Результаты",
+  outlineIntroduction: "Введение",
+  outlineTakeaway: "Главный вывод",
+  untitledSegment: "Сегмент без названия",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'localExecutionPolicyPanel'), {
+  cloudFallbackProposed: "Предложен облачный запасной вариант для <stage/> · <content/>.",
+});
+Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'overview'), {
+  existingCards: "Ваши существующие карточки для повторения остаются доступными на странице <link>Главная учёбы</link>.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'gmailIntegration'), {
+  setupStep1: "Откройте <link>Google Cloud Console</link>",
+  setupStep2: "Создайте идентификатор клиента OAuth 2.0 (тип: <em>Приложение для ПК</em>)",
+  setupStep3: "Добавьте <url/> в список разрешённых URI перенаправления (порт мы подберём автоматически)",
+  setupStep4: "Включите <api/> в своём проекте",
+  signInNote: "Открывает окно входа Google. Мы запрашиваем только <scope/> — никакого доступа для чтения вашей почты.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceHorizon'), {
+  data: "Все данные хранятся в <path/>.",
+  tip: "Совет: нажмите <key/> в любом месте, чтобы перейти к блокноту, источнику или действию.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'reasoningSlotCard'), {
+  description: "Для сложных вопросов и многошагового анализа. Отделена от модели чата, чтобы обычный разговор оставался быстрым — сюда запросы направляются, только когда вы явно просите ассистента <em>хорошенько подумать</em> над каким-либо вопросом.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome'), {
+  data: "Все данные хранятся в <path/>.",
+  tip: "Совет: нажмите <key/> в любом месте, чтобы перейти к блокноту, источнику или действию.",
 });

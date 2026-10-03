@@ -321,8 +321,8 @@ export const itIT = {
     keepExclusiveSourcesLabel: "Scollega e mantieni",
     activeNotebooks: "Quaderni attivi",
     studio: 'Studio',
-    aboutNotebook: 'Informazioni su questo notebook',
-    actions: 'Azioni del notebook',
+    aboutNotebook: "Informazioni su questo quaderno",
+    actions: "Azioni del quaderno",
     notesAndStudio: 'Note e Studio',
     viewToggle: "Layout dei quaderni",
     viewGrid: "Vista a griglia",
@@ -1115,14 +1115,14 @@ export const itIT = {
     // v0.8.68 — SkillOpt prompt optimizer
     optimize: "Ottimizza",
     optimizeTitle: "Ottimizza prompt",
-    optimizeDesc: "Addestra questo prompt su fonti di esempio di un notebook (con tecnologia Microsoft SkillOpt). Le modifiche vengono mantenute solo se migliorano i risultati di validazione. Rivedi tutto prima dell'applicazione.",
-    optimizeNotebook: "Notebook di esempi",
-    optimizeNotebookPlaceholder: "Scegli un notebook le cui fonti rappresentino input tipici",
+    optimizeDesc: "Addestra questo prompt su fonti di esempio di un quaderno (con tecnologia Microsoft SkillOpt). Le modifiche vengono mantenute solo se migliorano i risultati di validazione. Rivedi tutto prima dell'applicazione.",
+    optimizeNotebook: "Quaderno di esempi",
+    optimizeNotebookPlaceholder: "Scegli un quaderno le cui fonti rappresentino input tipici",
     optimizeCriteria: "Com'è un buon output?",
     optimizeCriteriaPlaceholder: "es.: Meno di 150 parole, inizia dal punto chiave, linguaggio semplice, non inventa mai fatti assenti dalla fonte.",
     optimizeStart: "Avvia ottimizzazione",
     optimizeRunning: "Ottimizzazione — esecuzione rollout, valutazione output, test delle modifiche…",
-    optimizeNeedsSources: "Questo notebook deve avere almeno 2 fonti elaborate da usare come esempi.",
+    optimizeNeedsSources: "Questo quaderno deve avere almeno 2 fonti elaborate da usare come esempi.",
     optimizeNoChange: "Nessuna modifica ha superato l'originale nel set di validazione — il tuo prompt ha retto. Prova criteri o esempi diversi.",
     optimizeOriginal: "Prompt attuale",
     optimizeResult: "Prompt ottimizzato",
@@ -1192,7 +1192,7 @@ export const itIT = {
     reasoningModelLabel: "Modello di ragionamento",
     reasoningModelDesc: "Usato per domande difficili e analisi multi-step - lento ma profondo",
     autoRouteCloudLabel: "Auto-Route Cloud Model",
-    autoRouteCloudDesc: "Riserva cloud per l'instradamento intelligente DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT. Riceve i prompt di grandi dimensioni quando il sidecar locale non è in salute o il contenuto supera la finestra di contesto. Impostalo su un modello cloud (GPT-4o, Claude, Gemini), non sul tuo modello di chat locale predefinito.",
+    autoRouteCloudDesc: "Riserva cloud per l'instradamento intelligente DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT. Riceve i prompt di grandi dimensioni quando il sidecar locale non è operativo o il contenuto supera la finestra di contesto. Impostalo su un modello cloud (GPT-4o, Claude, Gemini), non sul tuo modello di chat locale predefinito.",
     embeddingModelLabel: "Modello di embedding",
     embeddingModelDesc: "Usato per ricerca semantica e embedding vettoriali",
     ttsModelLabel: "Modello Text-to-Speech",
@@ -1271,7 +1271,7 @@ export const itIT = {
     decryptionErrorDescription: "La chiave API di questa credenziale non può essere decrittata. La chiave di crittografia potrebbe essere cambiata. Elimina questa credenziale e ricreala con la chiave corretta.",
   },
   studio: {
-    backToNotebooks: "Torna ai Notebook",
+    backToNotebooks: "Torna ai Quaderni",
     title: "Studio",
     subtitle: "Carica uno o più documenti (PDF, DOCX, MD, TXT, HTML, PPTX) e genera un quaderno di studio strutturato o un episodio podcast con due presentatori, basato sulle tue fonti.",
     step1Title: "1. Carica documenti",
@@ -1285,12 +1285,12 @@ export const itIT = {
     linksHelp: "{count} link pronti. Studio supporta pagine web, video con trascrizioni e URL di fonti che il tuo estrattore è in grado di leggere.",
     step2Title: "2. Scegli la modalità di output",
     notebookModeTitle: "Quaderno di studio",
-    notebookModeDescription: "Markdown strutturato: panoramica, sezioni, definizioni, D&R. Salvato come nota generata dall'IA allegata al nuovo notebook.",
+    notebookModeDescription: "Markdown strutturato: panoramica, sezioni, definizioni, D&R. Salvato come nota generata dall'IA allegata al nuovo quaderno.",
     podcastModeTitle: "Episodio podcast",
     podcastModeDescription: "Episodio conversazionale con due presentatori convertito in audio tramite il profilo TTS configurato. Stato visibile in /podcasts.",
-    bothModeTitle: "Notebook + podcast",
-    bothModeDescription: "Crea il notebook strutturato e avvia un processo podcast a due voci dalle stesse fonti caricate.",
-    coursePackModeTitle: "Pacchetto corso",
+    bothModeTitle: "Quaderno + podcast",
+    bothModeDescription: "Crea il quaderno strutturato e avvia un processo podcast a due voci dalle stesse fonti caricate.",
+    coursePackModeTitle: "Course Pack",
     coursePackModeDescription: "Metti in coda file e link tramite Fonti, poi crea un materiale formativo pronto per l'istruttore con moduli, verifiche ed esportazioni.",
     episodeProfileLabel: "Profilo episodio",
     episodeProfilePlaceholder: "Scegli un profilo…",
@@ -1300,20 +1300,20 @@ export const itIT = {
     titlePlaceholder: "es. 'Introduzione al Calcolo Quantistico'",
     generatingNotebook: "Generazione quaderno di studio…",
     generatingPodcast: "Invio attività podcast…",
-    generatingBoth: "Generazione del notebook e invio del processo podcast in corso...",
-    queuingCoursePack: "Messa in coda del Pacchetto corso...",
-    generateNotebook: "Genera Notebook",
+    generatingBoth: "Generazione del quaderno e invio del processo podcast in corso...",
+    queuingCoursePack: "Messa in coda del Course Pack...",
+    generateNotebook: "Genera Quaderno",
     generatePodcast: "Genera Podcast",
     generateBoth: "Generate Both",
-    generateCoursePack: "Crea Pacchetto corso",
-    notebookGenerated: "Notebook generato",
+    generateCoursePack: "Crea Course Pack",
+    notebookGenerated: "Quaderno generato",
     podcastJobStarted: "Generazione podcast avviata",
-    bothJobStarted: "Notebook generato e podcast avviato",
-    notebookGeneratedDescription: "Navigazione al nuovo notebook…",
+    bothJobStarted: "Quaderno generato e podcast avviato",
+    notebookGeneratedDescription: "Navigazione al nuovo quaderno…",
     podcastJobStartedDescription: "Attività {jobId}. L'audio apparirà in /podcasts al termine.",
-    bothJobStartedDescription: "Apertura del nuovo notebook. Il processo podcast {jobId} comparirà in /podcasts al termine.",
-    coursePackQueued: "Pacchetto corso in coda",
-    coursePackQueuedDescription: "{count} fonti in elaborazione. Apri il notebook per generare il Pacchetto corso quando il testo delle fonti è pronto.",
+    bothJobStartedDescription: "Apertura del nuovo quaderno. Il processo podcast {jobId} comparirà in /podcasts al termine.",
+    coursePackQueued: "Course Pack in coda",
+    coursePackQueuedDescription: "{count} fonti in elaborazione. Apri il quaderno per generare il Course Pack quando il testo delle fonti è pronto.",
     generatedWithWarnings: "Generato con avvisi",
     generationFailed: "Generazione Studio fallita",
     filesRejected: "{count} file rifiutato",
@@ -1355,7 +1355,7 @@ export const itIT = {
       // (ArtifactRail header button + ExportAllArtifactsDialog.tsx).
       exportAll: "Esporta tutti gli artefatti",
       bundleTitle: "Esporta tutti gli artefatti",
-      bundleDescription: "Raggruppa ogni artefatto completato in questo notebook in un unico file zip.",
+      bundleDescription: "Raggruppa ogni artefatto completato in questo quaderno in un unico file zip.",
       regenerateStale: "Rigenera prima le esportazioni obsolete",
       includeMedia: "Includi audio e video del podcast",
       bundleSuccess: "Esportati {count} artefatti in {destination}",
@@ -1505,7 +1505,7 @@ Object.assign(ensureSection(rootNode, 'dbRepair'), {
 
 Object.assign(ensureSection(rootNode, 'mindMap'), {
   error: "Impossibile caricare la mappa mentale.",
-  empty: "Aggiungi fonti o note a questo notebook per vederne la mappa mentale.",
+  empty: "Aggiungi fonti o note a questo quaderno per vederne la mappa mentale.",
   button: "Mappa mentale",
   title: "Mappa mentale",
   filterAll: "Tutti ({count})",
@@ -1543,7 +1543,7 @@ Object.assign(ensureSection(rootNode, 'sources'), {
 });
 
 Object.assign(ensureSection(rootNode, 'notebooks'), {
-  exploreSample: "Esplora un notebook di esempio",
+  exploreSample: "Esplora un quaderno di esempio",
 });
 
 Object.assign(ensureSection(rootNode, 'common'), {
@@ -1657,9 +1657,9 @@ Object.assign(ensureSection(modelsSection, 'smartRouting'), {
   prefAuto: "Automatico (consigliato)",
   prefLocal: "Preferisci locale",
   prefCloud: "Preferisci cloud",
-  prefHintAuto: "Usa il locale quando è in salute e il contenuto ci sta, altrimenti il cloud.",
+  prefHintAuto: "Usa il locale quando è operativo e il contenuto ci sta, altrimenti il cloud.",
   prefHintLocal: "Usa sempre il locale. Il router passa comunque al cloud se non è configurato alcun modello locale.",
-  prefHintCloud: "Usa sempre il cloud, anche quando il locale è in salute e il contenuto ci starebbe.",
+  prefHintCloud: "Usa sempre il cloud, anche quando il locale è operativo e il contenuto ci starebbe.",
   envOverrideHint: "Suggerimento: le variabili d'ambiente DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT e DEEPER_NOTEBOOK_CHAT_PROVIDER (se impostate) hanno la precedenza su queste impostazioni dell'interfaccia.",
 });
 
@@ -1703,7 +1703,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'artifacts'), 'artifactRail'
   noEligibleAudio: "Crea e completa una Panoramica audio con sottotitoli temporizzati prima di creare una Panoramica video.",
   noMarkdown: "Questo artefatto non ha ancora un output in Markdown.",
   noRevisions: "Nessuna revisione ancora salvata.",
-  noSavedOutputs: "Nessun output di ricerca salvato in questo notebook.",
+  noSavedOutputs: "Nessun output di ricerca salvato in questo quaderno.",
   openArtifact: "Apri {{title}}",
   openRevision: "Apri {{title}}",
   regenerate: "Rigenera",
@@ -1721,7 +1721,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'artifacts'), 'artifactRail'
   sourceSelectedOne: "{{count}} fonte selezionata",
   sourceSelectedOther: "{{count}} fonti selezionate",
   sourcesButtonLabel: "Fonti dell'artefatto: {{label}}",
-  sourcesHint: "Se non selezioni nulla, vengono usate tutte le fonti del notebook.",
+  sourcesHint: "Se non selezioni nulla, vengono usate tutte le fonti del quaderno.",
   sourcesTitle: "Fonti dell'artefatto",
   statCitationOne: "{{count}} citazione",
   statCitationOther: "{{count}} citazioni",
@@ -1733,7 +1733,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'artifacts'), 'artifactRail'
 });
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'artifacts'), 'artifactRail'), 'quickType'), {
   briefing: "Briefing",
-  coursePack: "Pacchetto corso",
+  coursePack: "Course Pack",
   dataTable: "Tabella dati",
   faq: "FAQ",
   flashcards: "Flashcard",
@@ -1758,7 +1758,7 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'artifacts'), 
 });
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'artifacts'), 'artifactRail'), 'typeLabel'), {
   briefing: "briefing",
-  coursePack: "Pacchetto corso",
+  coursePack: "Course Pack",
   dataTable: "tabella dati",
   faq: "faq",
   flashcards: "flashcard",
@@ -1788,7 +1788,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'artifacts'), 'mindMapArtifa
 });
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'artifacts'), 'mindMapArtifactViewer'), 'type'), {
   briefing: "Briefing",
-  coursePack: "Pacchetto corso",
+  coursePack: "Course Pack",
   dataTable: "Tabella dati",
   faq: "FAQ",
   flashcards: "Flashcard",
@@ -1817,7 +1817,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'artifacts'), 'studyArtifact
   correct: "Corretta",
   correctAnswer: "Risposta corretta: {{answer}}",
   coursePackIntro: "Naviga tra i moduli, monitora i progressi e passa dalla vista dello studente a quella del facilitatore.",
-  coursePackWorkspace: "Area di lavoro del Pacchetto corso",
+  coursePackWorkspace: "Area di lavoro del Course Pack",
   dataTableTitle: "Tabella dati",
   facilitatorHiddenHint: "Le note riservate al facilitatore sono nascoste nelle dispense per gli studenti.",
   facilitatorNotes: "Note per il facilitatore",
@@ -1855,7 +1855,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'artifacts'), 'studyArtifact
   stageCountOther: "{{count}} fasi",
   stageSourceParsed: "Markdown analizzato",
   stageSourceStructured: "Metadati strutturati",
-  viewModeLabel: "Modalità di visualizzazione del Pacchetto corso",
+  viewModeLabel: "Modalità di visualizzazione del Course Pack",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'artifacts'), 'visualArtifactViewers'), {
   hideNotes: "Nascondi note",
@@ -1892,12 +1892,12 @@ Object.assign(ensureSection(ensureSection(rootNode, 'capture'), 'captureInbox'),
   approvedFolders: "Cartelle approvate",
   approvedFoldersDesc: "Vengono analizzate solo le cartelle che aggiungi qui. Gli originali restano dove sono.",
   emptyDesc: "Aggiungi una cartella qui sopra e fai clic su Analizza ora dopo aver copiato al suo interno documenti, audio o video.",
-  emptyTitle: "Nessun file supportato nella posta in arrivo",
+  emptyTitle: "Nessun file supportato nell'inbox",
   folderPathLabel: "Percorso della cartella di acquisizione",
   folderPathPlaceholder: "Aggiungi una cartella locale o di Google Drive per desktop",
-  inbox: "Posta in arrivo",
+  inbox: "Inbox",
   itemsCount: "{{count}} elementi",
-  loadError: "Impossibile caricare la posta in arrivo delle acquisizioni.",
+  loadError: "Impossibile caricare l'inbox delle acquisizioni.",
   loading: "Caricamento dell'acquisizione locale…",
   scanNow: "Analizza ora",
 });
@@ -1980,14 +1980,14 @@ Object.assign(ensureSection(ensureSection(rootNode, 'common'), 'studioPage'), {
   rejectedFallback: "rifiutato",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'common'), 'useStudio'), {
-  artifactTitle: "Pacchetto corso {{title}}",
+  artifactTitle: "Course Pack {{title}}",
   atLeastOneSource: "È richiesto almeno un file o un link",
-  defaultNotebookTitle: "Pacchetto corso - {{name}}",
-  notebookDescription: "Pacchetto corso pronto per l'istruttore, messo in coda dalle fonti di Studio.",
+  defaultNotebookTitle: "Course Pack - {{name}}",
+  notebookDescription: "Course Pack pronto per l'istruttore, messo in coda dalle fonti di Studio.",
   sourceFailedToQueue: "Impossibile mettere in coda {{name}}",
   sourcesFailedProcessing: "{{count}} fonte/i non elaborata/e a causa di un errore",
-  warningQueued: "Le fonti sono in coda. La generazione del Pacchetto corso sarà disponibile dal notebook al termine dell'estrazione.",
-  warningStillProcessing: "Le fonti sono ancora in elaborazione. Apri il notebook per generare il Pacchetto corso al termine dell'estrazione.",
+  warningQueued: "Le fonti sono in coda. La generazione del Course Pack sarà disponibile dal quaderno al termine dell'estrazione.",
+  warningStillProcessing: "Le fonti sono ancora in elaborazione. Apri il quaderno per generare il Course Pack al termine dell'estrazione.",
   workflowRunTitle: "Genera {{title}}",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'evaluation'), 'claimReviewDrawer'), {
@@ -2300,21 +2300,20 @@ Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'executiveSynt
   copiedToast: "Sintesi esecutiva copiata negli appunti",
   copyFailed: "Impossibile copiare il testo negli appunti",
   copySynthesis: "Copia sintesi",
-  descriptionLead: "Intelligence trasversale alle fonti, consenso tematico, tensioni e prossimi passi per",
   evaluating: "Valutazione di temi trasversali, disaccordi e implicazioni strategiche",
   generateFailed: "Impossibile generare la sintesi esecutiva tra le fonti.",
   noteTitle: "Sintesi esecutiva — {{name}}",
   regenerate: "Rigenera",
   retry: "Riprova",
   saveAsNote: "Salva come nota",
-  savedToast: "Sintesi salvata come nota in questo notebook",
+  savedToast: "Sintesi salvata come nota in questo quaderno",
   saving: "Salvataggio in corso...",
   sourcesSynthesized: "{{count}} fonti sintetizzate",
   title: "Sintesi esecutiva e approfondimenti",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'idPage'), {
   organize: "Organizza",
-  workspaceTitle: "Spazio di lavoro del notebook",
+  workspaceTitle: "Spazio di lavoro del quaderno",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'notebookCard'), {
   actionsFor: "Azioni per {{name}}",
@@ -2335,7 +2334,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'notebookRow')
   sourcesTitle: "{{count}} fonti",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'notebooksPage'), {
-  refresh: "Aggiorna notebook",
+  refresh: "Aggiorna quaderni",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'notes'), 'overlayDocumentView'), {
   readingView: "Vista di lettura di {{title}}",
@@ -2434,7 +2433,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'generatePodcas
   modeDebate: "Dibattito",
   modeDeepDive: "Approfondimento",
   nothingSelected: "Nessuna selezione",
-  nothingSelectedDesc: "Scegli almeno una fonte o un notebook prima della compilazione automatica.",
+  nothingSelectedDesc: "Scegli almeno una fonte o un quaderno prima della compilazione automatica.",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'globalAudioPlayer'), {
   loadError: "Impossibile caricare l'audio in locale.",
@@ -2518,7 +2517,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'podcastLibrary
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'podcastModelPlan'), {
   automaticRoute: "Percorso automatico",
-  description: "I dettagli del percorso sono consultabili; la scelta di una sostituzione non carica mai un modello al montaggio.",
+  description: "I dettagli del percorso sono consultabili; la scelta di una sostituzione non carica mai un modello all'apertura della schermata.",
   heading: "Piano dei modelli",
   localModel: "[modello locale]",
   noPlans: "Nessun piano di percorso ancora disponibile.",
@@ -2812,7 +2811,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'launcherPrefsP
   tokensCount: "{{value}} token",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'localExecutionPolicyPanel'), {
-  cloudFallbackProposedLead: "Riserva cloud proposta per",
   computeProfile: "Profilo di calcolo",
   confirmAction: "Conferma la continuazione nel cloud",
   confirmDescription: "Digita la fase e la classe di contenuto esatte proposte per registrare una continuazione approvata. Questo non esegue alcuna attività né chiama un provider cloud.",
@@ -2950,7 +2948,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'roleBenchmarkP
   roleChat: "Chat predefinita",
   roleCodingResearch: "Ricerca sul codice",
   roleSourceSynthesis: "Sintesi delle fonti",
-  roleStudyFast: "Strumenti di studio rapidi",
+  roleStudyFast: "Strumenti di apprendimento rapidi",
   scoreOutOf100: "{{score}} / 100",
   speed: "Velocità",
   speedOnly: "Solo velocità",
@@ -3020,7 +3018,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'sources'), 'idPage'), {
   recordTitle: "Scheda della fonte",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'sources'), 'notebooksStep'), {
-  titleOptional: "Notebook (facoltativo)",
+  titleOptional: "Quaderno (facoltativo)",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'sources'), 'pdfSourceViewer'), {
   loading: "Caricamento del PDF…",
@@ -3047,11 +3045,11 @@ Object.assign(ensureSection(ensureSection(rootNode, 'sources'), 'sourceCard'), {
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'sources'), 'sourceDetailContent'), {
   jumpToPassage: "Vai al passaggio nel testo",
-  notebookUse: "Uso nei notebook",
+  notebookUse: "Uso nei quaderni",
   podcastUnavailable: "Podcast non disponibile: nessun contenuto leggibile",
-  sharedWithNotebooks: "Condivisa con {{count}} notebook",
+  sharedWithNotebooks: "Condivisa con {{count}} quaderni",
   turnIntoPodcast: "Trasforma in podcast",
-  usedInOneNotebook: "Usata in un notebook",
+  usedInOneNotebook: "Usata in un quaderno",
 });
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'sources'), 'sourceDetailContent'), 'provenance'), {
   detectedType: "Tipo rilevato",
@@ -3071,7 +3069,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'sources'), 'sourcesPage'), 
 Object.assign(ensureSection(ensureSection(rootNode, 'study'), 'ankiPackagePanel'), {
   chooseFile: "Scegli un file .apkg per vedere gli elementi trasformati e rifiutati prima della pubblicazione.",
   confirmImport: "Conferma l'importazione esplicita in questo piano di studio",
-  description: "Visualizza l'anteprima di un pacchetto limitato prima di modificare qualsiasi scheda di Studio nativa, oppure esporta questo piano approvato.",
+  description: "Visualizza l'anteprima di un pacchetto limitato prima di modificare qualsiasi scheda nativa di Apprendimento, oppure esporta questo piano approvato.",
   dismiss: "Chiudi",
   exportPlan: "Esporta piano",
   importCards: "Importa schede",
@@ -3101,7 +3099,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'study'), 'examLab'), {
   attemptScore: "{{score}}% ({{correct}}/{{total}})",
   attemptScoreLate: "{{score}}% ({{correct}}/{{total}}) · in ritardo",
   backToExamLab: "Torna a ExamLab",
-  chooseNotebook: "Scegli un notebook…",
+  chooseNotebook: "Scegli un quaderno…",
   chooseQuiz: "Scegli un quiz…",
   correct: "Corretta: {{answer}}",
   durationMinutes: "{{count}} min",
@@ -3111,9 +3109,9 @@ Object.assign(ensureSection(ensureSection(rootNode, 'study'), 'examLab'), {
   missedSeeded: "Domande errate aggiunte al mazzo di ripasso",
   noQuizzes: "Nessun quiz completato — generane uno in Studio",
   notAnswered: "Senza risposta",
-  notebook: "Notebook",
+  notebook: "Quaderno",
   overtime: "Tempo scaduto — ancora valutabile",
-  pickNotebookFirst: "Scegli prima un notebook",
+  pickNotebookFirst: "Scegli prima un quaderno",
   quiz: "Quiz",
   recentAttempts: "Tentativi recenti",
   resultSummary: "{{correct}} corrette su {{total}}",
@@ -3129,9 +3127,9 @@ Object.assign(ensureSection(ensureSection(rootNode, 'study'), 'examLab'), {
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'study'), 'planIdPage'), {
   description: "Rivedi un piano di studio basato sulle fonti e il suo limite esplicito di approvazione del programma.",
-  planNotIdentified: "Impossibile identificare questo piano di studio. Torna a Studio e scegli di nuovo un piano.",
-  routeUnavailable: "Questo percorso del piano di studio non è disponibile nella versione attuale. Torna alla schermata di revisione dello studio.",
-  title: "Studio",
+  planNotIdentified: "Impossibile identificare questo piano di studio. Torna ad Apprendimento e scegli di nuovo un piano.",
+  routeUnavailable: "Questo percorso del piano di studio non è disponibile nella versione attuale. Torna alla schermata di revisione di Apprendimento.",
+  title: "Apprendimento",
 });
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyAssistants'), 'modes'), {
   askQuestion: "Fai una domanda",
@@ -3189,7 +3187,7 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'stu
   unavailable: "I piani di studio sono temporaneamente non disponibili. Riprova tra poco.",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), {
-  backToStudy: "Torna allo studio",
+  backToStudy: "Torna ad Apprendimento",
   learnUnavailableDescription: "Tutor non disponibile finché il programma non è approvato. Questo piano è ancora in preparazione o in archiviazione, quindi non è possibile avviare alcuna sessione di apprendimento.",
   learnUnavailableTitle: "Sessione di apprendimento non disponibile",
   loadingPlan: "Caricamento del piano di studio…",
@@ -3218,11 +3216,9 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'stu
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'overview'), {
   approvedVersion: "Versione approvata",
   description: "Tieni visibili questo obiettivo e il perimetro delle sue fonti mentre il piano procede nella revisione.",
-  existingCardsLead: "Le tue schede di ripasso esistenti restano disponibili nella",
   linkedSources: "Fonti collegate",
   notApproved: "Non approvato",
   startingLevel: "Livello di partenza",
-  studyHome: "Home di Studio",
   title: "Panoramica del piano",
 });
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'reserved'), {
@@ -3434,7 +3430,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'study'), 'tutorDock'), {
 Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'tutorDock'), 'errors'), {
   cancelled: "Invocazione del tutor annullata.",
   generic: "Il tutor non è riuscito a completare questa richiesta. Non è stato modificato nulla; riprova.",
-  outsideAuthority: "Questa richiesta al tutor esce dall'autorità di studio approvata.",
+  outsideAuthority: "Questa richiesta al tutor non rientra nell'autorità di studio approvata.",
   timeout: "Il tutor ha superato il tempo massimo prima di completare. Riprova la stessa richiesta.",
   webUnavailable: "La ricerca sul web non è disponibile per questa richiesta. Richiedi l'autorizzazione e riprova.",
 });
@@ -3479,10 +3475,10 @@ Object.assign(ensureSection(ensureSection(rootNode, 'transformations'), 'transfo
   refresh: "Aggiorna trasformazioni",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'adaptiveNavigator'), {
-  ariaLabel: "Indice del notebook",
-  heading: "Indice del notebook",
+  ariaLabel: "Indice del quaderno",
+  heading: "Indice del quaderno",
   kicker: "Indice",
-  toggle: "Indice del notebook",
+  toggle: "Indice del quaderno",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'authFolio'), {
   ariaLabel: "Accesso a Deeper Notebook",
@@ -3524,14 +3520,14 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'backupProvena
 Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'catalog'), {
   captureOverviewBody: "Raccogli subito un'idea o un riferimento veloce, poi organizzalo quando sei pronto.",
   captureOverviewTitle: "Acquisizione",
-  dashboardOverviewBody: "Usa la barra per spostarti tra i tuoi lavori, creare una fonte, un notebook o un podcast e raggiungere le Impostazioni e gli strumenti sempre a portata di mano.",
+  dashboardOverviewBody: "Usa la barra per spostarti tra i tuoi lavori, creare una fonte, un quaderno o un podcast e raggiungere le Impostazioni e gli strumenti sempre a portata di mano.",
   dashboardOverviewTitle: "La barra",
-  knowledgeOverviewBody: "Usa l'Indice del notebook per spostarti tra note, backlink, grafi, ricerche e vault esterni di sola lettura senza perdere il segno.",
-  knowledgeOverviewTitle: "Indice del notebook",
+  knowledgeOverviewBody: "Usa l'Indice del quaderno per spostarti tra note, backlink, grafi, ricerche e vault esterni di sola lettura senza perdere il segno.",
+  knowledgeOverviewTitle: "Indice del quaderno",
   modelsOverviewBody: "Scegli modelli locali o connessi in base al ruolo e verifica che siano pronti prima di usarli.",
   modelsOverviewTitle: "Modelli",
   notebooksOverviewBody: "Raggruppa per progetto fonti, note, conversazioni basate sulle fonti e artefatti di ricerca generati.",
-  notebooksOverviewTitle: "Notebook",
+  notebooksOverviewTitle: "Quaderni",
   podcastsOverviewBody: "Rivedi l'insieme di ricerca, la struttura, il percorso e le citazioni prima di confermare esplicitamente la produzione facoltativa del podcast.",
   podcastsOverviewTitle: "Revisione della produzione del podcast",
   searchOverviewBody: "Tieni sott'occhio fonti attendibili, risposte basate sulle fonti e citazioni mentre esplori.",
@@ -3542,8 +3538,8 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'catalog'), {
   sourcesOverviewTitle: "Fonti",
   studioOverviewBody: "Leggi ogni Evidence Insert per provider, aggiornamento, ora di recupero e impronta prima di rivedere un output.",
   studioOverviewTitle: "Evidence Insert",
-  studyOverviewBody: "Crea materiale di ripasso mirato a partire dalle fonti selezionate del notebook.",
-  studyOverviewTitle: "Studio",
+  studyOverviewBody: "Crea materiale di ripasso mirato a partire dalle fonti selezionate del quaderno.",
+  studyOverviewTitle: "Apprendimento",
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'catalog2'), {
   archivePaperDescription: "Carta d'archivio calda con accenti verde acqua e ottone.",
@@ -3553,7 +3549,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'catalog2'), {
   darkDescription: "Spazio di lavoro scuro originale con accenti blu.",
   deepOceanDescription: "Profondità blu navy con verde acqua e ciano bioluminescenti.",
   draculaDescription: "Antracite ad alta energia con viola e rosa.",
-  geminiForwardDarkDescription: "Un notebook notturno: carta scura calda, inchiostro indaco.",
+  geminiForwardDarkDescription: "Un quaderno notturno: carta scura calda, inchiostro indaco.",
   geminiForwardLightDescription: "Carta e inchiostro, con l'indaco come penna.",
   githubLightDescription: "Spazio di lavoro nitido e neutro con il blu familiare.",
   graphiteLabDescription: "Antracite neutro con accenti sobri di Research Core.",
@@ -3582,7 +3578,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'catalog2'), {
 Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'citationDrawer'), {
   close: "Chiudi le evidenze della citazione",
   location: "Posizione",
-  noPreview: "Non è ancora memorizzata alcuna anteprima della citazione per questa citazione.",
+  noPreview: "Per questa citazione non è ancora memorizzata alcuna anteprima del testo citato.",
   openSource: "Apri la scheda della fonte",
   sourceId: "ID della fonte",
   title: "Evidenze della citazione",
@@ -3593,7 +3589,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'commandBar'),
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'contextLens'), {
   ariaLabel: "Lente di contesto",
-  copy: "Seleziona una sezione del notebook per tenere a portata di mano le sue evidenze, i backlink e il contesto di revisione.",
+  copy: "Seleziona una sezione del quaderno per tenere a portata di mano le sue evidenze, i backlink e il contesto di revisione.",
   heading: "Lente di contesto",
   kicker: "Contesto",
   toggle: "Lente di contesto",
@@ -3646,7 +3642,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'gmailIntegrat
   credentialsCleared: "Credenziali OAuth cancellate.",
   credentialsSaved: "Credenziali OAuth salvate. Fai clic qui sotto per accedere con Gmail.",
   credentialsSavedMessage: "Credenziali salvate. Fai clic su \"Connetti Gmail\" per autorizzare.",
-  description: "Ricevi su Gmail un riepilogo periodico dell'attività dei notebook.",
+  description: "Ricevi su Gmail un riepilogo periodico dell'attività dei quaderni.",
   disconnect: "Disconnetti",
   disconnectDescription: "Puoi riconnetterti in qualsiasi momento.",
   disconnectTitle: "Disconnettere Gmail?",
@@ -3661,7 +3657,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'gmailIntegrat
   frequencyWeekly: "Settimanale",
   includeInDigest: "Includi nel riepilogo",
   includeMemory: "Fatti di memoria estratti dalla chat",
-  includeNotebooks: "Notebook creati o aggiornati",
+  includeNotebooks: "Quaderni creati o aggiornati",
   includeNotes: "Nuove note",
   includePodcasts: "Episodi podcast generati",
   includeSources: "Nuove fonti (PDF, link, trascrizioni)",
@@ -3677,17 +3673,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'gmailIntegrat
   sendingTo: "Invio a",
   sentFallback: "Inviato.",
   setupIntro: "Configurazione una tantum: crea un client OAuth di Google Cloud.",
-  setupStep1Lead: "Apri",
-  setupStep1Link: "Google Cloud Console",
-  setupStep2Lead: "Crea un ID client OAuth 2.0 (tipo:",
-  setupStep2Type: "App desktop",
-  setupStep3Lead: "Aggiungi",
-  setupStep3Tail: "agli URI di reindirizzamento autorizzati (la porta verrà abbinata dinamicamente)",
-  setupStep4Lead: "Abilita la",
-  setupStep4Tail: "nel tuo progetto",
   setupStep5: "Incolla qui sotto l'ID client e il segreto",
-  signInNoteLead: "Apre una finestra di accesso a Google. Richiediamo solo",
-  signInNoteTail: "— mai l'accesso in lettura alla tua posta in arrivo.",
   title: "Riepiloghi via email",
   waitingForGoogle: "In attesa del completamento dell'accesso a Google…",
 });
@@ -3708,20 +3694,19 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'instrumentDoc
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceHorizon'), {
   actionsAriaLabel: "Azioni dell'orizzonte",
-  allNotebooks: "Tutti i notebook",
+  allNotebooks: "Tutti i quaderni",
   ask: "Chiedi",
   askHint: "Cerca e sintetizza",
   coverDescription: "I tuoi fogli recenti, i segnali sicuri del runtime e le prossime azioni restano in un'unica pagina tranquilla, pronti quando lo sei tu.",
-  coverEyebrow: "Copertina del notebook · scrivania di lavoro",
+  coverEyebrow: "Copertina del quaderno · scrivania di lavoro",
   coverTitle: "Continua la domanda che conta oggi.",
-  dataLead: "Tutti i dati risiedono in",
-  emptyDescription: "Ancora nessun notebook. Trascina un PDF in Studio per iniziare il primo.",
-  emptyTitle: "Il tuo notebook è pronto per iniziare",
+  emptyDescription: "Ancora nessun quaderno. Trascina un PDF in Studio per iniziare il primo.",
+  emptyTitle: "Il tuo quaderno è pronto per iniziare",
   eyebrow: "Orizzonte dell'intelligence",
   libraryIndex: "Indice della libreria",
-  loadingDescription: "Verifica dei notebook locali e della disponibilità del runtime. Il tuo spazio di lavoro resta intatto durante il caricamento.",
-  loadingTitle: "Caricamento della scrivania del notebook",
-  newNotebook: "Nuovo notebook",
+  loadingDescription: "Verifica dei quaderni locali e della disponibilità del runtime. Il tuo spazio di lavoro resta intatto durante il caricamento.",
+  loadingTitle: "Caricamento della scrivania del quaderno",
+  newNotebook: "Nuovo quaderno",
   newNotebookHint: "Canvas vuoto",
   openStudio: "Apri Studio",
   podcast: "Podcast",
@@ -3734,13 +3719,11 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceH
   relativeHours: "{{count}} h fa",
   relativeJustNow: "adesso",
   relativeMinutes: "{{count}} min fa",
-  shortcutsAriaLabel: "Scorciatoie del notebook e percorso dei dati",
+  shortcutsAriaLabel: "Scorciatoie del quaderno e percorso dei dati",
   studio: "Studio",
-  studioHint: "Trascina file → notebook o podcast",
+  studioHint: "Trascina file → quaderno o podcast",
   subtitle: "Vai più a fondo con ogni fonte",
-  tipLead: "Suggerimento: premi",
-  tipTail: "da qualsiasi punto per passare a un notebook, una fonte o un'azione.",
-  todayDescription: "Inizia da una fonte, un notebook, una domanda basata sulle fonti o un brief podcast rivisto esplicitamente.",
+  todayDescription: "Inizia da una fonte, un quaderno, una domanda basata sulle fonti o un brief podcast rivisto esplicitamente.",
   todayEyebrow: "Oggi",
   todayTitle: "Apri una pagina di lavoro",
   trustModelStatus: "Stato di affidabilità e dei modelli",
@@ -3751,9 +3734,6 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'modelFleetBad
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'reasoningSlotCard'), {
   currentlyUsing: "In uso attualmente",
-  descriptionEmphasis: "ragionare a fondo",
-  descriptionLead: "Per domande difficili e analisi in più passaggi. È distinto dal modello di chat, così le conversazioni informali restano veloci: viene usato solo quando chiedi esplicitamente all'assistente di",
-  descriptionTail: "su qualcosa.",
   noModel: "Nessun modello assegnato. Scegline uno nel menu a tendina del modello di ragionamento qui sotto.",
   title: "Modello di ragionamento",
 });
@@ -3920,21 +3900,20 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'themeSwitcher
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome'), {
   actionsAriaLabel: "Azioni dello spazio di lavoro",
-  allNotebooks: "Tutti i notebook",
+  allNotebooks: "Tutti i quaderni",
   ask: "Chiedi",
   askHint: "Cerca e sintetizza a partire dalle tue evidenze.",
-  dataLead: "Tutti i dati risiedono in",
   description: "Vai più a fondo con ogni fonte in una scrivania tranquilla e local-first.",
-  emptyDescription: "Ancora nessun notebook. Trascina un PDF in Studio per iniziare il primo.",
-  emptyTitle: "Il tuo notebook è pronto per iniziare",
+  emptyDescription: "Ancora nessun quaderno. Trascina un PDF in Studio per iniziare il primo.",
+  emptyTitle: "Il tuo quaderno è pronto per iniziare",
   eyebrow: "Spazio di lavoro intelligente",
   heroDescription: "I tuoi fogli recenti, i segnali sicuri del runtime e le prossime azioni restano in un'unica pagina chiara, pronti quando lo sei tu.",
   heroEyebrow: "Scrivania di lavoro",
   heroTitle: "Continua la domanda che conta oggi.",
   libraryIndex: "Indice della libreria",
-  loadingDescription: "Verifica dei notebook locali e della disponibilità del runtime. Il tuo spazio di lavoro resta intatto durante il caricamento.",
-  loadingTitle: "Caricamento della scrivania del notebook",
-  newNotebook: "Nuovo notebook",
+  loadingDescription: "Verifica dei quaderni locali e della disponibilità del runtime. Il tuo spazio di lavoro resta intatto durante il caricamento.",
+  loadingTitle: "Caricamento della scrivania del quaderno",
+  newNotebook: "Nuovo quaderno",
   newNotebookHint: "Inizia un canvas vuoto e locale.",
   openStudio: "Apri Studio",
   podcast: "Podcast",
@@ -3945,12 +3924,10 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome
   relativeHours: "{{count}} h fa",
   relativeJustNow: "adesso",
   relativeMinutes: "{{count}} min fa",
-  shortcutsAriaLabel: "Scorciatoie del notebook e percorso dei dati",
+  shortcutsAriaLabel: "Scorciatoie del quaderno e percorso dei dati",
   studio: "Studio",
-  studioHint: "Trascina file in un notebook o in un brief podcast.",
-  tipLead: "Suggerimento: premi",
-  tipTail: "da qualsiasi punto per passare a un notebook, una fonte o un'azione.",
-  todayDescription: "Inizia da una fonte, un notebook, una domanda basata sulle fonti o un brief podcast rivisto esplicitamente.",
+  studioHint: "Trascina file in un quaderno o in un brief podcast.",
+  todayDescription: "Inizia da una fonte, un quaderno, una domanda basata sulle fonti o un brief podcast rivisto esplicitamente.",
   todayEyebrow: "Oggi",
   todayTitle: "Apri una pagina di lavoro",
 });
@@ -3958,7 +3935,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome
 // v0.8.130 — strings moved out of components in the whole-app i18n pass.
 Object.assign(ensureSection(ensureSection(rootNode, 'apiKeys'), 'typeLabels'), {
   embedding: "Embedding",
-  language: "Lingua",
+  language: "Linguaggio",
   speechToText: "STT",
   textToSpeech: "TTS",
 });
@@ -4000,7 +3977,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'modelRoles'), 
   researchChat: "Chat di ricerca",
   sourceSynthesis: "Sintesi delle fonti",
   speechToText: "Da voce a testo",
-  studyFast: "Studio rapido",
+  studyFast: "Apprendimento rapido",
   textToSpeech: "Da testo a voce",
   visionAnalysis: "Analisi visiva",
 });
@@ -4056,4 +4033,40 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'workspace'), 
   chatModelScan: "scansione dei modelli di chat",
   coreReady: "core pronto",
   launcherStart: "avvio del launcher",
+});
+
+// v0.8.130 — strings moved out of components in the whole-app i18n pass.
+Object.assign(ensureSection(ensureSection(rootNode, 'notebooks'), 'executiveSynthesisDialog'), {
+  description: "Intelligence trasversale alle fonti, consenso tematico, tensioni e prossimi passi per <name/>.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'podcasts'), 'podcastStudio'), {
+  defaultEpisodeName: "Podcast di Deeper Notebook",
+  outlineFindings: "Risultati",
+  outlineIntroduction: "Introduzione",
+  outlineTakeaway: "Punto chiave",
+  untitledSegment: "Segmento senza titolo",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'settings'), 'localExecutionPolicyPanel'), {
+  cloudFallbackProposed: "Riserva cloud proposta per <stage/> · <content/>.",
+});
+Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'study'), 'studyPlanWorkspace'), 'overview'), {
+  existingCards: "Le tue schede di ripasso esistenti restano disponibili nella <link>Home di Apprendimento</link>.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'gmailIntegration'), {
+  setupStep1: "Apri <link>Google Cloud Console</link>",
+  setupStep2: "Crea un ID client OAuth 2.0 (tipo: <em>App desktop</em>)",
+  setupStep3: "Aggiungi <url/> agli URI di reindirizzamento autorizzati (la porta verrà abbinata dinamicamente)",
+  setupStep4: "Abilita <api/> nel tuo progetto",
+  signInNote: "Apre una finestra di accesso a Google. Richiediamo solo <scope/> — mai l'accesso in lettura alla tua posta in arrivo.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'intelligenceHorizon'), {
+  data: "Tutti i dati risiedono in <path/>.",
+  tip: "Suggerimento: premi <key/> da qualsiasi punto per passare a un notebook, una fonte o un'azione.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'reasoningSlotCard'), {
+  description: "Per domande difficili e analisi in più passaggi. È distinto dal modello di chat, così le conversazioni informali restano veloci: viene usato solo quando chiedi esplicitamente all'assistente di <em>ragionare a fondo</em> su qualcosa.",
+});
+Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome'), {
+  data: "Tutti i dati risiedono in <path/>.",
+  tip: "Suggerimento: premi <key/> da qualsiasi punto per passare a un notebook, una fonte o un'azione.",
 });

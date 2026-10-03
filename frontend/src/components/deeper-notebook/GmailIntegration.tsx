@@ -25,6 +25,7 @@ import { Mail, CheckCircle2, Loader2, ExternalLink } from 'lucide-react'
 
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { formatDateTime } from '@/lib/utils/date-locale'
+import { RichText } from '@/components/common/RichText'
 
 interface GmailStatus {
   connected: boolean
@@ -336,10 +337,10 @@ export function GmailIntegration() {
             <div className="text-sm space-y-2">
               <p>{t('workspace.gmailIntegration.setupIntro')}</p>
               <ol className="ml-5 list-decimal text-xs text-[var(--muted-foreground)] space-y-1">
-                <li>{t('workspace.gmailIntegration.setupStep1Lead')} <a href="https://console.cloud.google.com/apis/credentials" target="_blank" className="underline inline-flex items-center gap-0.5">{t('workspace.gmailIntegration.setupStep1Link')} <ExternalLink className="h-3 w-3" /></a></li>
-                <li>{t('workspace.gmailIntegration.setupStep2Lead')} <em>{t('workspace.gmailIntegration.setupStep2Type')}</em>)</li>
-                <li>{t('workspace.gmailIntegration.setupStep3Lead')} <code>http://localhost</code> {t('workspace.gmailIntegration.setupStep3Tail')}</li>
-                <li>{t('workspace.gmailIntegration.setupStep4Lead')} <em>Gmail API</em> {t('workspace.gmailIntegration.setupStep4Tail')}</li>
+                <li><RichText text={t('workspace.gmailIntegration.setupStep1')} components={{ link: (children) => <a href="https://console.cloud.google.com/apis/credentials" target="_blank" className="underline inline-flex items-center gap-0.5">{children} <ExternalLink className="h-3 w-3" /></a> }} /></li>
+                <li><RichText text={t('workspace.gmailIntegration.setupStep2')} components={{ em: (children) => <em>{children}</em> }} /></li>
+                <li><RichText text={t('workspace.gmailIntegration.setupStep3')} components={{ url: () => <code>http://localhost</code> }} /></li>
+                <li><RichText text={t('workspace.gmailIntegration.setupStep4')} components={{ api: () => <em>Gmail API</em> }} /></li>
                 <li>{t('workspace.gmailIntegration.setupStep5')}</li>
               </ol>
             </div>
@@ -368,8 +369,7 @@ export function GmailIntegration() {
               </Button>
             </div>
             <p className="text-xs text-[var(--muted-foreground)]">
-              {t('workspace.gmailIntegration.signInNoteLead')} <code>gmail.send</code>{' '}
-              {t('workspace.gmailIntegration.signInNoteTail')}
+              <RichText text={t('workspace.gmailIntegration.signInNote')} components={{ scope: () => <code>gmail.send</code> }} />
             </p>
           </div>
         ) : (

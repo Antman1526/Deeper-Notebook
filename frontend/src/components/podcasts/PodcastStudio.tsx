@@ -49,7 +49,9 @@ const defaultBrief: EditorialBriefValues = {
   speakerProfileName: '',
 }
 
-const outlineDefaults = ['Introduction', 'Findings', 'Takeaway']
+// v0.8.130 — the default outline is editable starting content, so it starts in the
+// UI language (translated once, when the studio opens).
+const outlineDefaultKeys = ['podcasts.podcastStudio.outlineIntroduction', 'podcasts.podcastStudio.outlineFindings', 'podcasts.podcastStudio.outlineTakeaway']
 const stageDefaults: Array<{ stage: PodcastModelPlanItem['stage']; labelKey: string; role: PodcastModelPlanItem['role'] }> = [
   { stage: 'outline', labelKey: 'podcasts.podcastStudio.outlineRoute', role: 'podcast_outline' },
   { stage: 'script', labelKey: 'podcasts.podcastStudio.scriptRoute', role: 'podcast_script' },
@@ -156,7 +158,7 @@ export function PodcastStudio({ seedDocumentIds, selections, notebookId, heading
   const { t } = useTranslation()
   const resolvedSelections = useMemo(() => selections ?? selectionsFromSeeds(seedDocumentIds), [seedDocumentIds, selections])
   const [brief, setBrief] = useState<EditorialBriefValues>(defaultBrief)
-  const [outline, setOutline] = useState<string[]>(outlineDefaults)
+  const [outline, setOutline] = useState<string[]>(() => outlineDefaultKeys.map((key) => t(key)))
   const [readiness, setReadiness] = useState<PodcastReadiness | null>(null)
   const [episodeProfiles, setEpisodeProfiles] = useState<string[]>([])
   const [speakerProfiles, setSpeakerProfiles] = useState<string[]>([])
@@ -237,7 +239,7 @@ export function PodcastStudio({ seedDocumentIds, selections, notebookId, heading
         idempotencyKey: submissionKey.current,
         episodeProfile: brief.episodeProfileName,
         speakerProfile: brief.speakerProfileName,
-        episodeName: readiness.preview.entries[0]?.title ?? 'Deeper Notebook podcast',
+        episodeName: readiness.preview.entries[0]?.title ?? t('podcasts.podcastStudio.defaultEpisodeName'),
         notebookId: notebookId ?? undefined,
         mode: brief.format,
         reviewOutline: true,
@@ -311,7 +313,7 @@ export function PodcastStudio({ seedDocumentIds, selections, notebookId, heading
         storyboard={<section data-studio-region="outline-workspace" data-region="outline-workspace" aria-label={t('podcasts.podcastStudio.outlineWorkspace')} className="space-y-4">
           <OutlineStoryboard
             segments={outline}
-            onChange={(next) => setOutline(next.map((segment) => typeof segment === 'string' ? segment : segment.title ?? segment.name ?? segment.id ?? 'Untitled segment'))}
+            onChange={(next) => setOutline(next.map((segment) => typeof segment === 'string' ? segment : segment.title ?? segment.name ?? segment.id ?? t('podcasts.podcastStudio.untitledSegment')))}
           />
         </section>}
         modelPlan={<PodcastModelPlan

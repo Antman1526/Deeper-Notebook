@@ -49,20 +49,22 @@ describe('KnowledgePodcastPane', () => {
     render(<KnowledgePodcastPane seedDocumentIds={['knowledge_engine_document:plan']} />)
 
     expect(screen.getByText('podcasts.knowledgePodcastPane.loadingStudio')).toBeInTheDocument()
-    // The first test to resolve the lazy PodcastStudio chunk pays the cold module-graph transform, which can exceed waitFor's 1s default under parallel load.
-    await waitFor(() => expect(screen.getByText('podcasts.researchSetPanel.selectedReferencesOne')).toBeInTheDocument(), { timeout: 10_000 })
+    // v0.8.130 — wait for the lazy chunk itself rather than a clock: under a loaded
+    // full-suite run its first transform took >10s. The test timeout below is only a ceiling.
+    await import('@/components/podcasts/PodcastStudio')
+    await waitFor(() => expect(screen.getByText('podcasts.researchSetPanel.selectedReferencesOne')).toBeInTheDocument())
     expect(screen.getByText('podcasts.podcastStudio.description')).toBeInTheDocument()
     expect(fetchSpy).not.toHaveBeenCalledWith('/podcasts/generate', expect.anything())
 
     fetchSpy.mockRestore()
-  })
+  }, 60_000)
 
   it('shows redacted plans for every Podcast stage', async () => {
     routePlan.data = { role: 'podcast_outline', outcome: 'ready', selected_model_id: 'qwen-local', selected_provider: 'mlx', resource_tier: 'standard', selection_source: 'automatic', route_reason: 'Verified local route.', escalation_model_ids: [], blocked_reason: null, selected_fingerprint: 'fingerprint', selected_measurements: {} }
     render(<KnowledgePodcastPane seedDocumentIds={[]} />)
     await waitFor(() => {
       for (const title of ['podcasts.knowledgePodcastPane.evidenceRoute', 'podcasts.knowledgePodcastPane.storyboardRoute', 'podcasts.knowledgePodcastPane.scriptRoute', 'podcasts.knowledgePodcastPane.verificationRoute', 'podcasts.knowledgePodcastPane.voiceRoute']) expect(screen.getByText(title)).toBeInTheDocument()
-    }, { timeout: 10_000 })
+    })
   })
 
   it('preserves planner provider, tier, source, and safe override choices in the Knowledge pane', async () => {
