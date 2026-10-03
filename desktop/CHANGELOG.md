@@ -263,6 +263,16 @@ The command-bar Focus button now speaks the selected language too; it was the on
 
 (Tests: `src/components/common/RichText.test.tsx`, `src/components/providers/DocumentTitle.test.tsx`, `src/lib/locales/markup.test.ts`, `e2e/i18n-locales.spec.ts` (tab title in German), `e2e/phase3-pages.spec.ts` (titles match the navigation labels).)
 
+⚡ **Only the active language loads.** Every page shipped all 14 languages in one 2.8 MB chunk. English is now bundled; any other language is fetched when it is selected, as its own 160–330 KB chunk. An English page now downloads 2.7 MB less script (about 40%). The page stays hidden until the active language has arrived, so it never flashes English first; if loading fails, English shows after 3 seconds rather than a blank window.
+
+🌐 **Numbers and dates follow the app language.**
+- 33 places formatted numbers and dates with the OS locale. A German UI on an English Mac showed "1,234.5" and US dates; they now use the selected language ("1.234,5").
+- The existing date helper had no entry for German, Catalan, Polish or Turkish, so those fell back to US formatting even where it was used. Any valid language tag now works.
+
+🛠 **A screenshot flake under load.** Two rollback screenshot tests could capture a tall page before a slow mocked response re-rendered it. They now wait for a quiet network and loaded fonts first. (The flake reproduced only under heavy load; 84 consecutive linux runs passed both before and after.)
+
+(Tests: `e2e/i18n-locales.spec.ts`: an English page downloads no other language, a German page only German; `src/lib/utils/format.test.ts` and `date-locale.test.ts`: de-DE and en-US numbers and dates.)
+
 🐛 **Checkboxes were 44px squares.** V2 gives every control a 44px target, and checkboxes and radios filled it: the Checkbox component rendered as a 44px filled square (Advanced, Settings, Ask and search), and a source candidate's native checkbox also stretched to its label's height. They keep the 44px target but draw a 16px box in its middle (with a 16px footprint, so they line up with the text around them), with the focus ring on the box; the candidate's box sits on its title's first line. Rows that spaced a checkbox from its label with `space-x-*` use `gap`, which the new margins don't override. The pre-V2 screens are unchanged.
 
 🐛 **The evidence receipt had no room in the Studio column.** Studio is narrow (274px at 1440 with four columns), and five nested paddings (the card, the research band, the approval panel, the candidate row, the receipt) left the receipt 148px at 1440, 109px at 1280 and 93px at 1024: fingerprints broke mid-value, the source title wrapped one word per line, and at 1280 and 1024 the receipt overflowed the column. In a narrow column the research band now bleeds to the card edges, the approval panel drops its own frame, and rows and the receipt tighten (container queries; full-width layouts are unchanged): 218px at 1440, 179px at 1280, 163px at 1024, no overflow. Studio can no longer be dragged below 22% of the workspace (was 18%), nor the shared Notes/Studio panel at 1024–1279 below 28% (was 22%); at the old minimums the receipt still overflowed. Default widths are unchanged.
