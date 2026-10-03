@@ -275,7 +275,7 @@ async function carryQuickSelectionIntoStudio(
   await dialog.getByRole('button', { name: 'Customize in Studio' }).click()
   await page.waitForURL('**/podcasts/studio')
   await expect(dialog).toBeHidden()
-  await expect(page.getByRole('heading', { name: 'Podcast Intelligence Studio' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Podcast intelligence studio' })).toBeVisible()
   await expect.poll(() => page.evaluate(() => getComputedStyle(document.body).pointerEvents))
     .not.toBe('none')
   await page.getByRole('button', { name: 'Prepare production review' }).click()
@@ -285,7 +285,7 @@ async function carryQuickSelectionIntoStudio(
 
   await page.getByRole('button', { name: 'Close Studio without producing' }).click()
   await expect.poll(() => page.url()).toBe(returnUrl)
-  await expect(page.getByRole('heading', { name: 'Podcast Intelligence Studio' })).toBeHidden()
+  await expect(page.getByRole('heading', { name: 'Podcast intelligence studio' })).toBeHidden()
 }
 
 test.describe('Podcast Intelligence Studio browser acceptance', () => {
@@ -338,11 +338,11 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
     expect(nonLoopbackAborted).toBe(true)
     expect(browserRequestReceipts.get(page)?.blockedHosts).toContain('podcast-task8.invalid')
 
-    await expect(page.getByRole('heading', { name: 'Podcast Intelligence Studio' })).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Research Set' })).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Editorial Brief' })).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Outline Storyboard' })).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Production Timeline' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Podcast intelligence studio' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Research set' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Editorial brief' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Outline storyboard' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Production timeline' })).toBeVisible()
     await expect(page.getByText('Available after intellectual engine upgrade').first()).toBeVisible()
     await expect(page.getByRole('button', { name: 'Prepare production review' })).toBeDisabled()
     await expect(page.getByText('Choose at least one readable source before production review.')).toBeVisible()
@@ -363,7 +363,7 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
     await page.getByRole('button', { name: 'Approve & generate audio' }).click()
     await expect(page.getByRole('dialog', { name: 'Review the outline' })).toBeHidden()
 
-    await page.getByLabel('Continue Production').getByRole('button', { name: 'Cancel' }).click()
+    await page.getByLabel('Continue production').getByRole('button', { name: 'Cancel' }).click()
     await expect.poll(() => receipts.some((receipt) => receipt.path.endsWith('/episode:active/cancel'))).toBe(true)
 
     await page.getByRole('button', { name: 'Open Episode Lab for Fixture completed episode' }).click()
@@ -374,14 +374,14 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
 
     await page.getByRole('button', { name: 'Retry' }).click()
     await page.waitForURL('**/podcasts/studio')
-    await expect(page.getByRole('heading', { name: 'Podcast Intelligence Studio' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Podcast intelligence studio' })).toBeVisible()
     await page.getByRole('button', { name: 'Prepare production review' }).click()
     await expect(page.getByText('Fixture research selection')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Continue to confirmation' })).toBeEnabled()
 
     await page.getByRole('button', { name: 'Move Introduction later' }).press('Enter')
     await expect(page.getByRole('status')).toContainText('Introduction moved to position 2')
-    await page.getByRole('tab', { name: 'Research Set Preview' }).press('End')
+    await page.getByRole('tab', { name: 'Research set preview' }).press('End')
     await expect(page.getByRole('tab', { name: 'Episode' })).toBeFocused()
 
     await page.getByLabel('Override Outline route model').selectOption('safe-local-outline')
@@ -401,7 +401,7 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
     const cdp = await page.context().newCDPSession(page)
     await cdp.send('Emulation.setPageScaleFactor', { pageScaleFactor: 2 })
     await expect.poll(() => page.evaluate(() => window.visualViewport?.scale ?? 1)).toBe(2)
-    await expect(page.getByRole('heading', { name: 'Podcast Intelligence Studio' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Podcast intelligence studio' })).toBeVisible()
   })
 
   test('fails a whole-notebook oversize preview closed before production confirmation', async ({ page }) => {

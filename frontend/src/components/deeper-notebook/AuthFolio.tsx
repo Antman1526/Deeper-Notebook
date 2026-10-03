@@ -1,10 +1,15 @@
+'use client'
+
 import type { ReactNode } from 'react'
+
+import { useTranslation } from '@/lib/hooks/use-translation'
 
 /** Presentation-only login cover; authentication remains owned by LoginForm. */
 export function AuthFolio({ children }: { children: ReactNode }) {
+  const { t } = useTranslation()
   return (
     <main
-      aria-label="Deeper Notebook sign in"
+      aria-label={t('workspace.authFolio.ariaLabel')}
       className="grid min-h-screen place-items-center bg-[var(--dn-shell)] p-4 sm:p-8"
       data-dn-folio-page="true"
     >

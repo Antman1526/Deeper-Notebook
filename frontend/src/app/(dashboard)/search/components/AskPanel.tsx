@@ -178,12 +178,12 @@ export function AskPanel({
                 {isDeepResearching ? (
                   <>
                     <LoadingSpinner size="sm" className="mr-1.5" />
-                    Deep Researching...
+                    {t('searchPage.askPanel.deepResearching')}
                   </>
                 ) : (
                   <>
                     <Sparkles className="h-4 w-4 text-primary" />
-                    Deep Research
+                    {t('searchPage.askPanel.deepResearch')}
                   </>
                 )}
               </Button>

@@ -187,23 +187,24 @@ function deriveStage(episode: PodcastEpisode): GenerationStage {
 }
 
 function stageLabel(
+  t: TFunction,
   stage: GenerationStage,
   numSegments?: number,
   builtSegments?: number,
 ): string {
   switch (stage) {
     case 'outline':
-      return 'Generating outline…'
+      return t('podcasts.episodeCard.stageGeneratingOutline')
     case 'transcript':
       return numSegments
-        ? `Drafting transcript (${builtSegments ?? 0}/${numSegments} segments)…`
-        : 'Drafting transcript…'
+        ? t('podcasts.episodeCard.stageDraftingTranscriptProgress', { built: builtSegments ?? 0, total: numSegments })
+        : t('podcasts.episodeCard.stageDraftingTranscript')
     case 'tts':
-      return 'Synthesizing speech (this is the slow part)…'
+      return t('podcasts.episodeCard.stageSynthesizingSpeech')
     case 'done':
-      return 'Ready'
+      return t('podcasts.episodeCard.stageReady')
     default:
-      return 'Queued'
+      return t('podcasts.episodeCard.stageQueued')
   }
 }
 
@@ -543,6 +544,7 @@ export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: 
                 </div>
                 <span>
                   {stageLabel(
+                    t,
                     stage,
                     episode.episode_profile?.num_segments,
                     outlineSegments.length,
@@ -577,7 +579,7 @@ export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: 
                 <span className="flex h-5 w-5 items-center justify-center rounded-lg bg-primary/20">
                   <Headphones className="h-3 w-3 text-primary" />
                 </span>
-                <span>Listen</span>
+                <span>{t('podcasts.episodeCard.listen')}</span>
               </Button>
             ) : null}
             <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>

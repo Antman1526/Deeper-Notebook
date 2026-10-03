@@ -12,7 +12,7 @@ describe('SourceApprovalPanel', () => {
     ]} />)
 
     fireEvent.click(screen.getAllByRole('checkbox')[1])
-    fireEvent.click(screen.getByRole('button', { name: 'Approve selected sources' }))
+    fireEvent.click(screen.getByRole('button', { name: 'research.sourceApprovalPanel.approveSelected' }))
 
     expect(onApprove).toHaveBeenCalledWith(['one'])
   })
@@ -55,11 +55,11 @@ describe('SourceApprovalPanel', () => {
     ]} />)
 
     expect(screen.getByText('tavily')).toBeInTheDocument()
-    expect(screen.getByText('Stale')).toBeInTheDocument()
-    expect(screen.getByText('Fallback provider')).toBeInTheDocument()
+    expect(screen.getByText('research.evidenceReceipt.stale')).toBeInTheDocument()
+    expect(screen.getByText('research.evidenceReceipt.fallbackProvider')).toBeInTheDocument()
     expect(screen.getByText('aaaaaaaa…aaaaaaaa')).toBeInTheDocument()
     expect(screen.getByText('bbbbbbbb…bbbbbbbb')).toBeInTheDocument()
-    expect(screen.getByLabelText(new RegExp(sourceFingerprint))).toBeInTheDocument()
+    expect(screen.getByLabelText('research.evidenceReceipt.sourceFingerprintAria')).toBeInTheDocument()
     expect(screen.getByText('Legacy result')).toBeInTheDocument()
 
     const checkboxes = screen.getAllByRole('checkbox')

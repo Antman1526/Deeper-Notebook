@@ -13,13 +13,13 @@ describe('FocusModeControl', () => {
   it('exposes explicit pressed semantics and a reversible toggle', () => {
     render(<FocusModeControl />)
 
-    const control = screen.getByRole('button', { name: 'Enter Focus mode' })
+    const control = screen.getByRole('button', { name: 'workspace.displayPreferencesPanel.enterFocusMode' })
     expect(control).toHaveAttribute('aria-pressed', 'false')
     expect(control).toHaveClass('motion-reduce:transition-none')
 
     fireEvent.click(control)
 
-    const exit = screen.getByRole('button', { name: 'Exit Focus mode' })
+    const exit = screen.getByRole('button', { name: 'workspace.displayPreferencesPanel.exitFocusMode' })
     expect(exit).toHaveAttribute('aria-pressed', 'true')
     expect(document.documentElement.dataset.dnFocusMode).toBe('true')
   })
@@ -31,10 +31,10 @@ describe('FocusModeControl', () => {
     input.focus()
 
     fireEvent.keyDown(input, { key: 'f', ctrlKey: true, shiftKey: true })
-    expect(screen.getByRole('button', { name: 'Enter Focus mode' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'workspace.displayPreferencesPanel.enterFocusMode' })).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: 'f', ctrlKey: true, shiftKey: true })
-    expect(screen.getByRole('button', { name: 'Exit Focus mode' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'workspace.displayPreferencesPanel.exitFocusMode' })).toBeInTheDocument()
     input.remove()
   })
 
@@ -42,14 +42,14 @@ describe('FocusModeControl', () => {
     render(<FocusModeControl />)
 
     fireEvent.keyDown(document, { key: 'Escape' })
-    expect(screen.getByRole('button', { name: 'Enter Focus mode' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'workspace.displayPreferencesPanel.enterFocusMode' })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Enter Focus mode' }))
-    const exit = screen.getByRole('button', { name: 'Exit Focus mode' })
+    fireEvent.click(screen.getByRole('button', { name: 'workspace.displayPreferencesPanel.enterFocusMode' }))
+    const exit = screen.getByRole('button', { name: 'workspace.displayPreferencesPanel.exitFocusMode' })
     exit.focus()
     expect(exit).toHaveFocus()
 
     fireEvent.keyDown(document, { key: 'Escape' })
-    expect(screen.getByRole('button', { name: 'Enter Focus mode' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'workspace.displayPreferencesPanel.enterFocusMode' })).toBeInTheDocument()
   })
 })

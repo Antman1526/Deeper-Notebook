@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { GitBranch, GitCommit, RefreshCw, Camera, Clock, User, Copy, Check, CloudUpload, CloudDownload, Globe } from 'lucide-react'
 import {
   Dialog,
@@ -15,6 +15,8 @@ import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { toast } from 'sonner'
+import type { TFunction } from 'i18next'
+import { useTranslation } from '@/lib/hooks/use-translation'
 import apiClient, { markErrorReported } from '@/lib/api/client'
 
 interface GitCommitItem {
@@ -36,24 +38,30 @@ interface VaultGitHistoryDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-function formatCommitDate(dateStr: string): string {
+function formatCommitDate(dateStr: string, t: TFunction): string {
   if (!dateStr) return '—'
   const parsed = new Date(dateStr)
   if (isNaN(parsed.getTime())) return dateStr
   const diff = Date.now() - parsed.getTime()
-  if (diff < 60_000) return 'just now'
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
-  if (diff < 7 * 86_400_000) return `${Math.floor(diff / 86_400_000)}d ago`
+  if (diff < 60_000) return t('knowledge.vaultGitHistoryDialog.justNow')
+  if (diff < 3_600_000) return t('knowledge.vaultGitHistoryDialog.minutesAgo', { count: Math.floor(diff / 60_000) })
+  if (diff < 86_400_000) return t('knowledge.vaultGitHistoryDialog.hoursAgo', { count: Math.floor(diff / 3_600_000) })
+  if (diff < 7 * 86_400_000) return t('knowledge.vaultGitHistoryDialog.daysAgo', { count: Math.floor(diff / 86_400_000) })
   return parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 export function VaultGitHistoryDialog({
   vaultId,
-  vaultName = 'Vault',
+  vaultName: vaultNameProp,
   open,
   onOpenChange,
 }: VaultGitHistoryDialogProps) {
+  const { t } = useTranslation()
+  const vaultName = vaultNameProp ?? t('knowledge.vaultGitHistoryDialog.vaultFallback')
+  // fetchHistory is an effect dependency, so it reads the latest `t` through a ref
+  // instead of re-creating itself (and refetching) whenever the translator changes.
+  const tRef = useRef(t)
+  useEffect(() => { tRef.current = t }, [t])
   const [history, setHistory] = useState<GitCommitItem[]>([])
   const [loading, setLoading] = useState(false)
   const [snapshotMsg, setSnapshotMsg] = useState('')
@@ -76,7 +84,7 @@ export function VaultGitHistoryDialog({
     } catch (err: unknown) {
       markErrorReported(err) // v0.8.130 — this caller reports the failure itself
       console.error('Failed to load vault git history:', err)
-      toast.error('Failed to load version history')
+      toast.error(tRef.current('knowledge.vaultGitHistoryDialog.loadFailed'))
     } finally {
       setLoading(false)
     }
@@ -110,16 +118,16 @@ export function VaultGitHistoryDialog({
         message: snapshotMsg.trim() || undefined,
       })
       if (res.data.committed) {
-        toast.success(`Snapshot recorded: ${res.data.commit?.slice(0, 8)}`)
+        toast.success(t('knowledge.vaultGitHistoryDialog.snapshotRecorded', { hash: res.data.commit?.slice(0, 8) }))
         setSnapshotMsg('')
         void fetchHistory()
       } else {
-        toast.info(res.data.message || 'No changes to snapshot')
+        toast.info(res.data.message || t('knowledge.vaultGitHistoryDialog.noChanges'))
       }
     } catch (err: unknown) {
       markErrorReported(err) // v0.8.130 — this caller reports the failure itself
       console.error('Failed to take snapshot:', err)
-      toast.error('Failed to record snapshot')
+      toast.error(t('knowledge.vaultGitHistoryDialog.snapshotFailed'))
     } finally {
       setTakingSnapshot(false)
     }
@@ -133,15 +141,15 @@ export function VaultGitHistoryDialog({
         url: remoteInput.trim(),
       })
       if (res.data.ok) {
-        toast.success('Remote origin repository configured')
+        toast.success(t('knowledge.vaultGitHistoryDialog.remoteConfigured'))
         setIsEditingRemote(false)
         void fetchRemotes()
       } else {
-        toast.error(res.data.error || 'Failed to set remote')
+        toast.error(res.data.error || t('knowledge.vaultGitHistoryDialog.setRemoteFailedDetail'))
       }
     } catch (error) {
       markErrorReported(error) // v0.8.130 — this caller reports the failure itself
-      toast.error('Failed to set remote repository')
+      toast.error(t('knowledge.vaultGitHistoryDialog.setRemoteFailed'))
     }
   }
 
@@ -153,13 +161,13 @@ export function VaultGitHistoryDialog({
         remote: 'origin',
       })
       if (res.data.ok) {
-        toast.success(res.data.message || 'Successfully pushed to remote')
+        toast.success(res.data.message || t('knowledge.vaultGitHistoryDialog.pushSucceeded'))
       } else {
-        toast.error(res.data.error || 'Push failed')
+        toast.error(res.data.error || t('knowledge.vaultGitHistoryDialog.pushFailedDetail'))
       }
     } catch (error) {
       markErrorReported(error) // v0.8.130 — this caller reports the failure itself
-      toast.error('Failed to push to remote repository')
+      toast.error(t('knowledge.vaultGitHistoryDialog.pushFailed'))
     } finally {
       setIsPushing(false)
     }
@@ -173,14 +181,14 @@ export function VaultGitHistoryDialog({
         remote: 'origin',
       })
       if (res.data.ok) {
-        toast.success(res.data.message || 'Successfully pulled latest changes')
+        toast.success(res.data.message || t('knowledge.vaultGitHistoryDialog.pullSucceeded'))
         void fetchHistory()
       } else {
-        toast.error(res.data.error || 'Pull failed')
+        toast.error(res.data.error || t('knowledge.vaultGitHistoryDialog.pullFailedDetail'))
       }
     } catch (error) {
       markErrorReported(error) // v0.8.130 — this caller reports the failure itself
-      toast.error('Failed to pull from remote repository')
+      toast.error(t('knowledge.vaultGitHistoryDialog.pullFailed'))
     } finally {
       setIsPulling(false)
     }
@@ -189,7 +197,7 @@ export function VaultGitHistoryDialog({
   const handleCopyHash = (hash: string) => {
     void navigator.clipboard.writeText(hash)
     setCopiedHash(hash)
-    toast.success('Commit hash copied')
+    toast.success(t('knowledge.vaultGitHistoryDialog.hashCopied'))
     setTimeout(() => setCopiedHash(null), 2000)
   }
 
@@ -201,10 +209,10 @@ export function VaultGitHistoryDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <GitBranch className="h-5 w-5 text-primary" />
-            Vault Version History: {vaultName}
+            {t('knowledge.vaultGitHistoryDialog.title', { name: vaultName })}
           </DialogTitle>
           <DialogDescription>
-            Git-backed version history, manual snapshot controls, and cloud remote sync.
+            {t('knowledge.vaultGitHistoryDialog.description')}
           </DialogDescription>
         </DialogHeader>
 
@@ -213,7 +221,7 @@ export function VaultGitHistoryDialog({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5 font-medium text-foreground">
               <Globe className="h-3.5 w-3.5 text-primary" />
-              <span>Remote: {activeRemote ? activeRemote.url : 'No remote configured'}</span>
+              <span>{activeRemote ? t('knowledge.vaultGitHistoryDialog.remoteWithUrl', { url: activeRemote.url }) : t('knowledge.vaultGitHistoryDialog.remoteNone')}</span>
             </div>
             <div className="flex items-center gap-1">
               <Button
@@ -224,7 +232,7 @@ export function VaultGitHistoryDialog({
                 // v0.8.130 — 12px type floor (UI audit Phase 1)
                 className="h-6 px-2 text-xs"
               >
-                {isEditingRemote ? 'Cancel' : activeRemote ? 'Change' : 'Configure'}
+                {isEditingRemote ? t('common.cancel') : activeRemote ? t('knowledge.vaultGitHistoryDialog.change') : t('knowledge.vaultGitHistoryDialog.configure')}
               </Button>
               {activeRemote && (
                 <>
@@ -235,10 +243,10 @@ export function VaultGitHistoryDialog({
                     onClick={handlePush}
                     disabled={isPushing}
                     className="h-6 px-2 text-xs gap-1"
-                    title="Push commits to remote"
+                    title={t('knowledge.vaultGitHistoryDialog.pushTitle')}
                   >
                     {isPushing ? <LoadingSpinner size="sm" /> : <CloudUpload className="h-3 w-3" />}
-                    Push
+                    {t('knowledge.vaultGitHistoryDialog.push')}
                   </Button>
                   <Button
                     type="button"
@@ -247,10 +255,10 @@ export function VaultGitHistoryDialog({
                     onClick={handlePull}
                     disabled={isPulling}
                     className="h-6 px-2 text-xs gap-1"
-                    title="Pull latest changes from remote"
+                    title={t('knowledge.vaultGitHistoryDialog.pullTitle')}
                   >
                     {isPulling ? <LoadingSpinner size="sm" /> : <CloudDownload className="h-3 w-3" />}
-                    Pull
+                    {t('knowledge.vaultGitHistoryDialog.pull')}
                   </Button>
                 </>
               )}
@@ -260,13 +268,13 @@ export function VaultGitHistoryDialog({
           {isEditingRemote && (
             <div className="flex gap-1.5 pt-1">
               <Input
-                placeholder="git@github.com:user/repo.git or https://..."
+                placeholder={t('knowledge.vaultGitHistoryDialog.remotePlaceholder')}
                 value={remoteInput}
                 onChange={(e) => setRemoteInput(e.target.value)}
                 className="h-7 text-xs"
               />
               <Button size="sm" className="h-7 text-xs px-2.5" onClick={handleSaveRemote}>
-                Save
+                {t('common.save')}
               </Button>
             </div>
           )}
@@ -275,7 +283,7 @@ export function VaultGitHistoryDialog({
         {/* Snapshot Input */}
         <div className="flex gap-2 pt-1">
           <Input
-            placeholder="Snapshot commit message (optional)"
+            placeholder={t('knowledge.vaultGitHistoryDialog.snapshotPlaceholder')}
             value={snapshotMsg}
             onChange={(e) => setSnapshotMsg(e.target.value)}
             disabled={takingSnapshot}
@@ -283,7 +291,7 @@ export function VaultGitHistoryDialog({
               if (e.key === 'Enter') handleTakeSnapshot()
             }}
             className="text-sm"
-            aria-label="Snapshot message"
+            aria-label={t('knowledge.vaultGitHistoryDialog.snapshotMessage')}
           />
           <Button
             onClick={handleTakeSnapshot}
@@ -295,15 +303,15 @@ export function VaultGitHistoryDialog({
             ) : (
               <Camera className="h-4 w-4" />
             )}
-            Snapshot
+            {t('knowledge.vaultGitHistoryDialog.snapshot')}
           </Button>
           <Button
             variant="outline"
             size="icon"
             onClick={fetchHistory}
             disabled={loading}
-            title="Refresh history"
-            aria-label="Refresh history"
+            title={t('knowledge.vaultGitHistoryDialog.refreshHistory')}
+            aria-label={t('knowledge.vaultGitHistoryDialog.refreshHistory')}
           >
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           </Button>
@@ -314,14 +322,14 @@ export function VaultGitHistoryDialog({
           {loading && history.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-48 text-muted-foreground text-sm gap-2">
               <LoadingSpinner size="md" />
-              <span>Loading version history...</span>
+              <span>{t('knowledge.vaultGitHistoryDialog.loadingHistory')}</span>
             </div>
           ) : history.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-48 text-muted-foreground text-sm gap-1.5">
               <GitCommit className="h-8 w-8 mb-1 opacity-40 text-primary" />
-              <span className="font-medium text-foreground">No snapshots recorded yet</span>
+              <span className="font-medium text-foreground">{t('knowledge.vaultGitHistoryDialog.noSnapshots')}</span>
               <p className="text-xs text-muted-foreground text-center max-w-xs">
-                Take a snapshot above or wait for auto-sync to record changes automatically.
+                {t('knowledge.vaultGitHistoryDialog.noSnapshotsHint')}
               </p>
             </div>
           ) : (
@@ -341,7 +349,7 @@ export function VaultGitHistoryDialog({
                         variant="outline"
                         className="font-mono text-xs shrink-0 cursor-pointer hover:bg-muted transition-colors py-0.5 px-1.5 flex items-center gap-1"
                         onClick={() => handleCopyHash(commit.hash)}
-                        title="Click to copy full commit hash"
+                        title={t('knowledge.vaultGitHistoryDialog.copyHashTitle')}
                       >
                         {isCopied ? (
                           <Check className="h-3 w-3 text-primary" />
@@ -358,7 +366,7 @@ export function VaultGitHistoryDialog({
                       </span>
                       <span className="flex items-center gap-1" title={commit.date}>
                         <Clock className="h-3 w-3 opacity-70" />
-                        {formatCommitDate(commit.date)}
+                        {formatCommitDate(commit.date, t)}
                       </span>
                     </div>
                   </div>

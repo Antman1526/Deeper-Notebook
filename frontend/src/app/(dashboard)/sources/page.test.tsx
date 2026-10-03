@@ -63,7 +63,20 @@ vi.mock('@/lib/hooks/use-source-visuals', () => ({
 vi.mock('@/lib/hooks/use-translation', () => ({
   useTranslation: () => ({
     language: 'en-US',
-    t: (key: string) => ({
+    t: (key: string, options?: Record<string, unknown>) => ({
+      'workspace.sourceGallery.ariaLabel': 'Source gallery',
+      'workspace.sourceGallery.selectLabel': 'Select {{title}}',
+      'workspace.sourceCover.openLabel': 'Open {{title}}',
+      'workspace.sourceCover.statusQueued': 'Visual cover queued',
+      'workspace.sourceCover.statusProcessing': 'Preparing visual cover',
+      'workspace.sourceCover.statusUnavailable': 'Visual cover unavailable',
+      'workspace.sourceCover.statusDisabled': 'Visual covers are turned off',
+      'workspace.sourceCover.typeFallback': 'Source',
+      'artifacts.sourceVisualProvenance.origin.embedded': 'Embedded image',
+      'workspace.sourceCoverActions.actionsLabel': 'Actions for {{title}}',
+      'workspace.sourceCoverActions.refreshVisual': 'Refresh visual',
+      'workspace.sourceCoverActions.removeVisual': 'Remove visual',
+      'workspace.sourceCoverActions.deleteSource': 'Delete source',
       'sources.allSources': 'All sources',
       'sources.allSourcesDesc': 'Research sources ready to use.',
       'navigation.sources': 'Sources',
@@ -79,7 +92,7 @@ vi.mock('@/lib/hooks/use-translation', () => ({
       'sources.type.text': 'Text',
       'sources.yes': 'Yes',
       'sources.no': 'No',
-    })[key] ?? key,
+    }[key] ?? key).replace(/\{\{(\w+)\}\}/g, (_match, name: string) => String(options?.[name] ?? '')),
   }),
 }))
 
@@ -119,7 +132,7 @@ describe('SourcesPage', () => {
     render(<SourcesPage />)
 
     expect(await screen.findByRole('main', { name: 'Sources' })).toBeInTheDocument()
-    expect(screen.getByText('Collect')).toBeInTheDocument()
+    expect(screen.getByText('navigation.collect')).toBeInTheDocument()
     expect(screen.getByText('Field notes')).toBeInTheDocument()
     expect(screen.getByRole('grid', { name: 'Sources' })).toHaveClass('min-w-[288px]')
     expect(screen.getByText('Field notes')).toHaveClass('block', 'min-w-0')

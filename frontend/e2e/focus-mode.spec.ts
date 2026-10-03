@@ -20,12 +20,12 @@ for (const viewport of viewports) {
     await page.goto('/notebooks')
     await expect(page.getByRole('heading', { name: 'Notebooks', exact: true })).toBeAttached()
 
-    const enter = page.getByRole('button', { name: 'Enter Focus mode' })
+    const enter = page.getByRole('button', { name: 'Enter focus mode' })
     await expect(enter).toBeVisible()
     await enter.click()
 
     await expect(page.locator('html')).toHaveAttribute('data-dn-focus-mode', 'true')
-    await expect(page.getByRole('button', { name: 'Exit Focus mode' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Exit focus mode' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Notebooks', exact: true })).toBeVisible()
 
     // v0.8.130 — Phase 3b: below 1024px the rail is a sheet behind the Menu button, so

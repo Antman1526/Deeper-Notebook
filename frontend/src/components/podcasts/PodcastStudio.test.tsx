@@ -14,6 +14,13 @@ import { podcastsApi } from '@/lib/api/podcasts'
 import type { PodcastReadiness } from '@/lib/types/podcasts'
 import { PodcastStudio } from './PodcastStudio'
 
+// Echo interpolation values so label-bearing controls and announcements stay addressable.
+vi.mock('@/lib/hooks/use-translation', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown>) => (options ? `${key} ${JSON.stringify(options)}` : key),
+  }),
+}))
+
 function deferred<T>() {
   let resolve!: (value: T) => void
   let reject!: (reason?: unknown) => void
@@ -48,18 +55,18 @@ describe('PodcastStudio', () => {
   it('renders one sequential four-region production layout and locked Phase 3 stages', () => {
     render(<PodcastStudio seedDocumentIds={['knowledge_engine_document:plan']} />)
 
-    const studio = screen.getByRole('region', { name: 'Podcast Intelligence Studio' })
-    expect(screen.getByRole('heading', { name: 'Podcast Intelligence Studio', level: 2 })).toBeInTheDocument()
-    expect(screen.getByRole('region', { name: 'Podcast production folio' })).toBeInTheDocument()
+    const studio = screen.getByRole('region', { name: 'podcasts.podcastStudio.title' })
+    expect(screen.getByRole('heading', { name: 'podcasts.podcastStudio.title', level: 2 })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'podcasts.podcastStudioFolio.productionFolio' })).toBeInTheDocument()
     const regions = Array.from(studio.querySelectorAll<HTMLElement>('[data-studio-region]'))
     expect(regions.map((region) => region.dataset.studioRegion)).toEqual([
       'research-set', 'editorial-brief', 'outline-workspace', 'production-timeline',
     ])
-    expect(screen.getByRole('region', { name: 'Research Set' })).toBeVisible()
-    expect(screen.getByRole('region', { name: 'Editorial Brief' })).toBeVisible()
-    expect(screen.getByRole('region', { name: 'Outline Storyboard' })).toBeVisible()
-    expect(screen.getByRole('region', { name: 'Production Timeline' })).toBeVisible()
-    expect(screen.getAllByText('Available after intellectual engine upgrade')).toHaveLength(2)
+    expect(screen.getByRole('region', { name: 'podcasts.researchSetPanel.title' })).toBeVisible()
+    expect(screen.getByRole('region', { name: 'podcasts.editorialBriefPanel.title' })).toBeVisible()
+    expect(screen.getByRole('region', { name: 'podcasts.outlineStoryboard.title' })).toBeVisible()
+    expect(screen.getByRole('region', { name: 'podcasts.productionTimeline.title' })).toBeVisible()
+    expect(screen.getAllByText('podcasts.productionTimeline.lockedDetail')).toHaveLength(2)
     expect(podcastsApi.getPodcastReadiness).not.toHaveBeenCalled()
     expect(podcastsApi.submitStudioPodcast).not.toHaveBeenCalled()
   })
@@ -67,21 +74,21 @@ describe('PodcastStudio', () => {
   it('can promote its title to the route-level heading without changing the embedded default', () => {
     render(<PodcastStudio headingLevel={1} seedDocumentIds={[]} />)
 
-    expect(screen.getByRole('heading', { name: 'Podcast Intelligence Studio', level: 1 })).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'Podcast Intelligence Studio', level: 2 })).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'podcasts.podcastStudio.title', level: 1 })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'podcasts.podcastStudio.title', level: 2 })).not.toBeInTheDocument()
   })
 
   it('keeps an editable editorial brief local until a later confirmation', () => {
     render(<PodcastStudio seedDocumentIds={['knowledge_engine_document:plan']} />)
 
-    fireEvent.change(screen.getByLabelText('Central question'), {
+    fireEvent.change(screen.getByLabelText('podcasts.editorialBriefPanel.centralQuestion'), {
       target: { value: 'What changes after the research is connected?' },
     })
-    fireEvent.change(screen.getByLabelText('Audience'), { target: { value: 'expert' } })
+    fireEvent.change(screen.getByLabelText('podcasts.editorialBriefPanel.audience'), { target: { value: 'expert' } })
 
-    expect(screen.getByLabelText('Central question')).toHaveValue('What changes after the research is connected?')
-    expect(screen.getByLabelText('Audience')).toHaveValue('expert')
-    expect(screen.getByText('Opening the Studio does not submit a production job.')).toBeVisible()
+    expect(screen.getByLabelText('podcasts.editorialBriefPanel.centralQuestion')).toHaveValue('What changes after the research is connected?')
+    expect(screen.getByLabelText('podcasts.editorialBriefPanel.audience')).toHaveValue('expert')
+    expect(screen.getByText('podcasts.podcastStudio.openingNotice')).toBeVisible()
   })
 
   it('keeps model overrides local to the controller until a later confirmation', () => {
@@ -93,8 +100,8 @@ describe('PodcastStudio', () => {
       }]}
     />)
 
-    fireEvent.change(screen.getByLabelText('Override Outline route model'), { target: { value: 'outline-alt' } })
-    expect(screen.getByLabelText('Override Outline route model')).toHaveValue('outline-alt')
+    fireEvent.change(screen.getByLabelText('podcasts.podcastModelPlan.overrideModel {"label":"Outline route"}'), { target: { value: 'outline-alt' } })
+    expect(screen.getByLabelText('podcasts.podcastModelPlan.overrideModel {"label":"Outline route"}')).toHaveValue('outline-alt')
     expect(podcastsApi.getPodcastReadiness).not.toHaveBeenCalled()
     expect(podcastsApi.submitStudioPodcast).not.toHaveBeenCalled()
   })
@@ -119,15 +126,15 @@ describe('PodcastStudio', () => {
       plan: { outcome: 'ready', reason: 'Preloaded route.', modelId: 'model-a', role: 'podcast_outline' },
     }]} />)
 
-    fireEvent.change(screen.getByLabelText('Override Outline route model'), { target: { value: 'model-a' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Prepare production review' }))
+    fireEvent.change(screen.getByLabelText('podcasts.podcastModelPlan.overrideModel {"label":"Outline route"}'), { target: { value: 'model-a' } })
+    fireEvent.click(screen.getByRole('button', { name: 'podcasts.podcastStudio.prepareReview' }))
     await waitFor(() => expect(podcastsApi.getPodcastReadiness).toHaveBeenCalledWith(
       [{ kind: 'knowledge_document', documentId: 'knowledge_engine_document:plan' }],
       { productionOverrides: { podcast_outline: 'model-a' } },
     ))
 
-    fireEvent.change(screen.getByLabelText('Override Outline route model'), { target: { value: 'model-b' } })
-    expect(screen.getByRole('button', { name: 'Prepare production review' })).toBeEnabled()
+    fireEvent.change(screen.getByLabelText('podcasts.podcastModelPlan.overrideModel {"label":"Outline route"}'), { target: { value: 'model-b' } })
+    expect(screen.getByRole('button', { name: 'podcasts.podcastStudio.prepareReview' })).toBeEnabled()
 
     await act(async () => {
       staleReadiness.resolve(readinessForOverride('model-a', 'Stale model-a fingerprint'))
@@ -136,13 +143,13 @@ describe('PodcastStudio', () => {
 
     expect(screen.queryByText('Stale model-a fingerprint')).not.toBeInTheDocument()
     expect(screen.queryByText('model-a route is ready.')).not.toBeInTheDocument()
-    expect(screen.queryByText('Production profiles')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Continue to confirmation' })).not.toBeInTheDocument()
+    expect(screen.queryByText('podcasts.podcastStudio.productionProfiles')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'podcasts.podcastStudio.continueToConfirmation' })).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Prepare production review' }))
+    fireEvent.click(screen.getByRole('button', { name: 'podcasts.podcastStudio.prepareReview' }))
     expect(await screen.findByText('Fresh model-b fingerprint')).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to confirmation' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm production' }))
+    fireEvent.click(screen.getByRole('button', { name: 'podcasts.podcastStudio.continueToConfirmation' }))
+    fireEvent.click(screen.getByRole('button', { name: 'podcasts.podcastStudio.confirmProduction' }))
     await waitFor(() => expect(podcastsApi.submitStudioPodcast).toHaveBeenCalledWith(expect.objectContaining({
       selectionFingerprint: 'b'.repeat(64), productionOverrides: { podcast_outline: 'model-b' },
     })))
@@ -157,10 +164,10 @@ describe('PodcastStudio', () => {
       plan: { outcome: 'ready', reason: 'Preloaded route.', modelId: 'model-a', role: 'podcast_outline' },
     }]} />)
 
-    fireEvent.change(screen.getByLabelText('Override Outline route model'), { target: { value: 'model-a' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Prepare production review' }))
+    fireEvent.change(screen.getByLabelText('podcasts.podcastModelPlan.overrideModel {"label":"Outline route"}'), { target: { value: 'model-a' } })
+    fireEvent.click(screen.getByRole('button', { name: 'podcasts.podcastStudio.prepareReview' }))
     await waitFor(() => expect(podcastsApi.getPodcastReadiness).toHaveBeenCalledTimes(1))
-    fireEvent.change(screen.getByLabelText('Override Outline route model'), { target: { value: 'model-b' } })
+    fireEvent.change(screen.getByLabelText('podcasts.podcastModelPlan.overrideModel {"label":"Outline route"}'), { target: { value: 'model-b' } })
 
     await act(async () => {
       staleReadiness.reject(new Error('stale readiness failed'))
@@ -168,7 +175,7 @@ describe('PodcastStudio', () => {
     })
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Prepare production review' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'podcasts.podcastStudio.prepareReview' })).toBeEnabled()
   })
 
   it('uses blocked readiness plans over stale Knowledge plans after an override review', async () => {
@@ -202,16 +209,16 @@ describe('PodcastStudio', () => {
       }]}
     />)
 
-    fireEvent.change(screen.getByLabelText('Override Outline route model'), { target: { value: 'outline-alt' } })
-    expect(screen.getByText('Override pending review')).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: 'Prepare production review' }))
+    fireEvent.change(screen.getByLabelText('podcasts.podcastModelPlan.overrideModel {"label":"Outline route"}'), { target: { value: 'outline-alt' } })
+    expect(screen.getByText('podcasts.podcastModelPlan.overridePending')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'podcasts.podcastStudio.prepareReview' }))
 
     expect((await screen.findAllByText('Override is blocked by the planner.')).length).toBeGreaterThan(0)
-    expect(screen.getByText('Blocked')).toBeVisible()
+    expect(screen.getByText('podcasts.podcastModelPlan.outcomeBlocked')).toBeVisible()
     expect(screen.queryByText('Stale Knowledge route is ready.')).not.toBeInTheDocument()
     expect(screen.queryByText(/stale-provider/)).not.toBeInTheDocument()
-    expect(screen.getByText('Selection source: automatic')).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Continue to confirmation' })).toBeDisabled()
+    expect(screen.getByText('podcasts.podcastModelPlan.selectionSource {"source":"automatic"}')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'podcasts.podcastStudio.continueToConfirmation' })).toBeDisabled()
   })
 
   it('sends the selected production override to both readiness and submit', async () => {
@@ -245,15 +252,15 @@ describe('PodcastStudio', () => {
       stage: 'outline', label: 'Outline route', overrideChoices: ['outline-local', 'outline-alt'],
       plan: { outcome: 'ready', reason: 'Verified local route.', modelId: 'outline-local', role: 'podcast_outline' },
     }]} />)
-    fireEvent.change(screen.getByLabelText('Override Outline route model'), { target: { value: 'outline-alt' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Prepare production review' }))
-    await screen.findByText('Production profiles')
+    fireEvent.change(screen.getByLabelText('podcasts.podcastModelPlan.overrideModel {"label":"Outline route"}'), { target: { value: 'outline-alt' } })
+    fireEvent.click(screen.getByRole('button', { name: 'podcasts.podcastStudio.prepareReview' }))
+    await screen.findByText('podcasts.podcastStudio.productionProfiles')
     expect(podcastsApi.getPodcastReadiness).toHaveBeenCalledWith(
       [{ kind: 'knowledge_document', documentId: 'knowledge_engine_document:plan' }],
       { productionOverrides: { podcast_outline: 'outline-alt' } },
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to confirmation' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm production' }))
+    fireEvent.click(screen.getByRole('button', { name: 'podcasts.podcastStudio.continueToConfirmation' }))
+    fireEvent.click(screen.getByRole('button', { name: 'podcasts.podcastStudio.confirmProduction' }))
     await waitFor(() => expect(podcastsApi.submitStudioPodcast).toHaveBeenCalledWith(expect.objectContaining({
       productionOverrides: { podcast_outline: 'outline-alt' },
     })))
@@ -262,10 +269,10 @@ describe('PodcastStudio', () => {
   it('moves outline segments with explicit keyboard-accessible controls', () => {
     render(<PodcastStudio seedDocumentIds={['knowledge_engine_document:plan']} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Move Findings earlier' }))
+    fireEvent.click(screen.getByRole('button', { name: 'podcasts.outlineStoryboard.moveEarlierLabel {"label":"Findings"}' }))
 
-    expect(screen.getByRole('status')).toHaveTextContent('Findings moved to position 1')
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Move Findings earlier' }))
+    expect(screen.getByRole('status')).toHaveTextContent('podcasts.outlineStoryboard.movedAnnouncement {"label":"Findings","position":1}')
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'podcasts.outlineStoryboard.moveEarlierLabel {"label":"Findings"}' }))
   })
 
   it('checks readiness only after explicit review and submits the editorial brief after confirmation', async () => {
@@ -294,17 +301,17 @@ describe('PodcastStudio', () => {
     render(<PodcastStudio seedDocumentIds={['knowledge_engine_document:plan']} />)
 
     expect(podcastsApi.getPodcastReadiness).not.toHaveBeenCalled()
-    fireEvent.change(screen.getByLabelText('Central question'), {
+    fireEvent.change(screen.getByLabelText('podcasts.editorialBriefPanel.centralQuestion'), {
       target: { value: 'What should change after the research?' },
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Prepare production review' }))
+    fireEvent.click(screen.getByRole('button', { name: 'podcasts.podcastStudio.prepareReview' }))
 
-    expect(await screen.findByText('Production profiles')).toBeVisible()
+    expect(await screen.findByText('podcasts.podcastStudio.productionProfiles')).toBeVisible()
     expect(podcastsApi.getPodcastReadiness).toHaveBeenCalledWith([
       { kind: 'knowledge_document', documentId: 'knowledge_engine_document:plan' },
     ])
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to confirmation' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm production' }))
+    fireEvent.click(screen.getByRole('button', { name: 'podcasts.podcastStudio.continueToConfirmation' }))
+    fireEvent.click(screen.getByRole('button', { name: 'podcasts.podcastStudio.confirmProduction' }))
 
     await waitFor(() => expect(podcastsApi.submitStudioPodcast).toHaveBeenCalledWith(expect.objectContaining({
       selections: [{ kind: 'knowledge_document', documentId: 'knowledge_engine_document:plan' }],
@@ -346,15 +353,15 @@ describe('PodcastStudio', () => {
     vi.mocked(podcastsApi.submitStudioPodcast).mockRejectedValueOnce(new Error('submit failed'))
 
     render(<PodcastStudio seedDocumentIds={['knowledge_engine_document:plan']} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Prepare production review' }))
-    await screen.findByText('Production profiles')
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to confirmation' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm production' }))
+    fireEvent.click(screen.getByRole('button', { name: 'podcasts.podcastStudio.prepareReview' }))
+    await screen.findByText('podcasts.podcastStudio.productionProfiles')
+    fireEvent.click(screen.getByRole('button', { name: 'podcasts.podcastStudio.continueToConfirmation' }))
+    fireEvent.click(screen.getByRole('button', { name: 'podcasts.podcastStudio.confirmProduction' }))
 
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('could not be submitted'))
-    expect(screen.getByRole('tab', { name: 'Editorial Brief' })).toHaveAttribute('data-status', 'current')
-    expect(screen.getByRole('tab', { name: 'Outline Storyboard' })).toHaveAttribute('data-status', 'upcoming')
-    expect(screen.getByRole('tab', { name: 'Script/Voice Job' })).toHaveAttribute('data-status', 'upcoming')
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('podcasts.podcastStudio.submitFailed'))
+    expect(screen.getByRole('tab', { name: 'podcasts.productionTimeline.stageEditorialBrief' })).toHaveAttribute('data-status', 'current')
+    expect(screen.getByRole('tab', { name: 'podcasts.productionTimeline.stageOutlineStoryboard' })).toHaveAttribute('data-status', 'upcoming')
+    expect(screen.getByRole('tab', { name: 'podcasts.productionTimeline.stageScriptVoiceJob' })).toHaveAttribute('data-status', 'upcoming')
   })
 
   // v0.8.127 — the Studio's `notebookId` prop (sourced from the store) must
@@ -389,10 +396,10 @@ describe('PodcastStudio', () => {
     it('submits with the notebookId prop when the Studio was opened from a notebook', async () => {
       render(<PodcastStudio seedDocumentIds={['knowledge_engine_document:plan']} notebookId="notebook:research" />)
 
-      fireEvent.click(screen.getByRole('button', { name: 'Prepare production review' }))
-      await screen.findByText('Production profiles')
-      fireEvent.click(screen.getByRole('button', { name: 'Continue to confirmation' }))
-      fireEvent.click(screen.getByRole('button', { name: 'Confirm production' }))
+      fireEvent.click(screen.getByRole('button', { name: 'podcasts.podcastStudio.prepareReview' }))
+      await screen.findByText('podcasts.podcastStudio.productionProfiles')
+      fireEvent.click(screen.getByRole('button', { name: 'podcasts.podcastStudio.continueToConfirmation' }))
+      fireEvent.click(screen.getByRole('button', { name: 'podcasts.podcastStudio.confirmProduction' }))
 
       await waitFor(() => expect(podcastsApi.submitStudioPodcast).toHaveBeenCalledWith(
         expect.objectContaining({ notebookId: 'notebook:research' }),
@@ -402,10 +409,10 @@ describe('PodcastStudio', () => {
     it('omits notebookId when the Studio was opened globally', async () => {
       render(<PodcastStudio seedDocumentIds={['knowledge_engine_document:plan']} />)
 
-      fireEvent.click(screen.getByRole('button', { name: 'Prepare production review' }))
-      await screen.findByText('Production profiles')
-      fireEvent.click(screen.getByRole('button', { name: 'Continue to confirmation' }))
-      fireEvent.click(screen.getByRole('button', { name: 'Confirm production' }))
+      fireEvent.click(screen.getByRole('button', { name: 'podcasts.podcastStudio.prepareReview' }))
+      await screen.findByText('podcasts.podcastStudio.productionProfiles')
+      fireEvent.click(screen.getByRole('button', { name: 'podcasts.podcastStudio.continueToConfirmation' }))
+      fireEvent.click(screen.getByRole('button', { name: 'podcasts.podcastStudio.confirmProduction' }))
 
       await waitFor(() => expect(podcastsApi.submitStudioPodcast).toHaveBeenCalled())
       const call = vi.mocked(podcastsApi.submitStudioPodcast).mock.calls[0][0]

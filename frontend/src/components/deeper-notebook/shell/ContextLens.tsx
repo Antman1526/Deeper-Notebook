@@ -3,8 +3,10 @@
 import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { useTranslation } from '@/lib/hooks/use-translation'
 
 export function ContextLens() {
+  const { t } = useTranslation()
   const [isOpen, setIsOpen] = useState(false)
 
   return (
@@ -17,21 +19,20 @@ export function ContextLens() {
         aria-controls="dn-context-lens"
         onClick={() => setIsOpen((open) => !open)}
       >
-        Context lens
+        {t('workspace.contextLens.toggle')}
       </Button>
       <aside
         id="dn-context-lens"
-        aria-label="Context lens"
+        aria-label={t('workspace.contextLens.ariaLabel')}
         className={`dn-context-lens${isOpen ? ' is-open' : ''}`}
         data-mobile-mode="overlay"
       >
         <div className="dn-context-lens-heading">
-          <p className="dn-command-kicker">Context</p>
-          <h2>Context lens</h2>
+          <p className="dn-command-kicker">{t('workspace.contextLens.kicker')}</p>
+          <h2>{t('workspace.contextLens.heading')}</h2>
         </div>
         <p className="dn-context-lens-copy">
-          Select a notebook section to keep its evidence, backlinks, and review
-          context close at hand.
+          {t('workspace.contextLens.copy')}
         </p>
       </aside>
     </>

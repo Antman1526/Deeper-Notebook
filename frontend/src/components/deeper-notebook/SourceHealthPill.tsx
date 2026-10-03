@@ -1,9 +1,12 @@
+'use client'
+
 import { Badge } from '@/components/ui/badge'
+import { useTranslation } from '@/lib/hooks/use-translation'
 import { cn } from '@/lib/utils'
 import type { SourceListResponse } from '@/lib/types/api'
 
 export type SourceReadiness = {
-  label: string
+  labelKey: string
   className: string
   blocksGeneration: boolean
 }
@@ -11,7 +14,7 @@ export type SourceReadiness = {
 export function getSourceReadiness(source: SourceListResponse): SourceReadiness {
   if (source.status === 'failed') {
     return {
-      label: 'Failed',
+      labelKey: 'workspace.sourceHealthPill.failed',
       className: 'border-destructive text-destructive',
       blocksGeneration: true,
     }
@@ -19,7 +22,7 @@ export function getSourceReadiness(source: SourceListResponse): SourceReadiness 
 
   if (source.status === 'new' || source.status === 'queued' || source.status === 'running') {
     return {
-      label: source.status === 'queued' ? 'Queued' : 'Processing',
+      labelKey: source.status === 'queued' ? 'workspace.sourceHealthPill.queued' : 'workspace.sourceHealthPill.processing',
       className: 'border-[var(--dn-info)] text-[var(--dn-info)]',
       blocksGeneration: true,
     }
@@ -27,7 +30,7 @@ export function getSourceReadiness(source: SourceListResponse): SourceReadiness 
 
   if (!source.embedded) {
     return {
-      label: 'Not embedded',
+      labelKey: 'workspace.sourceHealthPill.notEmbedded',
       className: 'border-[var(--dn-warning)] text-[var(--dn-warning)]',
       blocksGeneration: true,
     }
@@ -35,7 +38,7 @@ export function getSourceReadiness(source: SourceListResponse): SourceReadiness 
 
   if (source.extraction_quality === 'no_text') {
     return {
-      label: 'No text',
+      labelKey: 'workspace.sourceHealthPill.noText',
       className: 'border-destructive text-destructive',
       blocksGeneration: true,
     }
@@ -43,20 +46,21 @@ export function getSourceReadiness(source: SourceListResponse): SourceReadiness 
 
   if (source.extraction_quality === 'low_text') {
     return {
-      label: 'Low text',
+      labelKey: 'workspace.sourceHealthPill.lowText',
       className: 'border-[var(--dn-warning)] text-[var(--dn-warning)]',
       blocksGeneration: false,
     }
   }
 
   return {
-    label: 'Ready',
+    labelKey: 'workspace.sourceHealthPill.ready',
     className: 'border-[var(--dn-success)] text-[var(--dn-success)]',
     blocksGeneration: false,
   }
 }
 
 export function SourceHealthPill({ source }: { source: SourceListResponse }) {
+  const { t } = useTranslation()
   const readiness = getSourceReadiness(source)
 
   return (
@@ -65,7 +69,7 @@ export function SourceHealthPill({ source }: { source: SourceListResponse }) {
       // v0.8.130 — 12px type floor (UI audit Phase 1)
       className={cn('text-xs', readiness.className)}
     >
-      {readiness.label}
+      {t(readiness.labelKey)}
     </Badge>
   )
 }

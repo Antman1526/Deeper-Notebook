@@ -34,7 +34,7 @@ export function InstrumentDock() {
 
   return (
     <nav
-      aria-label="Primary tools"
+      aria-label={t('workspace.instrumentDock.ariaLabel')}
       className="dn-instrument-dock"
       data-mobile-mode="bottom-tool-row"
     >

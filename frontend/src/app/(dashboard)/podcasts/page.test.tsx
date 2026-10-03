@@ -23,7 +23,7 @@ describe('PodcastsPage', () => {
       'id',
       routeFrame.getAttribute('aria-labelledby'),
     )
-    expect(screen.getByText('Create')).toBeInTheDocument()
+    expect(screen.getByText('workspace.systemRouteFrames.eyebrowCreate')).toBeInTheDocument()
     expect(screen.getByRole('tabpanel')).toHaveTextContent('Episodes')
   })
 })

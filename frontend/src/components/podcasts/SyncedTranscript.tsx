@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/lib/hooks/use-translation'
 import { ArrowDownCircle, Download, Copy, Check } from 'lucide-react'
 import { toast } from 'sonner'
 import type { TranscriptSegment } from '@/lib/types/podcasts'
@@ -34,6 +35,7 @@ export function SyncedTranscript({
   onSeek,
   onCitationClick,
 }: SyncedTranscriptProps) {
+  const { t } = useTranslation()
   const [autoScroll, setAutoScroll] = useState(true)
   const [copied, setCopied] = useState(false)
   const segmentRefs = useRef<(HTMLElement | null)[]>([])
@@ -58,7 +60,7 @@ export function SyncedTranscript({
   if (segments.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        Transcript timing is not available for this overview.
+        {t('podcasts.syncedTranscript.timingUnavailable')}
       </p>
     )
   }
@@ -73,10 +75,10 @@ export function SyncedTranscript({
     try {
       await navigator.clipboard.writeText(md)
       setCopied(true)
-      toast.success('Transcript copied as Markdown')
+      toast.success(t('podcasts.syncedTranscript.copiedMarkdown'))
       setTimeout(() => setCopied(false), 2000)
     } catch {
-      toast.error('Failed to copy transcript')
+      toast.error(t('podcasts.syncedTranscript.copyFailed'))
     }
   }
 
@@ -92,7 +94,7 @@ export function SyncedTranscript({
     a.download = 'transcript.vtt'
     a.click()
     URL.revokeObjectURL(url)
-    toast.success('Downloaded transcript as WebVTT (.vtt)')
+    toast.success(t('podcasts.syncedTranscript.downloadedVtt'))
   }
 
   return (
@@ -108,10 +110,10 @@ export function SyncedTranscript({
               'h-6 px-2 text-xs gap-1',
               autoScroll ? 'text-primary font-medium' : 'text-muted-foreground',
             )}
-            title="Toggle automatic scrolling to current playback position"
+            title={t('podcasts.syncedTranscript.autoScrollTitle')}
           >
             <ArrowDownCircle className="h-3.5 w-3.5" />
-            Auto-scroll: {autoScroll ? 'On' : 'Off'}
+            {autoScroll ? t('podcasts.syncedTranscript.autoScrollOn') : t('podcasts.syncedTranscript.autoScrollOff')}
           </Button>
           {activeIndex >= 0 && (
             // v0.8.130 — 12px type floor (UI audit Phase 1)
@@ -127,10 +129,10 @@ export function SyncedTranscript({
             size="sm"
             onClick={handleCopyMarkdown}
             className="h-6 px-2 text-xs gap-1"
-            title="Copy full transcript with timestamps"
+            title={t('podcasts.syncedTranscript.copyTitle')}
           >
             {copied ? <Check className="h-3 w-3 text-success-ink" /> : <Copy className="h-3 w-3" />}
-            Copy
+            {t('podcasts.syncedTranscript.copy')}
           </Button>
           <Button
             type="button"
@@ -138,7 +140,7 @@ export function SyncedTranscript({
             size="sm"
             onClick={handleDownloadVTT}
             className="h-6 px-2 text-xs gap-1"
-            title="Download transcript as WebVTT for media players"
+            title={t('podcasts.syncedTranscript.downloadTitle')}
           >
             <Download className="h-3 w-3" />
             VTT
@@ -147,7 +149,7 @@ export function SyncedTranscript({
       </div>
 
       <div
-        aria-label="Synced transcript"
+        aria-label={t('podcasts.syncedTranscript.title')}
         className="max-h-56 space-y-2 overflow-y-auto pr-1"
       >
         {segments.map((segment, index) => {

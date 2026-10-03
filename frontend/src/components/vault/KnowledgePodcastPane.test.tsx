@@ -48,9 +48,10 @@ describe('KnowledgePodcastPane', () => {
 
     render(<KnowledgePodcastPane seedDocumentIds={['knowledge_engine_document:plan']} />)
 
-    expect(screen.getByText('Loading Podcast Intelligence Studio…')).toBeInTheDocument()
-    await waitFor(() => expect(screen.getByText(/1 selected reference/u)).toBeInTheDocument())
-    expect(screen.getByText(/Production remains a separate confirmation/u)).toBeInTheDocument()
+    expect(screen.getByText('podcasts.knowledgePodcastPane.loadingStudio')).toBeInTheDocument()
+    // The first test to resolve the lazy PodcastStudio chunk pays the cold module-graph transform, which can exceed waitFor's 1s default under parallel load.
+    await waitFor(() => expect(screen.getByText('podcasts.researchSetPanel.selectedReferencesOne')).toBeInTheDocument(), { timeout: 10_000 })
+    expect(screen.getByText('podcasts.podcastStudio.description')).toBeInTheDocument()
     expect(fetchSpy).not.toHaveBeenCalledWith('/podcasts/generate', expect.anything())
 
     fetchSpy.mockRestore()
@@ -60,8 +61,8 @@ describe('KnowledgePodcastPane', () => {
     routePlan.data = { role: 'podcast_outline', outcome: 'ready', selected_model_id: 'qwen-local', selected_provider: 'mlx', resource_tier: 'standard', selection_source: 'automatic', route_reason: 'Verified local route.', escalation_model_ids: [], blocked_reason: null, selected_fingerprint: 'fingerprint', selected_measurements: {} }
     render(<KnowledgePodcastPane seedDocumentIds={[]} />)
     await waitFor(() => {
-      for (const title of ['Evidence route', 'Storyboard route', 'Script route', 'Verification route', 'Voice route']) expect(screen.getByText(title)).toBeInTheDocument()
-    })
+      for (const title of ['podcasts.knowledgePodcastPane.evidenceRoute', 'podcasts.knowledgePodcastPane.storyboardRoute', 'podcasts.knowledgePodcastPane.scriptRoute', 'podcasts.knowledgePodcastPane.verificationRoute', 'podcasts.knowledgePodcastPane.voiceRoute']) expect(screen.getByText(title)).toBeInTheDocument()
+    }, { timeout: 10_000 })
   })
 
   it('preserves planner provider, tier, source, and safe override choices in the Knowledge pane', async () => {
@@ -73,18 +74,18 @@ describe('KnowledgePodcastPane', () => {
     render(<KnowledgePodcastPane seedDocumentIds={[]} />)
 
     await waitFor(() => expect(screen.getAllByText('qwen-local · mlx · standard')).not.toHaveLength(0))
-    const override = screen.getAllByRole('combobox', { name: /Override .* model/ })[0]
-    expect(Array.from(override.querySelectorAll('option')).map((option) => option.textContent)).toEqual(['Automatic route', 'qwen-local', 'qwen-heavy'])
+    const override = screen.getAllByRole('combobox', { name: /podcasts\.podcastModelPlan\.overrideModel/ })[0]
+    expect(Array.from(override.querySelectorAll('option')).map((option) => option.textContent)).toEqual(['podcasts.podcastModelPlan.automaticRoute', 'qwen-local', 'qwen-heavy'])
   })
 
   it('uses the shared Studio with an honest locked Phase 3 boundary', async () => {
     render(<KnowledgePodcastPane seedDocumentIds={['knowledge_engine_document:plan']} />)
 
     await waitFor(() => {
-      expect(screen.getByRole('region', { name: 'Podcast Intelligence Studio' })).toBeInTheDocument()
-      expect(screen.getByRole('heading', { name: 'Research Set' })).toBeInTheDocument()
-      expect(screen.getByText('Evidence')).toBeInTheDocument()
-      expect(screen.getAllByText('Available after intellectual engine upgrade')).toHaveLength(2)
+      expect(screen.getByRole('region', { name: 'podcasts.podcastStudio.title' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'podcasts.researchSetPanel.title' })).toBeInTheDocument()
+      expect(screen.getByText('podcasts.productionTimeline.stageEvidence')).toBeInTheDocument()
+      expect(screen.getAllByText('podcasts.productionTimeline.lockedDetail')).toHaveLength(2)
     })
   })
 })

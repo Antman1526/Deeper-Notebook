@@ -220,6 +220,22 @@ vi.mock('./KnowledgePodcastPane', () => ({
   KnowledgePodcastPane: () => <div>Podcast shell</div>,
 }))
 
+// These assertions rely on interpolated titles/levels in accessible names, which an identity `t`
+// would drop. Resolve just those keys to their English.
+vi.mock('@/lib/hooks/use-translation', () => {
+  const en: Record<string, string> = {
+    'knowledge.vaultDocumentView.readingView': '{{title}} reading view',
+    'knowledge.vaultDocumentView.sourceView': '{{title}} source',
+    'knowledge.vaultDocumentView.livePreviewView': '{{title}} live preview',
+    'knowledge.vaultSourceView.source': '{{title}} source',
+    'knowledge.vaultLivePreview.livePreview': '{{title}} live preview',
+    'knowledge.knowledgePaneContent.modesRegion': 'Knowledge pane modes {{id}}',
+  }
+  const t = (key: string, options?: Record<string, unknown>) => (en[key] ?? key)
+    .replace(/\{\{(\w+)\}\}/g, (_match, name: string) => String(options?.[name] ?? ''))
+  return { useTranslation: () => ({ t, language: 'en-US', setLanguage: vi.fn() }) }
+})
+
 import { KnowledgePaneContent } from './KnowledgePaneContent'
 
 const pageFixture = {
@@ -674,7 +690,7 @@ describe('KnowledgePaneContent', () => {
 
     renderPane()
 
-    expect(screen.getByLabelText('Canvas viewer')).toBeInTheDocument()
+    expect(screen.getByLabelText('knowledge.canvasViewer.viewer')).toBeInTheDocument()
     expect(queries.vaultCanvasArgs).toHaveBeenCalledWith(
       'vault:one',
       'maps/Plan.canvas',
@@ -686,7 +702,7 @@ describe('KnowledgePaneContent', () => {
   it('switches modes with region-scoped Control number shortcuts only', () => {
     renderPane()
     const region = screen.getByRole('region', {
-      name: 'knowledge.knowledgePane modes pane-1',
+      name: 'Knowledge pane modes pane-1',
     })
 
     fireEvent.keyDown(region, { key: '3', ctrlKey: true })
@@ -711,7 +727,7 @@ describe('KnowledgePaneContent', () => {
   ] as const)('ignores Control-number shortcuts %s', (_label, modifiers) => {
     renderPane()
     const region = screen.getByRole('region', {
-      name: 'knowledge.knowledgePane modes pane-1',
+      name: 'Knowledge pane modes pane-1',
     })
 
     fireEvent.keyDown(region, { key: '3', ...modifiers })
@@ -745,7 +761,7 @@ describe('KnowledgePaneContent', () => {
       replaceTwoPaneWorkspace()
       render(<TwoPaneHarness />)
       const paneTwoRegion = screen.getByRole('region', {
-        name: 'knowledge.knowledgePane modes pane-2',
+        name: 'Knowledge pane modes pane-2',
       })
 
       fireEvent.keyDown(paneTwoRegion, { key, ctrlKey: true })
@@ -805,7 +821,7 @@ describe('KnowledgePaneContent', () => {
   it('renders active document metrics and accepts selection only inside its pane', () => {
     renderPane()
     const pane = screen.getByRole('region', {
-      name: 'knowledge.knowledgePane modes pane-1',
+      name: 'Knowledge pane modes pane-1',
     })
     const title = screen.getByRole('heading', { name: 'Canonical Plan' })
     const titleText = title.firstChild

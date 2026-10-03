@@ -5,6 +5,24 @@ import { SourceCard } from './SourceCard'
 import type { SourceListResponse } from '@/lib/types/api'
 import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
 
+// v0.8.130 — resolve the real en-US strings (with {{name}} interpolation) so the
+// counts, names and reasons below stay asserted after the strings moved to keys.
+vi.mock('@/lib/hooks/use-translation', async () => {
+  const { enUS } = await import('@/lib/locales/en-US')
+  const resolve = (key: string, options?: Record<string, unknown>): string => {
+    let node: unknown = enUS
+    for (const part of key.split('.')) {
+      if (typeof node !== 'object' || node === null || !(part in (node as Record<string, unknown>))) return key
+      node = (node as Record<string, unknown>)[part]
+    }
+    if (typeof node !== 'string') return key
+    return options
+      ? node.replace(/\{\{\s*(\w+)\s*\}\}/g, (match, name: string) => (name in options ? String(options[name]) : match))
+      : node
+  }
+  return { useTranslation: () => ({ t: resolve, i18n: { language: 'en-US' }, language: 'en-US', setLanguage: async () => 'en-US' }) }
+})
+
 const mockUseSourceStatus = vi.hoisted(() => vi.fn())
 const mockVisualSystemEnabled = vi.hoisted(() => vi.fn(() => false))
 const mockSourceVisualsEnabled = vi.hoisted(() => vi.fn(() => false))
@@ -68,7 +86,7 @@ describe('SourceCard', () => {
       />
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'sources.retry' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
 
     expect(onRetry).toHaveBeenCalledWith('source:failed')
     expect(onClick).not.toHaveBeenCalled()
@@ -87,7 +105,7 @@ describe('SourceCard', () => {
 
     render(<SourceCard source={source({ id: 'source:running' })} />)
 
-    expect(screen.getByText('common.progress')).toBeInTheDocument()
+    expect(screen.getByText('Progress')).toBeInTheDocument()
     expect(screen.getByText('0%')).toBeInTheDocument()
   })
 
@@ -107,7 +125,7 @@ describe('SourceCard', () => {
       />
     )
 
-    expect(screen.getByText('common.progress')).toBeInTheDocument()
+    expect(screen.getByText('Progress')).toBeInTheDocument()
     expect(screen.getByText('25%')).toBeInTheDocument()
   })
 
@@ -146,7 +164,7 @@ describe('SourceCard', () => {
       />
     )
 
-    expect(screen.getByText('sources.fileUnavailable')).toBeInTheDocument()
+    expect(screen.getByText('File unavailable')).toBeInTheDocument()
   })
 
   it('shows when a completed source has very little extracted text', () => {
@@ -169,7 +187,7 @@ describe('SourceCard', () => {
       />
     )
 
-    expect(screen.getByText('sources.lowExtractedText')).toBeInTheDocument()
+    expect(screen.getByText('Low extracted text')).toBeInTheDocument()
   })
 
   it('shows when a completed source has no extracted text', () => {
@@ -192,7 +210,7 @@ describe('SourceCard', () => {
       />
     )
 
-    expect(screen.getByText('sources.noExtractedText')).toBeInTheDocument()
+    expect(screen.getByText('No extracted text')).toBeInTheDocument()
   })
 
   // v0.8.130 — Phase 2d: a flat row (NotebookLM's source list), metadata as quiet text.
@@ -348,9 +366,9 @@ describe('SourceCard', () => {
       />
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'sources.retry' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
 
-    expect(screen.getByText('sources.fileUnavailable')).toBeInTheDocument()
+    expect(screen.getByText('File unavailable')).toBeInTheDocument()
     expect(onRetry).not.toHaveBeenCalled()
   })
 

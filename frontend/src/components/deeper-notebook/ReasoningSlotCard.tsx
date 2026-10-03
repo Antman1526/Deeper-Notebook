@@ -13,6 +13,7 @@
 import { Sparkles } from 'lucide-react'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { useTranslation } from '@/lib/hooks/use-translation'
 
 interface ReasoningSlotCardProps {
   /** Optional model name currently assigned to the reasoning slot. */
@@ -20,6 +21,7 @@ interface ReasoningSlotCardProps {
 }
 
 export function ReasoningSlotCard({ assignedModel }: ReasoningSlotCardProps) {
+  const { t } = useTranslation()
   return (
     <Card
       className="border bg-[var(--dn-info-soft)] shadow-[var(--dn-elevation-low)]"
@@ -30,23 +32,22 @@ export function ReasoningSlotCard({ assignedModel }: ReasoningSlotCardProps) {
             className="h-4 w-4 text-[var(--primary)]"
             aria-hidden="true"
           />
-          Reasoning model
+          {t('workspace.reasoningSlotCard.title')}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
         <p className="text-sm leading-relaxed text-[var(--muted-foreground)]">
-          For hard questions and multi-step analysis. Distinct from the chat
-          model so your casual conversation stays fast — only routed here when
-          you explicitly ask the assistant to <em>think hard</em> about
-          something.
+          {t('workspace.reasoningSlotCard.descriptionLead')}{' '}
+          <em>{t('workspace.reasoningSlotCard.descriptionEmphasis')}</em>{' '}
+          {t('workspace.reasoningSlotCard.descriptionTail')}
         </p>
         {assignedModel ? (
           <p className="text-sm text-[var(--foreground)]">
-            Currently using <strong>{assignedModel}</strong>.
+            {t('workspace.reasoningSlotCard.currentlyUsing')} <strong>{assignedModel}</strong>.
           </p>
         ) : (
           <p className="text-sm italic text-[var(--muted-foreground)]">
-            No model assigned. Pick one in the Reasoning Model dropdown below.
+            {t('workspace.reasoningSlotCard.noModel')}
           </p>
         )}
       </CardContent>

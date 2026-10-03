@@ -69,7 +69,7 @@ describe('EpisodesTab', () => {
   it('opens the existing source modal from an exact source citation through the Library and Episode Lab', () => {
     renderTab()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open Episode Lab for Source navigation episode' }))
+    fireEvent.click(screen.getByRole('button', { name: 'podcasts.podcastLibrary.openEpisodeLabFor' }))
     fireEvent.click(screen.getByRole('button', { name: 'source:source-123' }))
 
     expect(openModal).toHaveBeenCalledWith('source', 'source:source-123')
@@ -96,9 +96,9 @@ describe('EpisodesTab', () => {
     retryMutation.isPending = true
     renderTab()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open Episode Lab for Source navigation episode' }))
+    fireEvent.click(screen.getByRole('button', { name: 'podcasts.podcastLibrary.openEpisodeLabFor' }))
 
-    expect(screen.getByRole('button', { name: 'Retrying episode…' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Retrying episode…' })).toHaveAttribute('aria-busy', 'true')
+    expect(screen.getByRole('button', { name: 'podcasts.episodeLab.retrying' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'podcasts.episodeLab.retrying' })).toHaveAttribute('aria-busy', 'true')
   })
 })

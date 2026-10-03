@@ -52,8 +52,8 @@ describe('NotebookPage', () => {
 
     const main = screen.getByRole('main', { name: 'Field notebook' })
     expect(main).toHaveAttribute('data-dn-notebook-workspace')
-    expect(screen.queryByText('Organize')).not.toBeInTheDocument()
-    expect(screen.queryByRole('main', { name: 'Notebook workspace' })).not.toBeInTheDocument()
+    expect(screen.queryByText('notebooks.idPage.organize')).not.toBeInTheDocument()
+    expect(screen.queryByRole('main', { name: 'notebooks.idPage.workspaceTitle' })).not.toBeInTheDocument()
   })
 
   it('lays the desktop columns out as Sources, Chat, Notes, Studio', () => {

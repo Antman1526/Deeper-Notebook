@@ -13,7 +13,7 @@ test('compact shell keeps the focus control clear of the command title', async (
   await page.setViewportSize({ width: 320, height: 844 })
   await page.goto('/notebooks')
 
-  const focusControl = page.getByRole('button', { name: 'Enter Focus mode' })
+  const focusControl = page.getByRole('button', { name: 'Enter focus mode' })
   if (rollbackBuild) {
     await expect(page.locator('.dn-legacy-shell')).toBeVisible()
     await expect(focusControl).toBeVisible()
@@ -50,7 +50,7 @@ test('focus control never overlaps a command-row control at any audit width', as
   test.setTimeout(120_000)
   await installLuminousFolioFixture(page, { theme: 'research-core-dark' })
 
-  const focusControl = page.getByRole('button', { name: 'Enter Focus mode' })
+  const focusControl = page.getByRole('button', { name: 'Enter focus mode' })
 
   for (const viewport of canonicalViewports) {
     await page.setViewportSize(viewport)
@@ -779,7 +779,7 @@ test('representative states and keyboard contracts remain bounded at every audit
     await expect(page.getByText('Deterministic Research Notebook', { exact: true })).toBeVisible()
     await assertLayout('/notebooks (populated)', viewport)
 
-    const createTrigger = page.getByRole('button', { name: /New Notebook/i }).first()
+    const createTrigger = page.getByRole('button', { name: /New notebook/i }).first()
     await expect(createTrigger).toBeVisible()
     await createTrigger.click()
     const dialog = page.getByRole('dialog').first()

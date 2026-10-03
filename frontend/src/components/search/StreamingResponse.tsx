@@ -148,7 +148,7 @@ export function StreamingResponse({
               onClick={() => {
                 void navigator.clipboard.writeText(finalAnswer)
                 setCopied(true)
-                toast.success('Answer copied to clipboard')
+                toast.success(t('searchPage.streamingResponse.answerCopied'))
                 setTimeout(() => setCopied(false), 2000)
               }}
               className="h-8 px-2.5 text-xs text-muted-foreground hover:text-foreground"
@@ -156,12 +156,12 @@ export function StreamingResponse({
               {copied ? (
                 <>
                   <Check className="h-3.5 w-3.5 mr-1 text-primary" />
-                  Copied
+                  {t('searchPage.streamingResponse.copied')}
                 </>
               ) : (
                 <>
                   <Copy className="h-3.5 w-3.5 mr-1" />
-                  Copy
+                  {t('searchPage.streamingResponse.copy')}
                 </>
               )}
             </Button>

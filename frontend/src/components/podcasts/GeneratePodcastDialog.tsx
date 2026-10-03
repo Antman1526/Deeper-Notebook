@@ -680,9 +680,8 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
 
     if (sourceIds.length === 0 && activeNbIds.length === 0) {
       toast({
-        title: 'Nothing selected',
-        description:
-          'Pick at least one source or notebook before auto-filling.',
+        title: t('podcasts.generatePodcastDialog.nothingSelected'),
+        description: t('podcasts.generatePodcastDialog.nothingSelectedDesc'),
       })
       return
     }
@@ -714,7 +713,7 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
         )
       }
       toast({
-        title: 'Auto-fill applied',
+        title: t('podcasts.generatePodcastDialog.autoFillApplied'),
         description: suggestion.reasoning,
       })
     } catch (err) {
@@ -723,16 +722,16 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
         (err as { response?: { data?: { detail?: string } }; message?: string })
           ?.response?.data?.detail ||
         (err as Error)?.message ||
-        'Auto-fill failed.'
+        t('podcasts.generatePodcastDialog.autoFillFailedMessage')
       toast({
-        title: 'Auto-fill failed',
+        title: t('podcasts.generatePodcastDialog.autoFillFailed'),
         description: msg,
         variant: 'destructive',
       })
     } finally {
       setAutoFilling(false)
     }
-  }, [selections, episodeProfiles, toast])
+  }, [selections, episodeProfiles, toast, t])
 
   const selectedNotebookSummaries = useMemo(() => {
     return notebooks.map((notebook) => {
@@ -1033,14 +1032,14 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
                   onClick={handleAutoFill}
                   disabled={autoFilling || episodeProfiles.length === 0}
                   className="h-8"
-                  title="Suggest profile, title, and briefing based on selected sources"
+                  title={t('podcasts.generatePodcastDialog.autoFillTitle')}
                 >
                   {autoFilling ? (
                     <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                   ) : (
                     <Sparkles className="mr-1.5 h-3.5 w-3.5" />
                   )}
-                  Auto-fill from sources
+                  {t('podcasts.generatePodcastDialog.autoFillFromSources')}
                 </Button>
               </div>
               {episodeProfilesQuery.isLoading ? (
@@ -1099,14 +1098,14 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
                       value={overviewMode}
                       onValueChange={(value) => setOverviewMode(value as PodcastOverviewMode)}
                     >
-                      <SelectTrigger id="overview_mode" aria-label="Audio overview format">
+                      <SelectTrigger id="overview_mode" aria-label={t('podcasts.overviewFormat')}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="deep_dive">Deep Dive</SelectItem>
-                        <SelectItem value="brief">Brief</SelectItem>
-                        <SelectItem value="critique">Critique</SelectItem>
-                        <SelectItem value="debate">Debate</SelectItem>
+                        <SelectItem value="deep_dive">{t('podcasts.generatePodcastDialog.modeDeepDive')}</SelectItem>
+                        <SelectItem value="brief">{t('podcasts.generatePodcastDialog.modeBrief')}</SelectItem>
+                        <SelectItem value="critique">{t('podcasts.generatePodcastDialog.modeCritique')}</SelectItem>
+                        <SelectItem value="debate">{t('podcasts.generatePodcastDialog.modeDebate')}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

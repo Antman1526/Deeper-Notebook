@@ -15,8 +15,8 @@ describe('CapturePage', () => {
   it('places the existing inbox inside the Collect folio frame', () => {
     render(<CapturePage />)
 
-    expect(screen.getByRole('main', { name: 'Capture' })).toBeInTheDocument()
-    expect(screen.getByText('Collect')).toBeInTheDocument()
+    expect(screen.getByRole('main', { name: 'knowledge.knowledgeRouteFrames.capture' })).toBeInTheDocument()
+    expect(screen.getByText('navigation.collect')).toBeInTheDocument()
     expect(screen.getByText('Capture inbox')).toBeInTheDocument()
   })
 })

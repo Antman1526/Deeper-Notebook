@@ -1,13 +1,20 @@
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { EpisodeResearchReceipt } from './EpisodeResearchReceipt'
+
+// Echo interpolation values so assertions still cover the numbers rendered.
+vi.mock('@/lib/hooks/use-translation', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown>) => (options ? `${key} ${JSON.stringify(options)}` : key),
+  }),
+}))
 
 describe('EpisodeResearchReceipt', () => {
   it('labels the receipt provenance plainly, without an internal phase label', () => {
     render(<EpisodeResearchReceipt selectionSummary={{ version: 1, total_count: 1, included_count: 1 }} />)
 
-    expect(screen.getByText('Provenance')).toBeVisible()
+    expect(screen.getByText('podcasts.episodeResearchReceipt.provenance')).toBeVisible()
     expect(document.body).not.toHaveTextContent(/Phase[- ]\d/)
   })
 
@@ -30,10 +37,10 @@ describe('EpisodeResearchReceipt', () => {
       />,
     )
 
-    expect(screen.getByRole('heading', { name: 'Research receipt' })).toBeVisible()
-    expect(screen.getByText('2 of 2 sources included')).toBeVisible()
-    expect(screen.getByText('2 external read-only')).toBeVisible()
-    expect(screen.getByText('1 local route recorded')).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'podcasts.episodeResearchReceipt.title' })).toBeVisible()
+    expect(screen.getByText('podcasts.episodeResearchReceipt.sourcesIncluded {"included":2,"total":2}')).toBeVisible()
+    expect(screen.getByText('podcasts.episodeResearchReceipt.externalReadOnly {"external":2}')).toBeVisible()
+    expect(screen.getByText('podcasts.episodeResearchReceipt.routesRecordedOne {"count":1}')).toBeVisible()
     expect(screen.getByText('Research team')).toBeVisible()
     expect(screen.queryByText('Research/Private.md')).not.toBeInTheDocument()
     expect(screen.queryByText('local-podcast')).not.toBeInTheDocument()

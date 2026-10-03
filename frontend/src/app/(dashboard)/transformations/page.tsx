@@ -29,7 +29,7 @@ export default function TransformationsPage() {
         route="/transformations"
         description={t('transformations.desc')}
         actions={
-          <Button variant="outline" size="sm" aria-label="Refresh transformations" onClick={() => refetch()}>
+          <Button variant="outline" size="sm" aria-label={t('transformations.transformationsPage.refresh')} onClick={() => refetch()}>
             <RefreshCw className="h-4 w-4" />
           </Button>
         }

@@ -3,6 +3,7 @@
 import { ExternalLink, Quote, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { useTranslation } from '@/lib/hooks/use-translation'
 
 export interface CitationEvidence {
   sourceId: string
@@ -47,18 +48,19 @@ export function CitationDrawer({
   evidence: CitationEvidence | null
   onClose: () => void
 }) {
+  const { t } = useTranslation()
   if (!evidence) return null
 
   return (
     <section
-      aria-label="Citation evidence"
+      aria-label={t('workspace.citationDrawer.title')}
       className="mt-4 rounded-md border border-[var(--dn-evidence)] bg-background p-3 shadow-[var(--dn-elevation-low)]"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-sm font-medium">
             <Quote className="h-4 w-4 text-[var(--dn-evidence)]" aria-hidden="true" />
-            Citation evidence
+            {t('workspace.citationDrawer.title')}
           </div>
           <div className="mt-1 truncate text-xs text-muted-foreground">{evidence.title}</div>
         </div>
@@ -66,7 +68,7 @@ export function CitationDrawer({
           type="button"
           variant="ghost"
           size="sm"
-          aria-label="Close citation evidence"
+          aria-label={t('workspace.citationDrawer.close')}
           onClick={onClose}
         >
           <X className="h-4 w-4" aria-hidden="true" />
@@ -75,12 +77,12 @@ export function CitationDrawer({
 
       <dl className="mt-3 space-y-2 text-xs">
         <div>
-          <dt className="font-medium text-muted-foreground">Source ID</dt>
+          <dt className="font-medium text-muted-foreground">{t('workspace.citationDrawer.sourceId')}</dt>
           <dd className="mt-1 break-all text-foreground">{evidence.sourceId}</dd>
         </div>
         {evidence.location && (
           <div>
-            <dt className="font-medium text-muted-foreground">Location</dt>
+            <dt className="font-medium text-muted-foreground">{t('workspace.citationDrawer.location')}</dt>
             <dd className="mt-1 text-foreground">{evidence.location}</dd>
           </div>
         )}
@@ -92,14 +94,14 @@ export function CitationDrawer({
         </blockquote>
       ) : (
         <div className="mt-3 rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-          No quote preview is stored for this citation yet.
+          {t('workspace.citationDrawer.noPreview')}
         </div>
       )}
 
       <Button asChild variant="outline" size="sm" className="mt-3 w-full">
         <a href={sourceHref(evidence.sourceId)}>
           <ExternalLink className="h-4 w-4" aria-hidden="true" />
-          Open source record
+          {t('workspace.citationDrawer.openSource')}
         </a>
       </Button>
     </section>

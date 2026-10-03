@@ -27,6 +27,7 @@ import {
 import {
   DEFAULT_THEME_ID,
   THEME_CATALOG,
+  themeLabel,
   THEME_GROUPS,
   isThemeId,
   type ThemeId,
@@ -41,6 +42,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Palette, Check } from 'lucide-react'
+
+import { useTranslation } from '@/lib/hooks/use-translation'
 
 interface ThemeBridge {
   setTheme?: (theme: string) => void
@@ -58,6 +61,7 @@ interface ThemeSwitcherProps {
 }
 
 export function ThemeSwitcher({ iconOnly = false }: ThemeSwitcherProps) {
+  const { t } = useTranslation()
   const [activeTheme, setActiveTheme] = useState<ThemeId>(DEFAULT_THEME_ID)
 
   // The persisted catalog selection is the authority for the picker. The
@@ -142,12 +146,12 @@ export function ThemeSwitcher({ iconOnly = false }: ThemeSwitcherProps) {
               ? 'h-9 w-full sidebar-menu-item'
               : 'w-full justify-start gap-2 sidebar-menu-item'
           }
-          aria-label="Switch theme"
+          aria-label={t('workspace.themeSwitcher.switchTheme')}
           // v0.8.130 — Phase 4b: icon-only buttons carry a tooltip.
-          title={iconOnly ? 'Switch theme' : undefined}
+          title={iconOnly ? t('workspace.themeSwitcher.switchTheme') : undefined}
         >
           <Palette className="h-[1.2rem] w-[1.2rem]" aria-hidden="true" />
-          {!iconOnly && <span>Theme</span>}
+          {!iconOnly && <span>{t('workspace.themeSwitcher.theme')}</span>}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="max-h-[min(32rem,var(--radix-dropdown-menu-content-available-height))] min-w-56">
@@ -158,7 +162,7 @@ export function ThemeSwitcher({ iconOnly = false }: ThemeSwitcherProps) {
             <div key={group.id}>
               {groupIndex > 0 && <DropdownMenuSeparator />}
               <DropdownMenuLabel className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                {group.label}
+                {t(group.labelKey)}
               </DropdownMenuLabel>
               {themes.map(theme => (
                 <DropdownMenuItem
@@ -180,8 +184,8 @@ export function ThemeSwitcher({ iconOnly = false }: ThemeSwitcherProps) {
                       style={{ background: theme.preview.primary }}
                     />
                   </span>
-                  <span className="flex-1">{theme.label}</span>
-                  {activeTheme === theme.id && <span className="sr-only">Current theme</span>}
+                  <span className="flex-1">{themeLabel(theme, t)}</span>
+                  {activeTheme === theme.id && <span className="sr-only">{t('workspace.themeSwitcher.currentTheme')}</span>}
                   {activeTheme === theme.id && <Check className="h-3 w-3" aria-hidden="true" />}
                 </DropdownMenuItem>
               ))}

@@ -1,5 +1,14 @@
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+// Keys come back unchanged; interpolated values are appended so the runtime stays
+// visible in the accessible name.
+vi.mock('@/lib/hooks/use-translation', () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: Record<string, unknown>) =>
+      opts ? `${key} ${Object.values(opts).join(' ')}` : key,
+  }),
+}))
 
 import { ModelFleetBadge } from './ModelFleetBadge'
 
@@ -20,12 +29,12 @@ describe('ModelFleetBadge', () => {
     render(<ModelFleetBadge runtime="transformers" />)
 
     expect(screen.getByText('Transformers')).toBeInTheDocument()
-    expect(screen.getByLabelText('Transformers local model runtime')).toBeInTheDocument()
+    expect(screen.getByLabelText('workspace.modelFleetBadge.ariaLabel Transformers')).toBeInTheDocument()
   })
 
   it('uses a generic local runtime label for unknown inventory rows', () => {
     render(<ModelFleetBadge runtime="other" />)
 
-    expect(screen.getByText('Local')).toBeInTheDocument()
+    expect(screen.getByText('workspace.modelFleetBadge.runtimeLocal')).toBeInTheDocument()
   })
 })

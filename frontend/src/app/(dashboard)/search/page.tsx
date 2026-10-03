@@ -152,16 +152,16 @@ export default function SearchPage() {
         synthesis_model: customModels?.finalAnswer || modelDefaults?.default_reasoning_model || modelDefaults?.default_chat_model || undefined,
       })
       setDeepResearchResult(data)
-      toast.success('Deep Research brief ready')
+      toast.success(t('searchPage.searchPage.deepResearchReady'))
     } catch (err: unknown) {
       markErrorReported(err) // v0.8.130 — this caller reports the failure itself
       console.error('Deep research error:', err)
       // v0.8.130 — a readable message, not axios's "Request failed with status code 500".
-      toast.error('Deep Research failed', { description: getApiErrorMessage(err, t) })
+      toast.error(t('searchPage.searchPage.deepResearchFailed'), { description: getApiErrorMessage(err, t) })
     } finally {
       setIsDeepResearching(false)
     }
-  }, [askQuestion, customModels, modelDefaults])
+  }, [askQuestion, customModels, modelDefaults, t])
 
   // v0.8.117 — named handlers for AskPanel/DeepResearchPanel, same
   // logic as the inline closures they replace.
@@ -169,18 +169,18 @@ export default function SearchPage() {
     if (!deepResearchResult) return
     void navigator.clipboard.writeText(deepResearchResult.research_brief)
     setCopiedBrief(true)
-    toast.success('Research brief copied')
+    toast.success(t('searchPage.searchPage.briefCopied'))
     setTimeout(() => setCopiedBrief(false), 2000)
-  }, [deepResearchResult])
+  }, [deepResearchResult, t])
 
   const handleSaveDeepResearchNote = useCallback(() => {
     if (!deepResearchResult) return
     setSavePayload({
-      question: `Deep Research: ${deepResearchResult.objective}`,
+      question: t('searchPage.searchPage.deepResearchQuestion', { objective: deepResearchResult.objective }),
       answer: deepResearchResult.research_brief,
     })
     setShowSaveDialog(true)
-  }, [deepResearchResult])
+  }, [deepResearchResult, t])
 
   const handleSaveAnswer = useCallback(() => {
     if (!ask.finalAnswer) return

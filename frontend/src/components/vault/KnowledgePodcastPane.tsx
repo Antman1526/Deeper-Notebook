@@ -2,6 +2,7 @@
 
 import dynamic from 'next/dynamic'
 import { useLocalModelSettings, useModelRoutePlan } from '@/lib/hooks/use-local-models'
+import { useTranslation } from '@/lib/hooks/use-translation'
 import type { ModelRoutePlan } from '@/lib/api/local-models'
 
 type StudioRouteRole = 'podcast_outline' | 'podcast_script' | 'text_to_speech' | 'speech_to_text'
@@ -9,15 +10,20 @@ function isStudioRouteRole(role: ModelRoutePlan['role']): role is StudioRouteRol
   return role === 'podcast_outline' || role === 'podcast_script' || role === 'text_to_speech' || role === 'speech_to_text'
 }
 
+function PodcastStudioLoading() {
+  const { t } = useTranslation()
+  return (
+    <section aria-label={t('podcasts.knowledgePodcastPane.studioTitle')} className="rounded-md border p-4" aria-busy="true">
+      <p className="text-sm text-muted-foreground">{t('podcasts.knowledgePodcastPane.loadingStudio')}</p>
+    </section>
+  )
+}
+
 const LazyPodcastStudio = dynamic(
   () => import('@/components/podcasts/PodcastStudio').then((module) => module.PodcastStudio),
   {
     ssr: false,
-    loading: () => (
-      <section aria-label="Podcast Intelligence Studio" className="rounded-md border p-4" aria-busy="true">
-        <p className="text-sm text-muted-foreground">Loading Podcast Intelligence Studio…</p>
-      </section>
-    ),
+    loading: () => <PodcastStudioLoading />,
   },
 )
 
@@ -26,6 +32,7 @@ interface KnowledgePodcastPaneProps {
 }
 
 export function KnowledgePodcastPane({ seedDocumentIds }: KnowledgePodcastPaneProps) {
+  const { t } = useTranslation()
   const settings = useLocalModelSettings()
   const routeRequest = (role: 'evidence_extraction' | 'podcast_outline' | 'podcast_script' | 'claim_verification' | 'text_to_speech', modalities: Array<'text' | 'audio'>) => settings.data ? ({
     role, modalities, execution_policy: settings.data.execution_policy, compute_profile: settings.data.compute_profile,
@@ -37,11 +44,11 @@ export function KnowledgePodcastPane({ seedDocumentIds }: KnowledgePodcastPanePr
   const verification = useModelRoutePlan(routeRequest('claim_verification', ['text']))
   const voice = useModelRoutePlan(routeRequest('text_to_speech', ['audio']))
   const plans = [
-    ['Evidence route', evidence], ['Storyboard route', storyboard], ['Script route', script], ['Verification route', verification], ['Voice route', voice],
+    [t('podcasts.knowledgePodcastPane.evidenceRoute'), evidence], [t('podcasts.knowledgePodcastPane.storyboardRoute'), storyboard], [t('podcasts.knowledgePodcastPane.scriptRoute'), script], [t('podcasts.knowledgePodcastPane.verificationRoute'), verification], [t('podcasts.knowledgePodcastPane.voiceRoute'), voice],
   ] as const
 
   return (
-    <section aria-label="Knowledge Podcast" className="space-y-3">
+    <section aria-label={t('podcasts.knowledgePodcastPane.title')} className="space-y-3">
       <LazyPodcastStudio
         seedDocumentIds={seedDocumentIds}
         modelPlans={plans.map(([label, route]) => ({

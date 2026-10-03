@@ -5,6 +5,7 @@ import { Bookmark, CalendarDays, Dices, FolderKanban, PanelLeftClose, PanelLeftO
 
 import { Button } from '@/components/ui/button'
 import type { KnowledgeWorkspaceNavigation } from '@/lib/api/knowledge-workspace'
+import { useTranslation } from '@/lib/hooks/use-translation'
 
 type UtilityMode = KnowledgeWorkspaceNavigation['utilityMode']
 
@@ -33,6 +34,7 @@ export function KnowledgeUtilityRail({
   onRandomNote,
   onBookmarkCurrent,
 }: KnowledgeUtilityRailProps) {
+  const { t } = useTranslation()
   const [displayMode, setDisplayMode] = useState(mode)
   const pointerFocusRef = useRef<HTMLElement | null>(null)
   const collapseButtonRef = useRef<HTMLButtonElement>(null)
@@ -49,14 +51,14 @@ export function KnowledgeUtilityRail({
   }
   const capturePointerFocus = () => { pointerFocusRef.current = document.activeElement as HTMLElement | null }
   const modes: Array<{ id: UtilityMode; label: string }> = [
-    { id: 'sources', label: 'Sources' },
-    { id: 'bookmarks', label: 'Bookmarks' },
-    { id: 'workspaces', label: 'Workspaces' },
+    { id: 'sources', label: t('knowledge.navigation.sources') },
+    { id: 'bookmarks', label: t('knowledge.navigation.bookmarks') },
+    { id: 'workspaces', label: t('knowledge.navigation.workspaces') },
   ]
 
   if (!sidebarVisible) {
     return (
-      <nav aria-label="Knowledge utilities" className="flex items-center justify-between p-2">
+      <nav aria-label={t('knowledge.knowledgeUtilityRail.utilities')} className="flex items-center justify-between p-2">
         {onCloseDrawer && drawerCloseLabel ? (
           <Button
             type="button"
@@ -74,7 +76,7 @@ export function KnowledgeUtilityRail({
           type="button"
           size="icon"
           variant="ghost"
-          aria-label="Restore utility sidebar"
+          aria-label={t('knowledge.knowledgeUtilityRail.restoreSidebar')}
           onClick={() => onNavigationChange({ sidebarVisible: true })}
         >
           <PanelLeftOpen aria-hidden="true" className="h-4 w-4" />
@@ -84,7 +86,7 @@ export function KnowledgeUtilityRail({
   }
 
   return (
-    <nav aria-label={displayMode === 'bookmarks' ? 'Bookmarks' : 'Knowledge utilities'} className="space-y-3">
+    <nav aria-label={displayMode === 'bookmarks' ? t('knowledge.navigation.bookmarks') : t('knowledge.knowledgeUtilityRail.utilities')} className="space-y-3">
       {onCloseDrawer && drawerCloseLabel ? (
         <div className="flex items-center justify-end">
           <Button
@@ -100,24 +102,24 @@ export function KnowledgeUtilityRail({
         </div>
       ) : null}
       <div className="grid grid-cols-2 gap-2">
-        <Button type="button" size="sm" variant="outline" className="h-auto min-h-11 min-w-0 whitespace-normal py-2 leading-tight" onClick={onToday}>
+        <Button type="button" size="sm" variant="outline" className="h-auto min-h-11 min-w-0 shrink whitespace-normal py-2 leading-tight hyphens-auto wrap-anywhere" onClick={onToday}>
           <CalendarDays aria-hidden="true" className="h-4 w-4" />
-          Today
+          {t('knowledge.knowledgeUtilityRail.today')}
         </Button>
-        <Button type="button" size="sm" variant="outline" className="h-auto min-h-11 min-w-0 whitespace-normal py-2 leading-tight" onPointerDown={capturePointerFocus} onClick={() => selectMode('bookmarks')}>
+        <Button type="button" size="sm" variant="outline" className="h-auto min-h-11 min-w-0 shrink whitespace-normal py-2 leading-tight hyphens-auto wrap-anywhere" onPointerDown={capturePointerFocus} onClick={() => selectMode('bookmarks')}>
           <Bookmark aria-hidden="true" className="h-4 w-4" />
-          Bookmarks
+          {t('knowledge.navigation.bookmarks')}
         </Button>
-        <Button type="button" size="sm" variant="outline" className="h-auto min-h-11 min-w-0 whitespace-normal py-2 leading-tight" onClick={onRandomNote} disabled={randomPending}>
+        <Button type="button" size="sm" variant="outline" className="h-auto min-h-11 min-w-0 shrink whitespace-normal py-2 leading-tight hyphens-auto wrap-anywhere" onClick={onRandomNote} disabled={randomPending}>
           <Dices aria-hidden="true" className="h-4 w-4" />
-          Random Note
+          {t('knowledge.knowledgeUtilityRail.randomNote')}
         </Button>
-        <Button type="button" size="sm" variant="outline" className="h-auto min-h-11 min-w-0 whitespace-normal py-2 leading-tight" onPointerDown={capturePointerFocus} onClick={() => selectMode('workspaces')}>
+        <Button type="button" size="sm" variant="outline" className="h-auto min-h-11 min-w-0 shrink whitespace-normal py-2 leading-tight hyphens-auto wrap-anywhere" onPointerDown={capturePointerFocus} onClick={() => selectMode('workspaces')}>
           <FolderKanban aria-hidden="true" className="h-4 w-4" />
-          Workspaces
+          {t('knowledge.navigation.workspaces')}
         </Button>
       </div>
-      <div role="tablist" aria-label="Knowledge utility mode" className="flex rounded-md border p-1">
+      <div role="tablist" aria-label={t('knowledge.knowledgeUtilityRail.modeLabel')} className="flex rounded-md border p-1">
         {modes.map(({ id, label }) => (
           <Button
             key={id}
@@ -128,7 +130,7 @@ export function KnowledgeUtilityRail({
             aria-selected={displayMode === id}
             onPointerDown={capturePointerFocus}
             onClick={() => selectMode(id)}
-            className="h-auto min-h-11 min-w-0 flex-1 whitespace-normal px-1 py-2 leading-tight"
+            className="h-auto min-h-11 min-w-0 flex-1 whitespace-normal px-1 py-2 leading-tight hyphens-auto wrap-anywhere"
           >
             {label}
           </Button>
@@ -141,16 +143,16 @@ export function KnowledgeUtilityRail({
           variant="outline"
           onClick={onBookmarkCurrent}
           disabled={!canBookmarkCurrent}
-          className="h-auto min-h-11 min-w-0 whitespace-normal py-2 leading-tight"
+          className="h-auto min-h-11 min-w-0 shrink whitespace-normal py-2 leading-tight hyphens-auto wrap-anywhere"
         >
           <Bookmark aria-hidden="true" className="h-4 w-4" />
-          Bookmark Current Target
+          {t('knowledge.knowledgeUtilityRail.bookmarkCurrentTarget')}
         </Button>
         <Button
           type="button"
           size="icon"
           variant="ghost"
-          aria-label={sidebarVisible ? 'Collapse utility sidebar' : 'Restore utility sidebar'}
+          aria-label={sidebarVisible ? t('knowledge.knowledgeUtilityRail.collapseSidebar') : t('knowledge.knowledgeUtilityRail.restoreSidebar')}
           ref={collapseButtonRef}
           onClick={() => onNavigationChange({ sidebarVisible: false })}
         >
@@ -159,7 +161,7 @@ export function KnowledgeUtilityRail({
       </div>
       {!canBookmarkCurrent && (
         <p className="text-xs text-muted-foreground">
-          The active page has no unified document ID.
+          {t('knowledge.knowledgeUtilityRail.noDocumentId')}
         </p>
       )}
     </nav>

@@ -561,7 +561,7 @@ const LOWER_CONTENT_SELECTOR_BY_ROUTE = {
   '/capture': 'main input[aria-label="Capture folder path"]',
   '/studio': 'main #studio-links',
   '/podcasts': 'main [role="tabpanel"][data-state="active"]',
-  '/podcasts/studio': 'main [aria-label="Production Review"]',
+  '/podcasts/studio': 'main [aria-label="Production review"]',
   '/study': 'main section[aria-labelledby="study-review-heading"] > :last-child',
   '/study/plans/[planId]': 'main [role="tabpanel"][data-state="active"]',
   '/transformations': 'main [role="tabpanel"][data-state="active"]',

@@ -88,7 +88,7 @@ export function NotebookList({
           <Button
             variant="ghost"
             size="sm"
-            aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${title}`}
+            aria-label={isExpanded ? t('notebooks.notebookList.collapseTitle', { title }) : t('notebooks.notebookList.expandTitle', { title })}
             onClick={() => setIsExpanded(!isExpanded)}
           >
             {isExpanded ? (

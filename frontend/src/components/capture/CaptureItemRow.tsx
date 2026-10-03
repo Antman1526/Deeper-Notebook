@@ -11,6 +11,7 @@ import {
   type CaptureRoutePreview,
 } from '@/lib/api/capture'
 import type { SourceListResponse } from '@/lib/types/api'
+import { useTranslation } from '@/lib/hooks/use-translation'
 
 const stateVariant = (state: CaptureItem['state']) =>
   state === 'failed' ? 'destructive' : state === 'imported' ? 'secondary' : 'outline'
@@ -45,6 +46,7 @@ function sourceFromLinkedItem(item: CaptureItem): SourceListResponse | null {
 }
 
 export function CaptureItemRow({ item, showVisualCover = false }: { item: CaptureItem; showVisualCover?: boolean }) {
+  const { t } = useTranslation()
   const [preview, setPreview] = useState<CaptureRoutePreview | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isRouting, setIsRouting] = useState(false)
@@ -60,9 +62,7 @@ export function CaptureItemRow({ item, showVisualCover = false }: { item: Captur
       setPreview(await captureApi.route(`${item.root_path}/${item.relative_path}`))
     } catch (error) {
       markErrorReported(error) // v0.8.130 — this caller reports the failure itself
-      setError(
-        'This local file could not be prepared for review. It was not imported or moved.'
-      )
+      setError(t('capture.captureItemRow.prepareError'))
     } finally {
       setIsRouting(false)
     }
@@ -80,8 +80,8 @@ export function CaptureItemRow({ item, showVisualCover = false }: { item: Captur
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">{item.filename}</p>
           <p className="truncate text-xs text-muted-foreground">
-            {item.relative_path} · {item.extension || 'unknown type'}
-            {item.byte_size ? ` · ${(item.byte_size / 1024).toFixed(1)} KB` : ''}
+            {item.relative_path} · {item.extension || t('capture.captureItemRow.unknownType')}
+            {item.byte_size ? ` · ${t('capture.captureItemRow.sizeKb', { size: (item.byte_size / 1024).toFixed(1) })}` : ''}
           </p>
           {item.reason ? (
             <p className="mt-1 text-xs text-destructive">{item.reason}</p>
@@ -101,7 +101,7 @@ export function CaptureItemRow({ item, showVisualCover = false }: { item: Captur
               className="rounded-xl duration-150 gap-1.5 text-xs"
             >
               <AudioLines className="h-3.5 w-3.5 text-primary" />
-              {isRouting ? 'Preparing' : 'Review route'}
+              {isRouting ? t('capture.captureItemRow.preparing') : t('capture.captureItemRow.reviewRoute')}
             </Button>
           ) : null}
         </div>
@@ -115,8 +115,8 @@ export function CaptureItemRow({ item, showVisualCover = false }: { item: Captur
         <div className="mt-3 border-l-2 border-primary/40 pl-3 text-sm">
           <p className="font-medium">
             {preview.state === 'ready'
-              ? 'Local transcript preview'
-              : 'Route unavailable'}
+              ? t('capture.captureItemRow.transcriptPreview')
+              : t('capture.captureItemRow.routeUnavailable')}
           </p>
           {preview.transcript ? (
             <p className="mt-1 whitespace-pre-wrap text-muted-foreground">
@@ -125,8 +125,8 @@ export function CaptureItemRow({ item, showVisualCover = false }: { item: Captur
           ) : (
             <p className="mt-1 text-muted-foreground">
               {preview.reason === 'no_default_speech_to_text_model'
-                ? 'Choose a local speech-to-text model to generate a transcript.'
-                : 'The configured local speech-to-text model is currently unavailable.'}
+                ? t('capture.captureItemRow.chooseSttModel')
+                : t('capture.captureItemRow.sttUnavailable')}
             </p>
           )}
           {preview.notebook_suggestions.length ? (
@@ -145,8 +145,7 @@ export function CaptureItemRow({ item, showVisualCover = false }: { item: Captur
             </ul>
           ) : null}
           <p className="mt-2 text-xs text-muted-foreground">
-            Review only. The original file remains where it is until you
-            explicitly import it.
+            {t('capture.captureItemRow.reviewOnly')}
           </p>
         </div>
       ) : null}

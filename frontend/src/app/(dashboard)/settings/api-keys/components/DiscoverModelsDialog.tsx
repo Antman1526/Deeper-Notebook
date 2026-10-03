@@ -58,7 +58,7 @@ import {
   PROVIDER_DISPLAY_NAMES,
   PROVIDER_MODALITIES,
   TYPE_ICONS,
-  TYPE_LABELS,
+  TYPE_LABEL_KEYS,
 } from '../constants'
 
 interface DiscoverModelsDialogProps {
@@ -234,7 +234,7 @@ export function DiscoverModelsDialog({
                     <SelectItem key={type} value={type}>
                       <div className="flex items-center gap-2">
                         {TYPE_ICONS[type]}
-                        {TYPE_LABELS[type]}
+                        {t(TYPE_LABEL_KEYS[type])}
                       </div>
                     </SelectItem>
                   ))}

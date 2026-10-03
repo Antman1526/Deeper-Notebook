@@ -127,8 +127,8 @@ describe('LuminousAppShell', () => {
       </LuminousAppShell>,
     )
 
-    expect(screen.getByRole('navigation', { name: 'Primary tools' })).toBeVisible()
-    expect(screen.getByRole('navigation', { name: 'Notebook index' })).toBeVisible()
+    expect(screen.getByRole('navigation', { name: 'workspace.instrumentDock.ariaLabel' })).toBeVisible()
+    expect(screen.getByRole('navigation', { name: 'workspace.adaptiveNavigator.ariaLabel' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Create' })).toBeEnabled()
     expect(screen.getByText('Deeper Notebook', { selector: '.dn-command-title' })).toBeVisible()
     expect(screen.getByTestId('global-audio-player')).toBeInTheDocument()
@@ -254,19 +254,19 @@ describe('LuminousAppShell', () => {
 
     expect(screen.getByTestId('page-content')).toBeInTheDocument()
     expect(document.documentElement.dataset.dnFocusMode).toBe('true')
-    const exit = screen.getByRole('button', { name: 'Exit Focus mode' })
+    const exit = screen.getByRole('button', { name: 'workspace.displayPreferencesPanel.exitFocusMode' })
     expect(exit).toBeVisible()
     exit.focus()
     expect(exit).toHaveFocus()
 
     fireEvent.keyDown(document, { key: 'Escape' })
-    expect(screen.getByRole('button', { name: 'Enter Focus mode' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'workspace.displayPreferencesPanel.enterFocusMode' })).toBeInTheDocument()
   })
 
   it('keeps navigation and utility paths keyboard reachable while Focus mode is active', () => {
     render(<LuminousAppShell><div data-testid="page-content">Page content</div></LuminousAppShell>)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Enter Focus mode' }))
+    fireEvent.click(screen.getByRole('button', { name: 'workspace.displayPreferencesPanel.enterFocusMode' }))
 
     const navigationLink = screen.getByRole('link', { name: 'navigation.sources' })
     const utility = screen.getAllByRole('button', { name: 'Sign out' })[0]

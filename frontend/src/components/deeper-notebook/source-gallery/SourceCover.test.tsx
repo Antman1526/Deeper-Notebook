@@ -1,6 +1,15 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
+// Keys come back unchanged; interpolated values are appended so names that
+// embed a source title stay distinguishable.
+vi.mock('@/lib/hooks/use-translation', () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: Record<string, unknown>) =>
+      opts ? `${key} ${Object.values(opts).join(' ')}` : key,
+  }),
+}))
+
 import { SourceCover } from './SourceCover'
 import type { SourceListResponse } from '@/lib/types/api'
 import type { SourceVisualReceipt, SourceVisualStatus } from '@/lib/types/source-visuals'
@@ -45,18 +54,18 @@ function source(overrides: Partial<SourceListResponse> = {}): SourceListResponse
 }
 
 function openActions(title = 'Field notes'): void {
-  fireEvent.click(screen.getByRole('button', { name: `Actions for ${title}` }))
+  fireEvent.click(screen.getByRole('button', { name: `workspace.sourceCoverActions.actionsLabel ${title}` }))
 }
 
 describe('SourceCover', () => {
   it.each([
-    ['embedded', { page: 1 }, 'Embedded image'],
-    ['video_frame', { timestamp_ms: 4000 }, 'Video frame'],
-    ['audio_artwork', { resource_id: 'cover' }, 'Embedded artwork'],
+    ['embedded', { page: 1 }, 'artifacts.sourceVisualProvenance.origin.embedded'],
+    ['video_frame', { timestamp_ms: 4000 }, 'artifacts.sourceVisualProvenance.origin.videoFrame'],
+    ['audio_artwork', { resource_id: 'cover' }, 'artifacts.sourceVisualProvenance.origin.audioArtwork'],
   ] as const)('renders %s provenance and a useful image name', (origin, source_locator, originLabel) => {
     render(<SourceCover source={source({ visual: visual({ origin, source_locator } as Partial<SourceVisualReceipt>) })} priority />)
 
-    const image = screen.getByRole('img', { name: `Field notes — ${originLabel}: Neutral source-derived cover` })
+    const image = screen.getByRole('img', { name: `workspace.sourceCover.imageAlt Field notes ${originLabel} Neutral source-derived cover` })
     expect(image).toHaveAttribute('src', `/api/sources/source%3Aone/visual?v=${hash}`)
     expect(image).toHaveAttribute('width', '640')
     expect(image).toHaveAttribute('height', '360')
@@ -86,7 +95,7 @@ describe('SourceCover', () => {
 
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
     expect(screen.getByText('Field notes')).toBeVisible()
-    expect(screen.getByText('Upload')).toBeVisible()
+    expect(screen.getByText('sources.kinds.upload')).toBeVisible()
     expect(container.querySelector('[aria-hidden="true"]')).toBeInTheDocument()
 
     rerender(<SourceCover source={source({ visual: { asset_url: 'https://untrusted.invalid/image.webp' } as never })} />)
@@ -128,10 +137,10 @@ describe('SourceCover', () => {
   })
 
   it.each([
-    ['queued', 'Visual cover queued'],
-    ['processing', 'Preparing visual cover'],
-    ['failed', 'Visual cover unavailable'],
-    ['unavailable', 'Visual cover unavailable'],
+    ['queued', 'workspace.sourceCover.statusQueued'],
+    ['processing', 'workspace.sourceCover.statusProcessing'],
+    ['failed', 'workspace.sourceCover.statusUnavailable'],
+    ['unavailable', 'workspace.sourceCover.statusUnavailable'],
   ] as const)('uses safe %s status copy after reload without exposing raw error codes', (state, copy) => {
     const visual_status: SourceVisualStatus = {
       state,
@@ -151,23 +160,23 @@ describe('SourceCover', () => {
     const { rerender } = render(<SourceCover source={source({ visual: null })} onRefresh={onRefresh} onRemove={onRemove} />)
 
     openActions()
-    const refresh = screen.getByRole('menuitem', { name: 'Refresh visual' })
+    const refresh = screen.getByRole('menuitem', { name: 'workspace.sourceCoverActions.refreshVisual' })
     fireEvent.click(refresh)
     expect(onRefresh).toHaveBeenCalledOnce()
     expect(onRefresh).toHaveBeenCalledWith('source:one')
     openActions()
-    expect(screen.getByRole('menuitem', { name: 'Refresh visual' })).toHaveAttribute('aria-disabled', 'true')
-    expect(screen.getByRole('menuitem', { name: 'Remove visual' })).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByRole('menuitem', { name: 'workspace.sourceCoverActions.refreshVisual' })).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByRole('menuitem', { name: 'workspace.sourceCoverActions.removeVisual' })).toHaveAttribute('aria-disabled', 'true')
     fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
 
     rerender(<SourceCover source={source({ visual: null })} onRefresh={onRefresh} onRemove={onRemove} />)
     openActions()
-    expect(screen.getByRole('menuitem', { name: 'Refresh visual' })).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByRole('menuitem', { name: 'workspace.sourceCoverActions.refreshVisual' })).toHaveAttribute('aria-disabled', 'true')
     fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
 
     rerender(<SourceCover source={source({ id: 'source:two', title: 'Second source', visual: null })} onRefresh={onRefresh} onRemove={onRemove} />)
     openActions('Second source')
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Remove visual' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'workspace.sourceCoverActions.removeVisual' }))
     expect(onRemove).toHaveBeenCalledOnce()
     expect(onRemove).toHaveBeenCalledWith('source:two')
   })
@@ -177,7 +186,7 @@ describe('SourceCover', () => {
     render(<SourceCover source={source({ visual: null })} onRefresh={onRefresh} />)
 
     openActions()
-    const refresh = screen.getByRole('menuitem', { name: 'Refresh visual' })
+    const refresh = screen.getByRole('menuitem', { name: 'workspace.sourceCoverActions.refreshVisual' })
     act(() => {
       refresh.click()
       refresh.click()
@@ -196,7 +205,7 @@ describe('SourceCover', () => {
     render(<SourceCover source={source({ visual: null })} onRefresh={onRefresh} />)
 
     openActions()
-    const refresh = screen.getByRole('menuitem', { name: 'Refresh visual' })
+    const refresh = screen.getByRole('menuitem', { name: 'workspace.sourceCoverActions.refreshVisual' })
     fireEvent.click(refresh)
     fireEvent.click(refresh)
     expect(onRefresh).toHaveBeenCalledOnce()
@@ -207,23 +216,23 @@ describe('SourceCover', () => {
     })
     await waitFor(() => {
       openActions()
-      expect(screen.getByRole('menuitem', { name: 'Refresh visual' })).not.toHaveAttribute('aria-disabled', 'true')
+      expect(screen.getByRole('menuitem', { name: 'workspace.sourceCoverActions.refreshVisual' })).not.toHaveAttribute('aria-disabled', 'true')
     })
 
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Refresh visual' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'workspace.sourceCoverActions.refreshVisual' }))
     expect(onRefresh).toHaveBeenCalledTimes(2)
     await act(async () => {
       await Promise.resolve()
     })
     openActions()
-    expect(screen.getByRole('menuitem', { name: 'Refresh visual' })).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByRole('menuitem', { name: 'workspace.sourceCoverActions.refreshVisual' })).toHaveAttribute('aria-disabled', 'true')
   })
 
   it('uses the primary cover button for exact source navigation', () => {
     const onOpen = vi.fn()
     render(<SourceCover source={source({ title: 'First source', visual: null })} onOpen={onOpen} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open First source' }))
+    fireEvent.click(screen.getByRole('button', { name: 'workspace.sourceCover.openLabel First source' }))
 
     expect(onOpen).toHaveBeenCalledOnce()
     expect(onOpen).toHaveBeenCalledWith('source:one')
@@ -232,13 +241,13 @@ describe('SourceCover', () => {
   it('keeps the semantic Open button free of block content', () => {
     render(<SourceCover source={source()} onOpen={vi.fn()} />)
 
-    expect(screen.getByRole('button', { name: 'Open Field notes' }).querySelectorAll('div, p')).toHaveLength(0)
+    expect(screen.getByRole('button', { name: 'workspace.sourceCover.openLabel Field notes' }).querySelectorAll('div, p')).toHaveLength(0)
   })
 
   it('renders no action menu for a compact actionless cover', () => {
     render(<SourceCover source={source({ visual: null })} variant="compact" />)
 
-    expect(screen.queryByRole('button', { name: /Actions for/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /actionsLabel/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Open/i })).not.toBeInTheDocument()
   })
 
@@ -274,14 +283,14 @@ describe('disabled capability sentinel', () => {
         onRemove={vi.fn()}
       />,
     )
-    expect(screen.queryByRole('button', { name: /refresh visual/i })).toBeNull()
-    expect(screen.queryByRole('button', { name: /remove visual/i })).toBeNull()
-    expect(screen.getByRole('button', { name: 'Open Field notes' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /refreshVisual/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /removeVisual/i })).toBeNull()
+    expect(screen.getByRole('button', { name: 'workspace.sourceCover.openLabel Field notes' })).toBeTruthy()
   })
 
   it('says the feature is off instead of implying a cover might appear', () => {
     render(<SourceCover source={source({ visual: null, visual_status: disabledStatus })} />)
-    expect(screen.getByRole('status').textContent).toBe('Visual covers are turned off')
+    expect(screen.getByRole('status').textContent).toBe('workspace.sourceCover.statusDisabled')
   })
 
   it('still offers actions for a merely-unextracted visual (null status)', () => {
@@ -293,6 +302,6 @@ describe('disabled capability sentinel', () => {
       />,
     )
     openActions()
-    expect(screen.getByRole('menuitem', { name: 'Refresh visual' })).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: 'workspace.sourceCoverActions.refreshVisual' })).toBeTruthy()
   })
 })

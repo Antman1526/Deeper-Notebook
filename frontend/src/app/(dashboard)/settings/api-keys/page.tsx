@@ -63,7 +63,7 @@ import {
   TYPE_ICONS,
   TYPE_COLORS,
   TYPE_COLOR_INACTIVE,
-  TYPE_LABELS,
+  TYPE_LABEL_KEYS,
 } from './constants'
 import { DiscoverModelsDialog } from './components/DiscoverModelsDialog'
 import { SystemRouteFrame } from '@/components/deeper-notebook/route-frames/SystemRouteFrames'
@@ -187,7 +187,7 @@ function CredentialFormDialog({
               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder={`${PROVIDER_DISPLAY_NAMES[provider] || provider} Production`}
+              placeholder={t('settings.apiKeysPage.credentialNamePlaceholder', { provider: PROVIDER_DISPLAY_NAMES[provider] || provider })}
               disabled={isSubmitting}
             />
             <p className="text-xs text-muted-foreground">{t('apiKeys.configNameHint')}</p>
@@ -257,7 +257,7 @@ function CredentialFormDialog({
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs"
                   tabIndex={-1}
                 >
-                  {showApiKey ? 'Hide' : 'Show'}
+                  {showApiKey ? t('settings.apiKeysPage.hide') : t('settings.apiKeysPage.show')}
                 </button>
               </div>
               {isEditing && <p className="text-xs text-muted-foreground">{t('apiKeys.apiKeyEditHint')}</p>}
@@ -347,13 +347,13 @@ function CredentialItem({
   const defaultSlots: Record<string, string> = {}
   if (defaults) {
     const slotMap: Record<string, string | null | undefined> = {
-      'Chat': defaults.default_chat_model,
-      'Transform': defaults.default_transformation_model,
-      'Tools': defaults.default_tools_model,
-      'Large Ctx': defaults.large_context_model,
-      'Embedding': defaults.default_embedding_model,
-      'TTS': defaults.default_text_to_speech_model,
-      'STT': defaults.default_speech_to_text_model,
+      'settings.apiKeysPage.slotChat': defaults.default_chat_model,
+      'settings.apiKeysPage.slotTransform': defaults.default_transformation_model,
+      'settings.apiKeysPage.slotTools': defaults.default_tools_model,
+      'settings.apiKeysPage.slotLargeCtx': defaults.large_context_model,
+      'settings.apiKeysPage.slotEmbedding': defaults.default_embedding_model,
+      'settings.apiKeysPage.slotTts': defaults.default_text_to_speech_model,
+      'settings.apiKeysPage.slotStt': defaults.default_speech_to_text_model,
     }
     for (const [slot, modelId] of Object.entries(slotMap)) {
       if (modelId) defaultSlots[modelId] = slot
@@ -375,14 +375,14 @@ function CredentialItem({
                   className={`text-xs gap-0.5 px-1 py-0 ${activeTypes.has(mod as ModelType) ? (TYPE_COLORS[mod as ModelType] || '') : TYPE_COLOR_INACTIVE}`}
                 >
                   {TYPE_ICONS[mod as ModelType]}
-                  <span className="hidden sm:inline">{TYPE_LABELS[mod as ModelType] || mod}</span>
+                  <span className="hidden sm:inline">{TYPE_LABEL_KEYS[mod as ModelType] ? t(TYPE_LABEL_KEYS[mod as ModelType]) : mod}</span>
                 </Badge>
               ))}
             </div>
             {credential.has_api_key && (
               <Badge variant="outline" className="text-xs rounded-md border-border/70 bg-background/50">
                 <Key className="h-2.5 w-2.5 mr-0.5" />
-                Key
+                {t('settings.apiKeysPage.keyBadge')}
               </Badge>
             )}
           </div>
@@ -400,7 +400,7 @@ function CredentialItem({
               className="h-8 rounded-lg border border-border/50 bg-background/40 hover:bg-accent hover:border-border text-xs px-2.5 gap-1.5"
             >
               {isTestPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plug className="h-3.5 w-3.5" />}
-              <span className="hidden sm:inline">Test</span>
+              <span className="hidden sm:inline">{t('settings.apiKeysPage.test')}</span>
             </Button>
             <Button
               variant="ghost" size="sm"
@@ -410,7 +410,7 @@ function CredentialItem({
               className="h-8 rounded-lg border border-border/50 bg-background/40 hover:bg-accent hover:border-border text-xs px-2.5 gap-1.5"
             >
               <Bot className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Models</span>
+              <span className="hidden sm:inline">{t('settings.apiKeysPage.models')}</span>
             </Button>
             <Button
               variant="ghost" size="sm"
@@ -460,7 +460,7 @@ function CredentialItem({
                     className={`text-xs gap-0.5 px-1 py-0 shrink-0 mt-0.5 ${TYPE_COLORS[type]}`}
                   >
                     {TYPE_ICONS[type]}
-                    {TYPE_LABELS[type]}
+                    {t(TYPE_LABEL_KEYS[type])}
                   </Badge>
                   <div className="flex flex-wrap gap-1">
                     {linkedModels.filter(m => m.type === type).map(model => {
@@ -472,7 +472,7 @@ function CredentialItem({
                           className="text-xs gap-1 pr-0.5 group/model"
                         >
                           {model.name}
-                          {defaultSlot && <span className="ml-0.5 opacity-75">({defaultSlot})</span>}
+                          {defaultSlot && <span className="ml-0.5 opacity-75">({t(defaultSlot)})</span>}
                           <button
                             className="ml-0.5 opacity-0 group-hover/model:opacity-60 hover:!opacity-100 transition-opacity"
                             onClick={() => testModel(model.id, model.name)}
@@ -589,7 +589,7 @@ function ProviderSection({
                   className={`text-xs gap-1 rounded-md ${activeTypes.has(type) ? TYPE_COLORS[type] : TYPE_COLOR_INACTIVE}`}
                 >
                   {TYPE_ICONS[type]}
-                  <span className="hidden sm:inline">{TYPE_LABELS[type]}</span>
+                  <span className="hidden sm:inline">{t(TYPE_LABEL_KEYS[type])}</span>
                 </Badge>
               ))}
             </div>
@@ -791,25 +791,25 @@ function DefaultModelSelectors({
             that wipes existing picks first. Useful after downloading a new
             model or bumping DEEPER_NOTEBOOK_CHAT_RAM_GB_CEILING. */}
         <div className="flex flex-wrap items-center gap-2 px-1 py-2 text-xs text-muted-foreground">
-          <span>Local-model auto-assignment:</span>
+          <span>{t('settings.apiKeysPage.localAutoAssignment')}</span>
           <Button
             variant="outline" size="sm"
             onClick={() => autoAssignCapability.mutate({ force: false })}
             disabled={autoAssignCapability.isPending}
             className="h-7 gap-1.5"
-            title="Fill empty slots with the best matching local model. Keeps your existing picks."
+            title={t('settings.apiKeysPage.fillEmptySlotsTitle')}
           >
             {autoAssignCapability.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
-            Fill empty slots
+            {t('settings.apiKeysPage.fillEmptySlots')}
           </Button>
           <Button
             variant="ghost" size="sm"
             onClick={() => autoAssignCapability.mutate({ force: true })}
             disabled={autoAssignCapability.isPending}
             className="h-7 gap-1.5"
-            title="Overwrite all slots with the best matching local model. Use after downloading a new model."
+            title={t('settings.apiKeysPage.resetReevaluateTitle')}
           >
-            Reset & re-evaluate
+            {t('settings.apiKeysPage.resetReevaluate')}
           </Button>
         </div>
 
@@ -1106,9 +1106,9 @@ export default function ApiKeysPage() {
               and a roomier filter bar above the credential cards. */}
           <section className="border-t pt-12 space-y-6">
             <div className="space-y-2">
-              <h2 className="text-xl font-semibold tracking-tight">Providers</h2>
+              <h2 className="text-xl font-semibold tracking-tight">{t('settings.apiKeysPage.providers')}</h2>
               <p className="text-sm text-muted-foreground">
-                Configure API credentials and registered models for each AI provider.
+                {t('settings.apiKeysPage.providersDescription')}
               </p>
             </div>
 
@@ -1121,9 +1121,9 @@ export default function ApiKeysPage() {
                 <Input
                   value={providerQuery}
                   onChange={(e) => setProviderQuery(e.target.value)}
-                  placeholder="Filter providers…"
+                  placeholder={t('settings.apiKeysPage.filterProvidersPlaceholder')}
                   className="pl-9 h-9 rounded-xl border-border/70 bg-background/70 shadow-sm focus-visible:ring-1 focus-visible:ring-primary/50"
-                  aria-label="Filter providers"
+                  aria-label={t('settings.apiKeysPage.filterProvidersAria')}
                 />
               </div>
               <div className="flex flex-wrap gap-2 text-xs">
@@ -1140,19 +1140,19 @@ export default function ApiKeysPage() {
                     }`}
                   >
                     {status === 'all'
-                      ? 'All'
+                      ? t('settings.apiKeysPage.filterAll')
                       : status === 'configured'
-                        ? 'Has credential'
+                        ? t('settings.apiKeysPage.filterHasCredential')
                         : status === 'env'
-                          ? 'From env'
-                          : 'Unconfigured'}
+                          ? t('settings.apiKeysPage.filterFromEnv')
+                          : t('settings.apiKeysPage.filterUnconfigured')}
                   </Button>
                 ))}
               </div>
             </div>
             {filteredProviders.length === 0 && (
               <p className="text-sm text-muted-foreground py-4">
-                No providers match the filter.
+                {t('settings.apiKeysPage.noProvidersMatch')}
               </p>
             )}
 

@@ -103,17 +103,17 @@ function formatProvenanceEntries(provenance: Record<string, unknown> | undefined
     }
   }
 
-  push('Origin', provenance.origin)
-  push('Domain', provenance.domain)
-  push('Original file', provenance.original_filename)
-  push('File name', provenance.file_name)
-  push('Size', provenance.size_bytes)
+  push('sources.sourceDetailContent.provenance.origin', provenance.origin)
+  push('sources.sourceDetailContent.provenance.domain', provenance.domain)
+  push('sources.sourceDetailContent.provenance.originalFile', provenance.original_filename)
+  push('sources.sourceDetailContent.provenance.fileName', provenance.file_name)
+  push('sources.sourceDetailContent.provenance.size', provenance.size_bytes)
 
   const extraction = provenance.extraction
   if (extraction && typeof extraction === 'object' && !Array.isArray(extraction)) {
     const extractionMap = extraction as Record<string, unknown>
-    push('Extractor', extractionMap.extractor)
-    push('Detected type', extractionMap.identified_type)
+    push('sources.sourceDetailContent.provenance.extractor', extractionMap.extractor)
+    push('sources.sourceDetailContent.provenance.detectedType', extractionMap.identified_type)
   }
 
   return values
@@ -726,7 +726,7 @@ export function SourceDetailContent({
                   disabled={hasNoExtractedText}
                 >
                   <Podcast className="mr-2 h-4 w-4" />
-                  {hasNoExtractedText ? 'Podcast unavailable: no readable content' : 'Turn into podcast'}
+                  {hasNoExtractedText ? t('sources.sourceDetailContent.podcastUnavailable') : t('sources.sourceDetailContent.turnIntoPodcast')}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
@@ -875,7 +875,7 @@ export function SourceDetailContent({
                         }}
                       >
                         <Sparkles className="h-3.5 w-3.5" />
-                        Jump to in-text passage
+                        {t('sources.sourceDetailContent.jumpToPassage')}
                       </Button>
                     </div>
                     <p className="text-sm leading-6 text-foreground/90 pl-2">
@@ -1193,17 +1193,17 @@ export function SourceDetailContent({
                     </div>
                     {source.notebook_count !== undefined && (
                       <div>
-                        <p className="text-xs font-medium text-muted-foreground">Notebook use</p>
+                        <p className="text-xs font-medium text-muted-foreground">{t('sources.sourceDetailContent.notebookUse')}</p>
                         <p className="text-sm">
                           {source.is_shared || source.notebook_count > 1
-                            ? `Shared with ${source.notebook_count} notebooks`
-                            : 'Used in one notebook'}
+                            ? t('sources.sourceDetailContent.sharedWithNotebooks', { count: source.notebook_count })
+                            : t('sources.sourceDetailContent.usedInOneNotebook')}
                         </p>
                       </div>
                     )}
                     {provenanceEntries.map(([label, value]) => (
                       <div key={label}>
-                        <p className="text-xs font-medium text-muted-foreground">{label}</p>
+                        <p className="text-xs font-medium text-muted-foreground">{t(label)}</p>
                         <p className="break-all text-sm">{value}</p>
                       </div>
                     ))}

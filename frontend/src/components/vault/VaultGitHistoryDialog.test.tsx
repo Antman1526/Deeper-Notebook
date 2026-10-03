@@ -12,6 +12,17 @@ vi.mock('@/lib/api/client', () => ({
   },
 }))
 
+// The remote status sentence interpolates the URL; an identity `t` would drop it, so
+// resolve just that key to its English.
+vi.mock('@/lib/hooks/use-translation', () => {
+  const t = (key: string, options?: Record<string, unknown>) => (
+    key === 'knowledge.vaultGitHistoryDialog.remoteWithUrl'
+      ? `Remote: ${String(options?.url ?? '')}`
+      : key
+  )
+  return { useTranslation: () => ({ t, language: 'en-US', setLanguage: vi.fn() }) }
+})
+
 vi.mock('sonner', () => ({
   toast: {
     success: vi.fn(),

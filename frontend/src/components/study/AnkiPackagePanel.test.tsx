@@ -33,24 +33,24 @@ describe('AnkiPackagePanel', () => {
 
   it('shows transformed and skipped items before publishing an import', async () => {
     render(<AnkiPackagePanel planId="study_plan:one" />)
-    const input = screen.getByLabelText('Anki package')
+    const input = screen.getByLabelText('study.ankiPackagePanel.packageLabel')
     const file = new File(['deck'], 'deck.apkg', { type: 'application/octet-stream' })
     fireEvent.change(input, { target: { files: [file] } })
 
-    expect(await screen.findByText('2 cards ready, 1 transformed, 1 rejected')).toBeVisible()
+    expect(await screen.findByText('study.ankiPackagePanel.previewCounts')).toBeVisible()
     expect(importCards).not.toHaveBeenCalled()
   })
 
   it('requires an explicit confirmation before publishing', async () => {
     render(<AnkiPackagePanel planId="study_plan:one" />)
-    fireEvent.change(screen.getByLabelText('Anki package'), {
+    fireEvent.change(screen.getByLabelText('study.ankiPackagePanel.packageLabel'), {
       target: { files: [new File(['deck'], 'deck.apkg')] },
     })
-    await screen.findByText('2 cards ready, 1 transformed, 1 rejected')
-    fireEvent.click(screen.getByRole('button', { name: 'Import cards' }))
+    await screen.findByText('study.ankiPackagePanel.previewCounts')
+    fireEvent.click(screen.getByRole('button', { name: 'study.ankiPackagePanel.importCards' }))
     expect(importCards).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('checkbox', { name: /confirm/i }))
-    fireEvent.click(screen.getByRole('button', { name: 'Import cards' }))
+    fireEvent.click(screen.getByRole('button', { name: 'study.ankiPackagePanel.importCards' }))
     await waitFor(() => expect(importCards).toHaveBeenCalledTimes(1))
   })
 
@@ -67,12 +67,12 @@ describe('AnkiPackagePanel', () => {
       collection_member: 'collection.anki2',
     })
     render(<AnkiPackagePanel planId="study_plan:one" />)
-    fireEvent.change(screen.getByLabelText('Anki package'), {
+    fireEvent.change(screen.getByLabelText('study.ankiPackagePanel.packageLabel'), {
       target: { files: [new File(['deck'], 'deck.apkg')] },
     })
     expect(await screen.findByRole('alert')).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    fireEvent.click(screen.getByRole('button', { name: 'study.ankiPackagePanel.retry' }))
     await waitFor(() => expect(uploadPreview).toHaveBeenCalledTimes(2))
-    expect(await screen.findByText('2 cards ready, 1 transformed, 1 rejected')).toBeVisible()
+    expect(await screen.findByText('study.ankiPackagePanel.previewCounts')).toBeVisible()
   })
 })

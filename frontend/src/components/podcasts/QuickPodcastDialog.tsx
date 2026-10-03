@@ -8,6 +8,7 @@ import { podcastsApi } from '@/lib/api/podcasts'
 import type { PodcastReadiness } from '@/lib/types/podcasts'
 import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
 import { Button } from '@/components/ui/button'
+import { useTranslation } from '@/lib/hooks/use-translation'
 import {
   Dialog,
   DialogClose,
@@ -24,6 +25,7 @@ import {
  * deliberately withheld until the fingerprint-checked submit API is present.
  */
 export function QuickPodcastDialog() {
+  const { t } = useTranslation()
   const isOpen = usePodcastStudioStore((state) => state.isOpen)
   const destination = usePodcastStudioStore((state) => state.destination)
   const selections = usePodcastStudioStore((state) => state.selections)
@@ -32,6 +34,7 @@ export function QuickPodcastDialog() {
   const dismiss = usePodcastStudioStore((state) => state.dismiss)
   const router = useRouter()
   const [readiness, setReadiness] = useState<PodcastReadiness | null>(null)
+  // `error` and `submitError` hold i18n keys, translated where they render.
   const [error, setError] = useState<string | null>(null)
   const [episodeProfiles, setEpisodeProfiles] = useState<string[]>([])
   const [speakerProfiles, setSpeakerProfiles] = useState<string[]>([])
@@ -60,7 +63,7 @@ export function QuickPodcastDialog() {
       (result) => current && setReadiness(result),
       (error) => {
         markErrorReported(error) // v0.8.130 — this caller reports the failure itself
-        if (current) setError('Podcast readiness is unavailable. No production was started.')
+        if (current) setError('podcasts.quickPodcastDialog.readinessUnavailable')
       },
     )
     return () => { current = false }
@@ -82,7 +85,7 @@ export function QuickPodcastDialog() {
         setEpisodeProfile((currentValue) => currentValue || episodeNames[0] || '')
         setSpeakerProfile((currentValue) => currentValue || speakerNames[0] || '')
       },
-      () => current && setError('Podcast profiles are unavailable. No production was started.'),
+      () => current && setError('podcasts.quickPodcastDialog.profilesUnavailable'),
     )
     return () => { current = false }
   }, [open])
@@ -110,7 +113,7 @@ export function QuickPodcastDialog() {
       dismiss()
     } catch (error) {
       markErrorReported(error) // v0.8.130 — this caller reports the failure itself
-      setSubmitError('Production could not be submitted. Review your readiness and try again.')
+      setSubmitError('podcasts.quickPodcastDialog.submitFailed')
     } finally {
       setSubmitting(false)
     }
@@ -141,16 +144,16 @@ export function QuickPodcastDialog() {
         }}
       >
         <DialogHeader>
-          <DialogTitle>Review selection</DialogTitle>
+          <DialogTitle>{t('podcasts.quickPodcastDialog.title')}</DialogTitle>
           <DialogDescription>
-            Podcast creation is optional. This step reads a temporary preview and does not start a model or create an episode.
+            {t('podcasts.quickPodcastDialog.description')}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4" aria-busy={readiness === null && error === null}>
           <section aria-labelledby="quick-podcast-research-set">
-            <h2 id="quick-podcast-research-set" className="text-sm font-semibold">Research set</h2>
+            <h2 id="quick-podcast-research-set" className="text-sm font-semibold">{t('podcasts.quickPodcastDialog.researchSet')}</h2>
             {readiness ? (
-              <ul className="mt-2 space-y-2" aria-label="Selected sources">
+              <ul className="mt-2 space-y-2" aria-label={t('podcasts.quickPodcastDialog.selectedSources')}>
                 {readiness.preview.entries.map((entry) => (
                   <li key={`${entry.stableId}:${entry.revisionId ?? 'current'}`} className="flex justify-between gap-3 text-sm">
                     <span>{entry.title}</span>
@@ -158,11 +161,11 @@ export function QuickPodcastDialog() {
                   </li>
                 ))}
               </ul>
-            ) : <p className="mt-2 text-sm text-muted-foreground">{error ?? 'Checking local readiness…'}</p>}
+            ) : <p className="mt-2 text-sm text-muted-foreground">{error ? t(error) : t('podcasts.quickPodcastDialog.checkingReadiness')}</p>}
           </section>
           <section aria-labelledby="quick-podcast-policy">
-            <h2 id="quick-podcast-policy" className="text-sm font-semibold">Production policy</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Strict local evidence policy · Outline storyboard review</p>
+            <h2 id="quick-podcast-policy" className="text-sm font-semibold">{t('podcasts.quickPodcastDialog.productionPolicy')}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{t('podcasts.quickPodcastDialog.policySummary')}</p>
           </section>
           {readiness?.blockedReasons.length ? (
             <p role="status" className="text-sm text-destructive">
@@ -171,27 +174,27 @@ export function QuickPodcastDialog() {
           ) : null}
           {phase === 'review' ? (
             <section aria-labelledby="quick-podcast-profiles">
-              <h2 id="quick-podcast-profiles" className="text-sm font-semibold">Production profiles</h2>
+              <h2 id="quick-podcast-profiles" className="text-sm font-semibold">{t('podcasts.quickPodcastDialog.productionProfiles')}</h2>
               <div className="mt-2 grid gap-2 sm:grid-cols-2">
                 <label className="grid gap-1 text-sm">
-                  Episode profile
+                  {t('podcasts.quickPodcastDialog.episodeProfile')}
                   <select
                     value={episodeProfile}
                     onChange={(event) => setEpisodeProfile(event.target.value)}
                     className="h-9 rounded-md border bg-background px-3 text-sm"
                   >
-                    <option value="">Choose a profile</option>
+                    <option value="">{t('podcasts.quickPodcastDialog.chooseProfile')}</option>
                     {episodeProfiles.map((name) => <option key={name} value={name}>{name}</option>)}
                   </select>
                 </label>
                 <label className="grid gap-1 text-sm">
-                  Voice profile
+                  {t('podcasts.quickPodcastDialog.voiceProfile')}
                   <select
                     value={speakerProfile}
                     onChange={(event) => setSpeakerProfile(event.target.value)}
                     className="h-9 rounded-md border bg-background px-3 text-sm"
                   >
-                    <option value="">Choose a profile</option>
+                    <option value="">{t('podcasts.quickPodcastDialog.chooseProfile')}</option>
                     {speakerProfiles.map((name) => <option key={name} value={name}>{name}</option>)}
                   </select>
                 </label>
@@ -199,16 +202,16 @@ export function QuickPodcastDialog() {
             </section>
           ) : (
             <section aria-labelledby="quick-podcast-confirmation">
-              <h2 id="quick-podcast-confirmation" className="text-sm font-semibold">Confirm production</h2>
+              <h2 id="quick-podcast-confirmation" className="text-sm font-semibold">{t('podcasts.quickPodcastDialog.confirmProduction')}</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                This sends one confirmed, fingerprint-checked local production job.
+                {t('podcasts.quickPodcastDialog.confirmDescription')}
               </p>
             </section>
           )}
-          {submitError ? <p role="alert" className="text-sm text-destructive">{submitError}</p> : null}
+          {submitError ? <p role="alert" className="text-sm text-destructive">{t(submitError)}</p> : null}
         </div>
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={dismiss}>Cancel</Button>
+          <Button type="button" variant="outline" onClick={dismiss}>{t('common.cancel')}</Button>
           {phase === 'review' ? (
             <DialogClose asChild>
               <Button
@@ -216,17 +219,17 @@ export function QuickPodcastDialog() {
                 variant="outline"
                 onClick={() => { studioHandoffPending.current = true }}
               >
-                Customize in Studio
+                {t('podcasts.quickPodcastDialog.customizeInStudio')}
               </Button>
             </DialogClose>
           ) : null}
           {phase === 'review' ? (
             <Button type="button" disabled={!canConfirm} onClick={() => setPhase('confirm')}>
-              Continue to confirmation
+              {t('podcasts.quickPodcastDialog.continueToConfirmation')}
             </Button>
           ) : (
             <Button type="button" disabled={!canConfirm || submitting} onClick={confirmProduction}>
-              {submitting ? 'Submitting…' : 'Confirm production'}
+              {submitting ? t('podcasts.quickPodcastDialog.submitting') : t('podcasts.quickPodcastDialog.confirmProduction')}
             </Button>
           )}
         </DialogFooter>

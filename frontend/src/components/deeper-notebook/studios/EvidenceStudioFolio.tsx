@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
 
+import { useTranslation } from '@/lib/hooks/use-translation'
+
 export interface EvidenceStudioFolioProps {
   sourceDesk: ReactNode
   editorialBrief: ReactNode
@@ -16,8 +18,9 @@ export function EvidenceStudioFolio({
   trustMargin,
   status,
 }: EvidenceStudioFolioProps) {
+  const { t } = useTranslation()
   return (
-    <main aria-label="Evidence Studio folio" data-dn-folio-page>
+    <main aria-label={t('workspace.evidenceStudioFolio.ariaLabel')} data-dn-folio-page>
       {/* v0.8.130 — Phase 3a: data-dn-studio-header lets V2 drop the margin-note panel
           from the page header (it read as a heavy tinted block). */}
       {status ? <div data-dn-folio-margin-note data-dn-studio-header>{status}</div> : null}
@@ -27,13 +30,13 @@ export function EvidenceStudioFolio({
           line. Scoped so the podcast studio and graph atlas spreads, which hold
           narrower content, keep the original ratio. See folio.css. */}
       <div data-dn-folio-spread data-dn-folio-variant="evidence-studio">
-        <section aria-label="Source desk" data-dn-folio-primary>{sourceDesk}</section>
-        <section aria-label="Editorial brief" data-dn-folio-secondary>{editorialBrief}</section>
+        <section aria-label={t('workspace.evidenceStudioFolio.sourceDesk')} data-dn-folio-primary>{sourceDesk}</section>
+        <section aria-label={t('workspace.evidenceStudioFolio.editorialBrief')} data-dn-folio-secondary>{editorialBrief}</section>
       </div>
       <div data-dn-folio-primary>
-        <section aria-label="Artifact pages">{artifactPages}</section>
+        <section aria-label={t('workspace.evidenceStudioFolio.artifactPages')}>{artifactPages}</section>
       </div>
-      {trustMargin ? <aside aria-label="Trust margin" data-dn-folio-margin-note>{trustMargin}</aside> : null}
+      {trustMargin ? <aside aria-label={t('workspace.evidenceStudioFolio.trustMargin')} data-dn-folio-margin-note>{trustMargin}</aside> : null}
     </main>
   )
 }

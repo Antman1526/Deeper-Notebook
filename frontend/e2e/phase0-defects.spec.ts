@@ -126,7 +126,7 @@ test.describe('shell (T0-3, T0-4, T0-9)', () => {
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto('/notebooks')
 
-    const focus = page.getByRole('button', { name: 'Enter Focus mode' })
+    const focus = page.getByRole('button', { name: 'Enter focus mode' })
     await expect(focus).toBeVisible()
     expect((await focus.boundingBox())?.x ?? 0).toBeGreaterThanOrEqual(0)
     const right = (await focus.boundingBox())!.x + (await focus.boundingBox())!.width

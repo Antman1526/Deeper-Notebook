@@ -39,8 +39,8 @@ export function LocalModelHealthBadges() {
         const dot = (
           <span
             className={`h-2 w-2 rounded-full ${STATUS_DOT[m.status] ?? STATUS_DOT.unknown} ${kind ? 'cursor-pointer ring-offset-1 hover:ring-2 hover:ring-destructive/40' : ''}`}
-            title={`${t(`models.status.${m.status}`)}: ${m.detail ?? t('models.status.noDetail')}`}
-            aria-label={`${m.name}: ${t(`models.status.${m.status}`)}`}
+            title={t('chat.localModelHealthBadges.statusTitle', { status: t(`models.status.${m.status}`), detail: m.detail ?? t('models.status.noDetail') })}
+            aria-label={t('chat.localModelHealthBadges.statusAria', { name: m.name, status: t(`models.status.${m.status}`) })}
             role={kind ? 'button' : undefined}
             tabIndex={kind ? 0 : undefined}
           />

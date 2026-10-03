@@ -1,5 +1,6 @@
 import * as React from 'react'
 
+import { useTranslation } from '@/lib/hooks/use-translation'
 import { cn } from '@/lib/utils'
 
 export interface FolioPageProps
@@ -33,6 +34,7 @@ export const FolioPage = React.forwardRef<HTMLElement, FolioPageProps>(
     },
     ref,
   ) {
+    const { t } = useTranslation()
     const generatedId = React.useId()
     const headingId = `${generatedId}-heading`
     const labelledBy = rest['aria-labelledby'] ?? headingId
@@ -74,7 +76,7 @@ export const FolioPage = React.forwardRef<HTMLElement, FolioPageProps>(
 
         {margin ? (
           <aside
-            aria-label="Page margin"
+            aria-label={t('workspace.folioPage.pageMargin')}
             data-dn-folio-margin="true"
             className="dn-folio-margin"
           >

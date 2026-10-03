@@ -27,7 +27,16 @@ vi.mock('@/components/search/StreamingResponse', () => ({ StreamingResponse: () 
 vi.mock('@/components/search/AdvancedModelsDialog', () => ({ AdvancedModelsDialog: () => null }))
 vi.mock('@/components/search/SaveToNotebooksDialog', () => ({ SaveToNotebooksDialog: () => null }))
 vi.mock('@/components/common/LoadingSpinner', () => ({ LoadingSpinner: () => <div>Loading</div> }))
-vi.mock('@/lib/hooks/use-translation', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
+// Echo interpolation values so evidence dialogs and cover alts stay addressable per result.
+// `defaultValue` is dropped so keys with a component-side fallback (searchPage.viewEvidence) still fall back.
+vi.mock('@/lib/hooks/use-translation', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown>) => {
+      const values = Object.fromEntries(Object.entries(options ?? {}).filter(([name]) => name !== 'defaultValue'))
+      return Object.keys(values).length ? `${key} ${JSON.stringify(values)}` : key
+    },
+  }),
+}))
 vi.mock('@/lib/features', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/features')>()
   return {
@@ -56,7 +65,7 @@ describe('SearchPage', () => {
       'id',
       routeFrame.getAttribute('aria-labelledby'),
     )
-    expect(screen.getByText('Discover')).toBeInTheDocument()
+    expect(screen.getByText('knowledge.knowledgeRouteFrames.discover')).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'searchPage.askBeta' })).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: 'common.accessibility.enterQuestion' })).toBeInTheDocument()
   })
@@ -103,7 +112,7 @@ describe('SearchPage', () => {
     expect(mockOpenModal).toHaveBeenCalledWith('note', 'three')
     fireEvent.click(screen.getByRole('button', { name: 'View evidence for Source result' }))
     await waitFor(() => expect(locate).toHaveBeenCalledWith('source:one', 'first exact match'))
-    expect(screen.getByRole('dialog', { name: 'Evidence in Source result' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'workspace.evidencePeek.heading {"title":"Source result"}' })).toBeInTheDocument()
 
     locate.mockRestore()
   })
@@ -138,7 +147,7 @@ describe('SearchPage', () => {
     const locate = vi.spyOn(sourcesApi, 'locatePassage').mockResolvedValue(null)
     const { rerender } = render(<SearchPage />)
     fireEvent.click(screen.getByRole('button', { name: 'View evidence for Old source' }))
-    expect(await screen.findByRole('dialog', { name: 'Evidence in Old source' })).toBeInTheDocument()
+    expect(await screen.findByRole('dialog', { name: 'workspace.evidencePeek.heading {"title":"Old source"}' })).toBeInTheDocument()
 
     mockSearchData.current = {
       total_count: 1, search_type: 'text', results: [{
@@ -148,7 +157,7 @@ describe('SearchPage', () => {
     }
     rerender(<SearchPage />)
 
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Evidence in Old source' })).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'workspace.evidencePeek.heading {"title":"Old source"}' })).not.toBeInTheDocument())
     expect(screen.getByRole('button', { name: 'View evidence for New source' })).toBeInTheDocument()
     locate.mockRestore()
   })
@@ -237,10 +246,10 @@ describe('SearchPage', () => {
     const invoker = screen.getByRole('button', { name: 'View evidence for Source result' })
     invoker.focus()
     fireEvent.click(invoker)
-    expect(await screen.findByRole('dialog', { name: 'Evidence in Source result' })).toBeInTheDocument()
+    expect(await screen.findByRole('dialog', { name: 'workspace.evidencePeek.heading {"title":"Source result"}' })).toBeInTheDocument()
 
     rerender(<SearchPage />)
-    fireEvent.click(screen.getByRole('button', { name: 'Close evidence peek' }))
+    fireEvent.click(screen.getByRole('button', { name: 'workspace.evidencePeek.closeLabel' }))
 
     await waitFor(() => expect(invoker).toHaveFocus())
     locate.mockRestore()

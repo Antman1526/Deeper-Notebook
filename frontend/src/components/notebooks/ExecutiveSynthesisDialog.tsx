@@ -21,6 +21,7 @@ import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import { toast } from 'sonner'
+import { useTranslation } from '@/lib/hooks/use-translation'
 
 interface ExecutiveSynthesisDialogProps {
   open: boolean
@@ -35,6 +36,7 @@ export function ExecutiveSynthesisDialog({
   notebookId,
   notebookName,
 }: ExecutiveSynthesisDialogProps) {
+  const { t } = useTranslation()
   const [data, setData] = useState<ExecutiveSynthesisResponse | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -54,12 +56,12 @@ export function ExecutiveSynthesisDialog({
       markErrorReported(err) // v0.8.130 — this caller reports the failure itself
       const msg =
         (err as { response?: { data?: { detail?: string } } })?.response?.data
-          ?.detail || 'Failed to generate executive cross-source synthesis.'
+          ?.detail || t('notebooks.executiveSynthesisDialog.generateFailed')
       setError(msg)
     } finally {
       setIsLoading(false)
     }
-  }, [notebookId])
+  }, [notebookId, t])
 
   useEffect(() => {
     setData(null)
@@ -80,10 +82,10 @@ export function ExecutiveSynthesisDialog({
     try {
       await navigator.clipboard.writeText(data.synthesis)
       setCopied(true)
-      toast.success('Executive synthesis copied to clipboard')
+      toast.success(t('notebooks.executiveSynthesisDialog.copiedToast'))
       setTimeout(() => setCopied(false), 2000)
     } catch {
-      toast.error('Failed to copy text to clipboard')
+      toast.error(t('notebooks.executiveSynthesisDialog.copyFailed'))
     }
   }
 
@@ -93,10 +95,10 @@ export function ExecutiveSynthesisDialog({
     try {
       await createNote.mutateAsync({
         notebook_id: notebookId,
-        title: `Executive Synthesis — ${notebookName}`,
+        title: t('notebooks.executiveSynthesisDialog.noteTitle', { name: notebookName }),
         content: data.synthesis,
       })
-      toast.success('Saved synthesis as a note in this notebook')
+      toast.success(t('notebooks.executiveSynthesisDialog.savedToast'))
     } catch {
       // Error handled by useCreateNote
     } finally {
@@ -114,17 +116,17 @@ export function ExecutiveSynthesisDialog({
                 <Sparkles className="h-4 w-4" />
               </div>
               <DialogTitle className="text-xl font-semibold">
-                Executive Synthesis & Insights
+                {t('notebooks.executiveSynthesisDialog.title')}
               </DialogTitle>
             </div>
             {data && (
               <Badge variant="secondary" className="text-xs bg-primary/15 text-primary border-0 font-medium">
-                {data.source_count} Sources Synthesized
+                {t('notebooks.executiveSynthesisDialog.sourcesSynthesized', { count: data.source_count })}
               </Badge>
             )}
           </div>
           <DialogDescription className="text-sm text-muted-foreground">
-            Ambient cross-source intelligence, thematic consensus, tensions, and next steps for{' '}
+            {t('notebooks.executiveSynthesisDialog.descriptionLead')}{' '}
             <span className="font-medium text-foreground">{notebookName}</span>.
           </DialogDescription>
         </DialogHeader>
@@ -135,10 +137,10 @@ export function ExecutiveSynthesisDialog({
               <LoadingSpinner className="h-8 w-8 text-primary" />
               <div className="space-y-1">
                 <p className="text-sm font-medium text-foreground">
-                  Analyzing corpus & generating executive synthesis...
+                  {t('notebooks.executiveSynthesisDialog.analyzing')}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Evaluating cross-cutting themes, disagreements, and strategic implications
+                  {t('notebooks.executiveSynthesisDialog.evaluating')}
                 </p>
               </div>
             </div>
@@ -148,7 +150,7 @@ export function ExecutiveSynthesisDialog({
               <p className="text-sm text-destructive font-medium">{error}</p>
               <Button variant="outline" size="sm" onClick={fetchSynthesis}>
                 <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
-                Retry
+                {t('notebooks.executiveSynthesisDialog.retry')}
               </Button>
             </div>
           ) : data ? (
@@ -187,7 +189,7 @@ export function ExecutiveSynthesisDialog({
                 disabled={isLoading}
               >
                 <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${isLoading ? 'animate-spin' : ''}`} />
-                Regenerate
+                {t('notebooks.executiveSynthesisDialog.regenerate')}
               </Button>
             )}
           </div>
@@ -203,12 +205,12 @@ export function ExecutiveSynthesisDialog({
                   {copied ? (
                     <>
                       <Check className="h-3.5 w-3.5 text-success-ink" />
-                      Copied
+                      {t('notebooks.executiveSynthesisDialog.copied')}
                     </>
                   ) : (
                     <>
                       <Copy className="h-3.5 w-3.5" />
-                      Copy Synthesis
+                      {t('notebooks.executiveSynthesisDialog.copySynthesis')}
                     </>
                   )}
                 </Button>
@@ -220,7 +222,7 @@ export function ExecutiveSynthesisDialog({
                   disabled={isSaving}
                 >
                   <FileText className="h-3.5 w-3.5" />
-                  {isSaving ? 'Saving...' : 'Save as Note'}
+                  {isSaving ? t('notebooks.executiveSynthesisDialog.saving') : t('notebooks.executiveSynthesisDialog.saveAsNote')}
                 </Button>
               </>
             )}
@@ -230,7 +232,7 @@ export function ExecutiveSynthesisDialog({
               className="text-xs"
               onClick={() => onOpenChange(false)}
             >
-              Close
+              {t('common.close')}
             </Button>
           </div>
         </DialogFooter>

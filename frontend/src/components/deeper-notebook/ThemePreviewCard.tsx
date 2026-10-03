@@ -4,8 +4,9 @@ import type { CSSProperties } from 'react'
 import { Check, Eye } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { useTranslation } from '@/lib/hooks/use-translation'
 import { cn } from '@/lib/utils'
-import type { ThemeDefinition } from '@/lib/themes/catalog'
+import { themeLabel, type ThemeDefinition } from '@/lib/themes/catalog'
 
 interface ThemePreviewCardProps {
   theme: ThemeDefinition
@@ -24,6 +25,8 @@ export function ThemePreviewCard({
   onPreview,
   onApply,
 }: ThemePreviewCardProps) {
+  const { t } = useTranslation()
+  const label = themeLabel(theme, t)
   const previewProperties = {
     '--preview-canvas': theme.preview.canvas,
     '--preview-panel': theme.preview.panel,
@@ -40,7 +43,9 @@ export function ThemePreviewCard({
         selected && 'border-primary/70 ring-1 ring-primary/20',
         previewing && 'border-accent-foreground/40 ring-1 ring-accent-foreground/15',
       )}
-      aria-label={sectionLabel ? `${sectionLabel} ${theme.label} theme` : `${theme.label} theme`}
+      aria-label={sectionLabel
+        ? t('workspace.themePreviewCard.articleLabelWithSection', { section: sectionLabel, theme: label })
+        : t('workspace.themePreviewCard.articleLabel', { theme: label })}
     >
       <div className="overflow-hidden rounded-lg border shadow-sm" style={previewProperties}>
         <div className="grid h-24 grid-cols-[1.35rem_1fr_.8fr] bg-[var(--preview-canvas)] text-[var(--preview-text)]">
@@ -59,25 +64,25 @@ export function ThemePreviewCard({
       <div className="mt-3 flex min-h-12 items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h4 className="text-sm font-semibold leading-tight">{theme.label}</h4>
+            <h4 className="text-sm font-semibold leading-tight">{label}</h4>
             {selected && (
               // v0.8.130 — 12px type floor (UI audit Phase 1)
               <span
                 className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-primary"
               >
-                Current
+                {t('workspace.themePreviewCard.current')}
               </span>
             )}
             {previewing && (
               <span
                 className="rounded-full bg-accent px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-accent-foreground"
-                aria-label="Previewing theme"
+                aria-label={t('workspace.themePreviewCard.previewingBadgeLabel')}
               >
-                Previewing
+                {t('workspace.themePreviewCard.previewing')}
               </span>
             )}
           </div>
-          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{theme.description}</p>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{t(theme.descriptionKey)}</p>
         </div>
       </div>
 
@@ -87,20 +92,20 @@ export function ThemePreviewCard({
           variant="outline"
           size="sm"
           aria-pressed={previewing}
-          aria-label={`Preview ${theme.label}`}
+          aria-label={t('workspace.themePreviewCard.previewLabel', { theme: label })}
           onClick={onPreview}
         >
           <Eye aria-hidden="true" />
-          Preview
+          {t('workspace.themePreviewCard.preview')}
         </Button>
         <Button
           type="button"
           size="sm"
-          aria-label={`Apply ${theme.label}`}
+          aria-label={t('workspace.themePreviewCard.applyLabel', { theme: label })}
           onClick={onApply}
         >
           <Check aria-hidden="true" />
-          Apply
+          {t('workspace.themePreviewCard.apply')}
         </Button>
       </div>
     </article>

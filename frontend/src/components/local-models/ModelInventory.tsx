@@ -11,6 +11,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import type { InventoryResponse, LocalModel } from '@/lib/api/local-models'
 import type { LocalModelHealth } from '@/lib/hooks/use-local-models'
+import { MODEL_READINESS_KEYS, MODEL_RESOURCE_TIER_KEYS, enumLabel, spacedEnum } from '@/lib/enum-labels'
+import { useTranslation } from '@/lib/hooks/use-translation'
 
 type InventoryFilter = 'all' | 'ready' | 'needs-setup'
 type InventorySort = 'name' | 'quality-ready' | 'size' | 'context'
@@ -27,14 +29,16 @@ export type ModelInventoryProps = {
   settingLaunchDefaultRef?: string | null
 }
 
-const formatBytes = (value: number) => {
-  if (!value) return 'Unknown'
+type TranslateFn = (key: string, options?: Record<string, unknown>) => string
+
+const formatBytes = (value: number, t: TranslateFn) => {
+  if (!value) return t('common.unknown')
   const gigabytes = value / 1024 ** 3
   return gigabytes >= 1 ? `${gigabytes.toFixed(1)} GB` : `${Math.round(value / 1024 ** 2)} MB`
 }
 
-const formatContext = (value: number | null) => value && value >= 1024
-  ? `${Math.round(value / 1024)}k` : value?.toString() ?? 'Unknown'
+const formatContext = (value: number | null, t: TranslateFn) => value && value >= 1024
+  ? `${Math.round(value / 1024)}k` : value?.toString() ?? t('common.unknown')
 
 function canRun(model: LocalModel) {
   return model.runnable ?? ['gguf', 'mlx'].includes(model.runtime ?? '')
@@ -53,13 +57,14 @@ function ModelRow({
   activatingPath,
   settingLaunchDefaultRef,
 }: Omit<ModelInventoryProps, 'inventory' | 'isLoading' | 'isError' | 'onRefresh'> & { model: LocalModel }) {
+  const { t } = useTranslation()
   const runtimeHealth = matchingHealth(model, health)
   const copyPath = async () => {
     try {
       await navigator.clipboard.writeText(model.path)
-      toast.success('Model path copied')
+      toast.success(t('settings.modelInventory.pathCopied'))
     } catch {
-      toast.error('Could not copy model path')
+      toast.error(t('settings.modelInventory.pathCopyFailed'))
     }
   }
   const runnerReady = canRun(model)
@@ -74,36 +79,36 @@ function ModelRow({
             <CardTitle className="break-all text-base">{model.name}</CardTitle>
             <CardDescription className="flex items-center gap-1 break-all text-xs">
               <span>{model.path}</span>
-              <Button aria-label={`Copy model path for ${model.name}`} className="h-6 w-6 shrink-0" onClick={copyPath} size="icon" variant="ghost">
+              <Button aria-label={t('settings.modelInventory.copyPathAria', { name: model.name })} className="h-6 w-6 shrink-0" onClick={copyPath} size="icon" variant="ghost">
                 <Copy className="h-3 w-3" />
               </Button>
             </CardDescription>
           </div>
           <div className="flex flex-wrap gap-1.5">
             <ModelFleetBadge runtime={model.runtime} />
-            <Badge variant={runnerReady ? 'secondary' : 'outline'}>{runnerReady ? 'Available' : 'Setup needed'}</Badge>
-            {model.readiness && <Badge variant={model.route_eligible ? 'secondary' : 'outline'}>{model.readiness.replace(/_/g, ' ')}</Badge>}
-            {model.measured_tier && <Badge variant="outline">{model.measured_tier} tier</Badge>}
+            <Badge variant={runnerReady ? 'secondary' : 'outline'}>{runnerReady ? t('settings.modelInventory.available') : t('settings.modelInventory.setupNeeded')}</Badge>
+            {model.readiness && <Badge variant={model.route_eligible ? 'secondary' : 'outline'}>{enumLabel(t, MODEL_READINESS_KEYS, model.readiness, spacedEnum(model.readiness))}</Badge>}
+            {model.measured_tier && <Badge variant="outline">{t('settings.modelInventory.tierBadge', { tier: enumLabel(t, MODEL_RESOURCE_TIER_KEYS, model.measured_tier) })}</Badge>}
             {runtimeHealth && <Badge variant={runtimeHealth.status === 'healthy' ? 'secondary' : 'outline'}>{runtimeHealth.status}</Badge>}
-            {model.is_live_active && <Badge>Active</Badge>}
-            {model.is_launch_default && <Badge variant="secondary">Launch default</Badge>}
+            {model.is_live_active && <Badge>{t('settings.modelInventory.active')}</Badge>}
+            {model.is_launch_default && <Badge variant="secondary">{t('settings.modelInventory.launchDefault')}</Badge>}
           </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-3 pt-0">
         <dl className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-5">
-          <Metric label="Runtime" value={model.runtime?.toUpperCase() ?? 'Local'} />
-          <Metric label="Size" value={formatBytes(model.file_size_bytes)} />
-          <Metric label="Context" value={formatContext(model.context_length)} />
-          <Metric label="Parameters" value={model.parameter_count_b ? `${model.parameter_count_b}B` : 'Unknown'} />
-          <Metric label="Capability" value={runnerReady ? 'Runnable' : 'Inventory only'} />
+          <Metric label={t('settings.modelInventory.runtime')} value={model.runtime?.toUpperCase() ?? t('settings.modelInventory.runtimeLocal')} />
+          <Metric label={t('settings.modelInventory.size')} value={formatBytes(model.file_size_bytes, t)} />
+          <Metric label={t('settings.modelInventory.context')} value={formatContext(model.context_length, t)} />
+          <Metric label={t('settings.modelInventory.parameters')} value={model.parameter_count_b ? `${model.parameter_count_b}B` : t('common.unknown')} />
+          <Metric label={t('settings.modelInventory.capability')} value={runnerReady ? t('settings.modelInventory.runnable') : t('settings.modelInventory.inventoryOnly')} />
         </dl>
-        {!runnerReady && <p className="border-l-2 border-muted-foreground/30 pl-3 text-xs text-muted-foreground">{model.runtime_note ?? 'This asset is visible for curation, but no compatible local runtime is registered.'}</p>}
+        {!runnerReady && <p className="border-l-2 border-muted-foreground/30 pl-3 text-xs text-muted-foreground">{model.runtime_note ?? t('settings.modelInventory.noRuntimeNote')}</p>}
         {model.readiness_reason && <p className="text-xs text-muted-foreground">{model.readiness_reason}</p>}
-        {model.accepted_roles?.length ? <p className="text-xs text-muted-foreground">Accepted roles: {model.accepted_roles.join(', ')}</p> : null}
+        {model.accepted_roles?.length ? <p className="text-xs text-muted-foreground">{t('settings.modelInventory.acceptedRoles', { roles: model.accepted_roles.join(', ') })}</p> : null}
         {(canActivate || canSetDefault) && <div className="flex flex-wrap justify-end gap-2">
-          {canSetDefault && <Button disabled={Boolean(model.is_launch_default) || settingLaunchDefaultRef === model.launcher_model_ref} onClick={() => onSetLaunchDefault?.(model)} size="sm" variant="outline">Set launch default</Button>}
-          {canActivate && <Button data-testid={`set-active-${model.name}`} disabled={activatingPath === model.path} onClick={() => onSetActive?.(model)} size="sm" variant="outline">{activatingPath === model.path ? 'Switching...' : 'Switch live chat model'}</Button>}
+          {canSetDefault && <Button disabled={Boolean(model.is_launch_default) || settingLaunchDefaultRef === model.launcher_model_ref} onClick={() => onSetLaunchDefault?.(model)} size="sm" variant="outline">{t('settings.modelInventory.setLaunchDefault')}</Button>}
+          {canActivate && <Button data-testid={`set-active-${model.name}`} disabled={activatingPath === model.path} onClick={() => onSetActive?.(model)} size="sm" variant="outline">{activatingPath === model.path ? t('settings.modelInventory.switching') : t('settings.modelInventory.switchLiveChatModel')}</Button>}
         </div>}
       </CardContent>
     </Card>
@@ -115,6 +120,7 @@ function Metric({ label, value }: { label: string; value: string }) {
 }
 
 export function ModelInventory({ inventory, health, isLoading, isError, onRefresh, ...actions }: ModelInventoryProps) {
+  const { t } = useTranslation()
   const [filter, setFilter] = React.useState<InventoryFilter>('all')
   const [sort, setSort] = React.useState<InventorySort>('name')
   const [search, setSearch] = React.useState('')
@@ -130,23 +136,23 @@ export function ModelInventory({ inventory, health, isLoading, isError, onRefres
     return left.name.localeCompare(right.name)
   })
 
-  if (isLoading) return <Card><CardContent className="py-8 text-sm text-muted-foreground">Reading local model inventory...</CardContent></Card>
-  if (isError) return <Card><CardContent className="py-8 text-sm text-destructive">The model inventory could not be loaded. Refresh to try again.</CardContent></Card>
-  if (!inventory?.available) return <Card><CardContent className="py-8 text-sm text-muted-foreground">Model directory not found. Configure the desktop launcher, then refresh this page.</CardContent></Card>
+  if (isLoading) return <Card><CardContent className="py-8 text-sm text-muted-foreground">{t('settings.modelInventory.reading')}</CardContent></Card>
+  if (isError) return <Card><CardContent className="py-8 text-sm text-destructive">{t('settings.modelInventory.loadError')}</CardContent></Card>
+  if (!inventory?.available) return <Card><CardContent className="py-8 text-sm text-muted-foreground">{t('settings.modelInventory.directoryNotFound')}</CardContent></Card>
 
   return (
     <section className="space-y-3" data-testid="local-models-list">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0 text-xs text-muted-foreground"><FolderOpen className="mr-1 inline h-3 w-3" /><code className="break-all">{inventory.model_dir}</code></div>
-        <Button onClick={onRefresh} size="sm" variant="outline"><RefreshCw className="h-3.5 w-3.5" />Refresh</Button>
+        <Button onClick={onRefresh} size="sm" variant="outline"><RefreshCw className="h-3.5 w-3.5" />{t('common.refresh')}</Button>
       </div>
-      {models.length === 0 ? <Card><CardContent className="py-8 text-sm text-muted-foreground">No models installed yet. Browse on HuggingFace or add a local model through the launcher.</CardContent></Card> : <>
+      {models.length === 0 ? <Card><CardContent className="py-8 text-sm text-muted-foreground">{t('settings.modelInventory.noModelsInstalled')}</CardContent></Card> : <>
         <div className="flex flex-wrap gap-2">
-          <div className="relative min-w-48 flex-1"><Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" /><Input aria-label="Search local models" className="pl-8" onChange={event => setSearch(event.target.value)} placeholder="Search models" value={search} /></div>
-          <select aria-label="Filter local model inventory" className="rounded-md border bg-background px-3 text-sm" onChange={event => setFilter(event.target.value as InventoryFilter)} value={filter}><option value="all">All models</option><option value="ready">Ready</option><option value="needs-setup">Setup needed</option></select>
-          <select aria-label="Sort local models" className="rounded-md border bg-background px-3 text-sm" onChange={event => setSort(event.target.value as InventorySort)} value={sort}><option value="name">Name</option><option value="quality-ready">Availability</option><option value="size">Size</option><option value="context">Context</option></select>
+          <div className="relative min-w-48 flex-1"><Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" /><Input aria-label={t('settings.modelInventory.searchAria')} className="pl-8" onChange={event => setSearch(event.target.value)} placeholder={t('settings.modelInventory.searchPlaceholder')} value={search} /></div>
+          <select aria-label={t('settings.modelInventory.filterAria')} className="rounded-md border bg-background px-3 text-sm" onChange={event => setFilter(event.target.value as InventoryFilter)} value={filter}><option value="all">{t('settings.modelInventory.filterAll')}</option><option value="ready">{t('settings.modelInventory.filterReady')}</option><option value="needs-setup">{t('settings.modelInventory.setupNeeded')}</option></select>
+          <select aria-label={t('settings.modelInventory.sortAria')} className="rounded-md border bg-background px-3 text-sm" onChange={event => setSort(event.target.value as InventorySort)} value={sort}><option value="name">{t('settings.modelInventory.sortName')}</option><option value="quality-ready">{t('settings.modelInventory.sortAvailability')}</option><option value="size">{t('settings.modelInventory.size')}</option><option value="context">{t('settings.modelInventory.context')}</option></select>
         </div>
-        {visibleModels.length ? visibleModels.map(model => <ModelRow key={model.path} model={model} health={health} {...actions} />) : <Card><CardContent className="py-8 text-center text-sm text-muted-foreground">No models match the current filters.</CardContent></Card>}
+        {visibleModels.length ? visibleModels.map(model => <ModelRow key={model.path} model={model} health={health} {...actions} />) : <Card><CardContent className="py-8 text-center text-sm text-muted-foreground">{t('settings.modelInventory.noMatches')}</CardContent></Card>}
       </>}
     </section>
   )

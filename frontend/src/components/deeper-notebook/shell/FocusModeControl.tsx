@@ -6,6 +6,7 @@ import { useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
 import { useIsMac } from '@/lib/hooks/use-is-mac'
+import { useTranslation } from '@/lib/hooks/use-translation'
 import { useDisplayPreferencesStore } from '@/lib/stores/display-preferences-store'
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -46,7 +47,8 @@ export function FocusModeControl({ showShortcut = true }: { showShortcut?: boole
     return () => document.removeEventListener('keydown', handleKeyDown, true)
   }, [focusMode, setFocusMode, toggleFocusMode])
 
-  const label = focusMode ? 'Exit Focus mode' : 'Enter Focus mode'
+  const { t } = useTranslation()
+  const label = focusMode ? t('workspace.displayPreferencesPanel.exitFocusMode') : t('workspace.displayPreferencesPanel.enterFocusMode')
   const isMac = useIsMac()
   // v0.8.130 — One shortcut for the platform in use; none until the platform is known.
   const shortcut = isMac === null ? null : isMac ? '⌘⇧F' : 'Ctrl+Shift+F'

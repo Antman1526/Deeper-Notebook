@@ -3,7 +3,10 @@
 import { markErrorReported } from '@/lib/api/client'
 import { useMemo, useRef, useState } from 'react'
 
+import type { TFunction } from 'i18next'
+
 import { Button } from '@/components/ui/button'
+import { useTranslation } from '@/lib/hooks/use-translation'
 import { podcastsApi } from '@/lib/api/podcasts'
 import type { PodcastProductionRole, PodcastReadiness } from '@/lib/types/podcasts'
 import type { PodcastSelection } from '@/lib/podcasts/selection'
@@ -47,11 +50,11 @@ const defaultBrief: EditorialBriefValues = {
 }
 
 const outlineDefaults = ['Introduction', 'Findings', 'Takeaway']
-const stageDefaults: Array<{ stage: PodcastModelPlanItem['stage']; label: string; role: PodcastModelPlanItem['role'] }> = [
-  { stage: 'outline', label: 'Outline route', role: 'podcast_outline' },
-  { stage: 'script', label: 'Script route', role: 'podcast_script' },
-  { stage: 'voice', label: 'Voice route', role: 'text_to_speech' },
-  { stage: 'transcription', label: 'Transcription route', role: 'speech_to_text' },
+const stageDefaults: Array<{ stage: PodcastModelPlanItem['stage']; labelKey: string; role: PodcastModelPlanItem['role'] }> = [
+  { stage: 'outline', labelKey: 'podcasts.podcastStudio.outlineRoute', role: 'podcast_outline' },
+  { stage: 'script', labelKey: 'podcasts.podcastStudio.scriptRoute', role: 'podcast_script' },
+  { stage: 'voice', labelKey: 'podcasts.podcastStudio.voiceRoute', role: 'text_to_speech' },
+  { stage: 'transcription', labelKey: 'podcasts.podcastStudio.transcriptionRoute', role: 'speech_to_text' },
 ]
 const knowledgeRouteDefaults: Array<{ stage: PodcastModelPlanItem['stage']; role: PodcastModelPlanItem['role'] }> = [
   { stage: 'evidence', role: 'evidence_extraction' },
@@ -85,7 +88,7 @@ function sameProductionOverrides(
   return leftRoles.length === rightRoles.length && leftRoles.every((role) => normalizedLeft[role] === normalizedRight[role])
 }
 
-function toProvidedPlanItems(modelPlans: PodcastStudioProps['modelPlans']): PodcastModelPlanItem[] {
+function toProvidedPlanItems(modelPlans: PodcastStudioProps['modelPlans'], t: TFunction): PodcastModelPlanItem[] {
   return modelPlans?.map((item, index) => {
     const defaults = knowledgeRouteDefaults[index] ?? stageDefaults[index] ?? stageDefaults[0]
     return {
@@ -93,7 +96,7 @@ function toProvidedPlanItems(modelPlans: PodcastStudioProps['modelPlans']): Podc
       label: item.label,
       role: item.plan?.role ?? defaults.role,
       outcome: item.plan?.outcome ?? 'blocked',
-      reason: item.plan?.reason ?? 'Route plan unavailable.',
+      reason: item.plan?.reason ?? t('podcasts.podcastStudio.routePlanUnavailable'),
       modelId: item.plan?.modelId ?? null,
       provider: item.plan?.provider ?? null,
       resourceTier: item.plan?.resourceTier ?? null,
@@ -103,11 +106,11 @@ function toProvidedPlanItems(modelPlans: PodcastStudioProps['modelPlans']): Podc
   }) ?? []
 }
 
-function toReadinessPlanItem(plan: PodcastReadiness['stagePlans'][number]): PodcastModelPlanItem {
+function toReadinessPlanItem(plan: PodcastReadiness['stagePlans'][number], t: TFunction): PodcastModelPlanItem {
   const defaults = stageDefaults.find((item) => item.role === plan.role) ?? stageDefaults[0]
   return {
     stage: defaults.stage,
-    label: defaults.label,
+    label: t(defaults.labelKey),
     role: plan.role,
     outcome: plan.outcome,
     reason: plan.reason,
@@ -119,11 +122,11 @@ function toReadinessPlanItem(plan: PodcastReadiness['stagePlans'][number]): Podc
   }
 }
 
-function toPlanItems(modelPlans: PodcastStudioProps['modelPlans'], readiness: PodcastReadiness | null): PodcastModelPlanItem[] {
-  const provided = toProvidedPlanItems(modelPlans)
+function toPlanItems(modelPlans: PodcastStudioProps['modelPlans'], readiness: PodcastReadiness | null, t: TFunction): PodcastModelPlanItem[] {
+  const provided = toProvidedPlanItems(modelPlans, t)
   if (!readiness) return provided
 
-  const freshByRole = new Map(readiness.stagePlans.map((plan) => [plan.role, toReadinessPlanItem(plan)]))
+  const freshByRole = new Map(readiness.stagePlans.map((plan) => [plan.role, toReadinessPlanItem(plan, t)]))
   const merged = provided.flatMap((plan) => {
     const productionRole = productionRoleForPlan(plan)
     if (!productionRole) return [plan]
@@ -150,6 +153,7 @@ function productionRoleForPlan(plan: PodcastModelPlanItem): PodcastProductionRol
  * network effects on mount.
  */
 export function PodcastStudio({ seedDocumentIds, selections, notebookId, headingLevel = 2, modelPlans = [], initialState = 'selecting', onStateChange }: PodcastStudioProps) {
+  const { t } = useTranslation()
   const resolvedSelections = useMemo(() => selections ?? selectionsFromSeeds(seedDocumentIds), [seedDocumentIds, selections])
   const [brief, setBrief] = useState<EditorialBriefValues>(defaultBrief)
   const [outline, setOutline] = useState<string[]>(outlineDefaults)
@@ -161,6 +165,7 @@ export function PodcastStudio({ seedDocumentIds, selections, notebookId, heading
   const [productionPhase, setProductionPhase] = useState<'review' | 'confirm'>('review')
   const [isPreparing, setIsPreparing] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  // Holds an i18n key, translated where it renders.
   const [productionError, setProductionError] = useState<string | null>(null)
   const [submittedMessage, setSubmittedMessage] = useState<string | null>(null)
   const submissionKey = useRef<string | null>(null)
@@ -207,7 +212,7 @@ export function PodcastStudio({ seedDocumentIds, selections, notebookId, heading
       setProductionPhase('review')
     } catch (error) {
       markErrorReported(error) // v0.8.130 — this caller reports the failure itself
-      if (isCurrentRequest()) setProductionError('Podcast readiness is unavailable. No production was started.')
+      if (isCurrentRequest()) setProductionError('podcasts.podcastStudio.readinessUnavailable')
     } finally {
       if (isCurrentRequest()) setIsPreparing(false)
     }
@@ -253,17 +258,17 @@ export function PodcastStudio({ seedDocumentIds, selections, notebookId, heading
       })
       setStudioState('submitted')
       setStudioState('awaiting_outline')
-      setSubmittedMessage(`Production submitted: ${submitted.episodeName}. Outline review is next.`)
+      setSubmittedMessage(t('podcasts.podcastStudio.productionSubmitted', { name: submitted.episodeName }))
     } catch (error) {
       markErrorReported(error) // v0.8.130 — this caller reports the failure itself
-      setProductionError('Production could not be submitted. Review readiness and try again.')
+      setProductionError('podcasts.podcastStudio.submitFailed')
       setStudioState('briefing_ready')
     } finally {
       setIsSubmitting(false)
     }
   }
 
-  const plans = toPlanItems(modelPlans, readiness)
+  const plans = toPlanItems(modelPlans, readiness, t)
   const planChoices = Object.fromEntries(
     plans.filter((plan) => (plan.overrideChoices?.length ?? 0) > 0).map((plan) => [plan.stage, plan.overrideChoices ?? []]),
   ) as Partial<Record<PodcastModelPlanItem['stage'], string[]>>
@@ -294,16 +299,16 @@ export function PodcastStudio({ seedDocumentIds, selections, notebookId, heading
   const Heading = headingLevel === 1 ? 'h1' : 'h2'
 
   return (
-    <section aria-label="Podcast Intelligence Studio" className="space-y-5">
+    <section aria-label={t('podcasts.podcastStudio.title')} className="space-y-5">
       <header>
-        <Heading className="text-xl font-semibold">Podcast Intelligence Studio</Heading>
-        <p className="mt-1 text-sm text-muted-foreground">Build an optional, source-grounded audio overview. Production remains a separate confirmation.</p>
+        <Heading className="text-xl font-semibold">{t('podcasts.podcastStudio.title')}</Heading>
+        <p className="mt-1 text-sm text-muted-foreground">{t('podcasts.podcastStudio.description')}</p>
       </header>
 
       <PodcastStudioFolio
         researchSet={<ResearchSetPanel selections={resolvedSelections} preview={readiness?.preview ?? null} />}
         editorialBrief={<EditorialBriefPanel value={brief} onChange={(patch) => setBrief((current) => ({ ...current, ...patch }))} episodeProfiles={episodeProfiles} speakerProfiles={speakerProfiles} />}
-        storyboard={<section data-studio-region="outline-workspace" data-region="outline-workspace" aria-label="Outline and model workspace" className="space-y-4">
+        storyboard={<section data-studio-region="outline-workspace" data-region="outline-workspace" aria-label={t('podcasts.podcastStudio.outlineWorkspace')} className="space-y-4">
           <OutlineStoryboard
             segments={outline}
             onChange={(next) => setOutline(next.map((segment) => typeof segment === 'string' ? segment : segment.title ?? segment.name ?? segment.id ?? 'Untitled segment'))}
@@ -315,43 +320,43 @@ export function PodcastStudio({ seedDocumentIds, selections, notebookId, heading
             onOverride={handleOverride}
           />}
         production={<ProductionTimeline state={studioState}>
-          <section aria-label="Production Review" className="space-y-3 rounded-md border p-3">
-            <h4 className="font-medium">Production Review</h4>
-            <p className="text-sm text-muted-foreground">Readiness is checked only when you request review. Production still requires a separate confirmation.</p>
+          <section aria-label={t('podcasts.podcastStudio.productionReview')} className="space-y-3 rounded-md border p-3">
+            <h4 className="font-medium">{t('podcasts.podcastStudio.productionReview')}</h4>
+            <p className="text-sm text-muted-foreground">{t('podcasts.podcastStudio.reviewDescription')}</p>
             {!readiness ? (
               <div className="flex flex-wrap items-center gap-2">
                 <Button className="max-w-full whitespace-normal text-left" type="button" onClick={() => void prepareProductionReview()} disabled={isPreparing || resolvedSelections.length === 0}>
-                  {isPreparing ? 'Checking readiness…' : 'Prepare production review'}
+                  {isPreparing ? t('podcasts.podcastStudio.checkingReadiness') : t('podcasts.podcastStudio.prepareReview')}
                 </Button>
-                {resolvedSelections.length === 0 ? <p className="text-sm text-muted-foreground">Choose at least one readable source before production review.</p> : null}
+                {resolvedSelections.length === 0 ? <p className="text-sm text-muted-foreground">{t('podcasts.podcastStudio.chooseSource')}</p> : null}
               </div>
             ) : (
               <div className="space-y-3">
-                <p className="text-sm text-muted-foreground">{readiness.ready ? 'Local readiness is verified for this selection.' : readiness.blockedReasons.join(', ') || 'Local readiness is blocked.'}</p>
-                <h5 className="text-sm font-medium">Production profiles</h5>
+                <p className="text-sm text-muted-foreground">{readiness.ready ? t('podcasts.podcastStudio.readinessVerified') : readiness.blockedReasons.join(', ') || t('podcasts.podcastStudio.readinessBlocked')}</p>
+                <h5 className="text-sm font-medium">{t('podcasts.podcastStudio.productionProfiles')}</h5>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="grid gap-1 text-sm" htmlFor="podcast-episode-profile-review">Episode profile
-                    <select id="podcast-episode-profile-review" aria-label="Episode profile for production" value={brief.episodeProfileName} onChange={(event) => setBrief((current) => ({ ...current, episodeProfileName: event.target.value }))} className="h-9 rounded-md border bg-background px-2"><option value="">Choose a profile</option>{episodeProfiles.map((name) => <option key={name} value={name}>{name}</option>)}</select>
+                  <label className="grid gap-1 text-sm" htmlFor="podcast-episode-profile-review">{t('podcasts.podcastStudio.episodeProfile')}
+                    <select id="podcast-episode-profile-review" aria-label={t('podcasts.podcastStudio.episodeProfileForProduction')} value={brief.episodeProfileName} onChange={(event) => setBrief((current) => ({ ...current, episodeProfileName: event.target.value }))} className="h-9 rounded-md border bg-background px-2"><option value="">{t('podcasts.podcastStudio.chooseProfile')}</option>{episodeProfiles.map((name) => <option key={name} value={name}>{name}</option>)}</select>
                   </label>
-                  <label className="grid gap-1 text-sm" htmlFor="podcast-speaker-profile-review">Voice profile
-                    <select id="podcast-speaker-profile-review" aria-label="Voice profile for production" value={brief.speakerProfileName} onChange={(event) => setBrief((current) => ({ ...current, speakerProfileName: event.target.value }))} className="h-9 rounded-md border bg-background px-2"><option value="">Choose a profile</option>{speakerProfiles.map((name) => <option key={name} value={name}>{name}</option>)}</select>
+                  <label className="grid gap-1 text-sm" htmlFor="podcast-speaker-profile-review">{t('podcasts.podcastStudio.voiceProfile')}
+                    <select id="podcast-speaker-profile-review" aria-label={t('podcasts.podcastStudio.voiceProfileForProduction')} value={brief.speakerProfileName} onChange={(event) => setBrief((current) => ({ ...current, speakerProfileName: event.target.value }))} className="h-9 rounded-md border bg-background px-2"><option value="">{t('podcasts.podcastStudio.chooseProfile')}</option>{speakerProfiles.map((name) => <option key={name} value={name}>{name}</option>)}</select>
                   </label>
                 </div>
                 {productionPhase === 'review' ? (
-                  <Button type="button" onClick={() => setProductionPhase('confirm')} disabled={!canConfirm}>Continue to confirmation</Button>
+                  <Button type="button" onClick={() => setProductionPhase('confirm')} disabled={!canConfirm}>{t('podcasts.podcastStudio.continueToConfirmation')}</Button>
                 ) : (
                   <div className="space-y-2 rounded border bg-muted/20 p-3">
-                    <p className="text-sm">Confirm one fingerprint-checked local production job. It will stop for outline review before script and voice generation.</p>
-                    <Button type="button" onClick={() => void confirmProduction()} disabled={!canConfirm || isSubmitting}>{isSubmitting ? 'Submitting…' : 'Confirm production'}</Button>
+                    <p className="text-sm">{t('podcasts.podcastStudio.confirmDescription')}</p>
+                    <Button type="button" onClick={() => void confirmProduction()} disabled={!canConfirm || isSubmitting}>{isSubmitting ? t('podcasts.podcastStudio.submitting') : t('podcasts.podcastStudio.confirmProduction')}</Button>
                   </div>
                 )}
               </div>
             )}
-            {productionError ? <p role="alert" className="text-sm text-destructive">{productionError}</p> : null}
+            {productionError ? <p role="alert" className="text-sm text-destructive">{t(productionError)}</p> : null}
             {submittedMessage ? <p role="status" className="text-sm text-muted-foreground">{submittedMessage}</p> : null}
           </section>
         </ProductionTimeline>}
-        review={<p className="text-sm text-muted-foreground">Opening the Studio does not submit a production job.</p>}
+        review={<p className="text-sm text-muted-foreground">{t('podcasts.podcastStudio.openingNotice')}</p>}
       />
     </section>
   )

@@ -27,11 +27,11 @@ describe('GlobalAudioPlayer', () => {
     })
     render(<GlobalAudioPlayer />)
 
-    expect(screen.getByLabelText('Audio overview player')).toBeInTheDocument()
+    expect(screen.getByLabelText('podcasts.globalAudioPlayer.player')).toBeInTheDocument()
     expect(screen.getByText('Local evidence review')).toBeInTheDocument()
     await waitFor(() => expect(document.querySelector('audio')?.src).toContain('episode.mp3'))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Stop overview' }))
+    fireEvent.click(screen.getByRole('button', { name: 'podcasts.globalAudioPlayer.stop' }))
     expect(useAudioPlayerStore.getState().episode).toBeNull()
   })
 })

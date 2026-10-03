@@ -260,8 +260,8 @@ export default function SourcesPage() {
   }
 
   const getSourceType = (source: SourceListResponse) => {
-    if (source.source_type === 'web_import') return 'Web import'
-    if (source.source_type === 'deep_research_report') return 'Deep research'
+    if (source.source_type === 'web_import') return t('sources.sourcesPage.webImport')
+    if (source.source_type === 'deep_research_report') return t('sources.sourcesPage.deepResearch')
     if (source.asset?.url) return t('sources.type.link')
     if (source.asset?.file_path) return t('sources.type.file')
     return t('sources.type.text')
@@ -542,8 +542,8 @@ export default function SourcesPage() {
                           <Badge variant="outline" className="gap-1 text-xs">
                             <Share2 className="h-3 w-3" />
                             {(source.notebook_count ?? 0) > 1
-                              ? `Shared with ${source.notebook_count}`
-                              : 'Shared'}
+                              ? t('sources.sourcesPage.sharedWithCount', { count: source.notebook_count })
+                              : t('sources.sourcesPage.shared')}
                           </Badge>
                         )}
                         {getProvenanceLabel(source) && (

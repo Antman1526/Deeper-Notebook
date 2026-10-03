@@ -85,7 +85,7 @@ function VaultDocumentViewContent({
     onFocusedBlockChange?.(null)
   }, [onFocusedBlockChange, parserMarkdown, readableBlocks])
   const reading = (
-    <section aria-label={`${title} reading view`}>
+    <section aria-label={t('knowledge.vaultDocumentView.readingView', { title })}>
       {readableBlocks.length > 0 ? readableBlocks.map((block, index) => (
         <section key={block.knowledge_block_id} data-knowledge-block-id={block.knowledge_block_id!} data-source-revision-id={block.source_revision_id ?? undefined}>
           <VaultMarkdown vaultId={page.file.vault_id} noteId={page.note.id} headingIdPrefix={`${headingIdPrefix}-${index}`} markdown={block.markdown!} links={page.outgoing_links} onNavigate={onNavigate} onPreview={onPreview} footnoteLabel={t('knowledge.footnotes')} />
@@ -133,10 +133,10 @@ function VaultDocumentViewContent({
       ? t('knowledge.source')
       : t('knowledge.livePreview')
   const modeLabel = mode === 'reading'
-    ? `${title} reading view`
+    ? t('knowledge.vaultDocumentView.readingView', { title })
     : mode === 'source'
-      ? `${title} source`
-      : `${title} live preview`
+      ? t('knowledge.vaultDocumentView.sourceView', { title })
+      : t('knowledge.vaultDocumentView.livePreviewView', { title })
   const resetKey = `${page.note.id}:${mode}:${page.file.content_hash}`
   const document = markdown.length === 0 ? (
     <section

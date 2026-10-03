@@ -34,12 +34,12 @@ describe('GuidedTipsProvider', () => {
   it('shows the path-matched knowledge tip and dismisses it with Got it', async () => {
     renderTip()
 
-    expect(await screen.findByRole('note', { name: 'Notebook Index tip' })).toBeVisible()
-    expect(screen.getByText(/read-only external vaults/)).toBeVisible()
+    expect(await screen.findByRole('note', { name: 'workspace.guidedTipsProvider.ariaLabel' })).toBeVisible()
+    expect(screen.getByText('workspace.catalog.knowledgeOverviewBody')).toBeVisible()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Got it' }))
+    fireEvent.click(screen.getByRole('button', { name: 'workspace.guidedTipsProvider.gotIt' }))
 
-    expect(screen.queryByRole('note', { name: 'Notebook Index tip' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('note', { name: 'workspace.guidedTipsProvider.ariaLabel' })).not.toBeInTheDocument()
   })
 
   // v0.8.130 — rendered inside the shell, the tip's z-index only counted within the
@@ -47,7 +47,7 @@ describe('GuidedTipsProvider', () => {
   // painted over its "Got it" button at 1440px. It is portalled to <body>.
   it('renders the tip at the document root, above every shell stacking context', async () => {
     const { container } = renderTip()
-    const tip = await screen.findByRole('note', { name: 'Notebook Index tip' })
+    const tip = await screen.findByRole('note', { name: 'workspace.guidedTipsProvider.ariaLabel' })
     expect(tip.parentElement).toBe(document.body)
     expect(container.contains(tip)).toBe(false)
   })
@@ -60,7 +60,7 @@ describe('GuidedTipsProvider', () => {
     renderTip()
 
     await waitFor(() => {
-      expect(screen.queryByRole('note', { name: 'Notebook Index tip' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('note', { name: 'workspace.guidedTipsProvider.ariaLabel' })).not.toBeInTheDocument()
     })
   })
 
@@ -68,14 +68,14 @@ describe('GuidedTipsProvider', () => {
     renderTip('/sources')
 
     await waitFor(() => {
-      expect(screen.queryByRole('note', { name: 'Knowledge workspace tip' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('note', { name: 'workspace.guidedTipsProvider.ariaLabel' })).not.toBeInTheDocument()
     })
   })
 
   it('disables all future tips without completing the catalog item', async () => {
     renderTip()
 
-    fireEvent.click(await screen.findByRole('button', { name: "Don't show again" }))
+    fireEvent.click(await screen.findByRole('button', { name: 'workspace.guidedTipsProvider.dontShowAgain' }))
 
     expect(useGuidedTipsStore.getState().enabled).toBe(false)
     expect(useGuidedTipsStore.getState().completed).toEqual({})
@@ -84,7 +84,7 @@ describe('GuidedTipsProvider', () => {
   it('dismisses only the current version when Escape is pressed', async () => {
     renderTip()
 
-    await screen.findByRole('note', { name: 'Notebook Index tip' })
+    await screen.findByRole('note', { name: 'workspace.guidedTipsProvider.ariaLabel' })
     fireEvent.keyDown(document, { key: 'Escape' })
 
     expect(useGuidedTipsStore.getState().completed).toEqual({ 'knowledge-overview': 2 })
@@ -96,7 +96,7 @@ describe('GuidedTipsProvider', () => {
     document.body.append(anchor)
     render(<GuidedTipsProvider />)
 
-    await screen.findByRole('note', { name: 'Notebook Index tip' })
+    await screen.findByRole('note', { name: 'workspace.guidedTipsProvider.ariaLabel' })
     anchor.remove()
     fireEvent.keyDown(document, { key: 'Escape' })
 
@@ -106,7 +106,7 @@ describe('GuidedTipsProvider', () => {
   it('does not create a focus trap', async () => {
     renderTip()
 
-    const tip = await screen.findByRole('note', { name: 'Notebook Index tip' })
+    const tip = await screen.findByRole('note', { name: 'workspace.guidedTipsProvider.ariaLabel' })
 
     expect(tip).not.toHaveAttribute('aria-modal')
     expect(tip).not.toHaveAttribute('tabindex')

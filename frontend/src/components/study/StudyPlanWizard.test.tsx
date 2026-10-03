@@ -74,8 +74,8 @@ describe('StudyPlanWizard', () => {
     })
     render(<StudyPlanWizard open onOpenChange={vi.fn()} />)
 
-    fireEvent.change(screen.getByLabelText('Learning goal'), { target: { value: 'Understand mechanics' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save and continue' }))
+    fireEvent.change(screen.getByLabelText('study.studyPlanWizard.goalLabel'), { target: { value: 'Understand mechanics' } })
+    fireEvent.click(screen.getByRole('button', { name: 'study.studyPlanWizard.saveAndContinue' }))
 
     expect(createPlan).toHaveBeenCalledWith(expect.objectContaining({
       goal: 'Understand mechanics',
@@ -99,8 +99,8 @@ describe('StudyPlanWizard', () => {
     })
     render(<StudyPlanWizard open onOpenChange={vi.fn()} />)
 
-    fireEvent.change(screen.getByLabelText('Learning goal'), { target: { value: 'Understand mechanics' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save and continue' }))
+    fireEvent.change(screen.getByLabelText('study.studyPlanWizard.goalLabel'), { target: { value: 'Understand mechanics' } })
+    fireEvent.click(screen.getByRole('button', { name: 'study.studyPlanWizard.saveAndContinue' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Upload from study wizard' }))
 
     await waitFor(() => {
@@ -119,7 +119,7 @@ describe('StudyPlanWizard', () => {
   it('does not write draft details to browser storage', async () => {
     const setItem = vi.spyOn(Storage.prototype, 'setItem')
     render(<StudyPlanWizard open onOpenChange={vi.fn()} />)
-    fireEvent.change(screen.getByLabelText('Learning goal'), { target: { value: 'Local-only goal' } })
+    fireEvent.change(screen.getByLabelText('study.studyPlanWizard.goalLabel'), { target: { value: 'Local-only goal' } })
     expect(setItem).not.toHaveBeenCalled()
     setItem.mockRestore()
   })

@@ -109,9 +109,9 @@ describe('PodcastLibrary', () => {
       <PodcastLibrary episodes={[episode]} onDelete={vi.fn()} onRetry={vi.fn()} />
     </QueryClientProvider>)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open Episode Lab for Local evidence review' }))
+    fireEvent.click(screen.getByRole('button', { name: 'podcasts.podcastLibrary.openEpisodeLabFor' }))
 
-    const lab = screen.getByRole('region', { name: 'Episode Lab' })
+    const lab = screen.getByRole('region', { name: 'podcasts.episodeLab.title' })
     expect(lab).toBeVisible()
     expect(within(lab).getByText('Local evidence review')).toBeVisible()
   })
@@ -151,10 +151,10 @@ describe('PodcastLibrary', () => {
       <PodcastLibrary episodes={[]} onDelete={vi.fn()} onRetry={vi.fn()} />
     </QueryClientProvider>)
 
-    expect(screen.getByText('No podcast episodes yet.')).toBeVisible()
-    const evidenceFilter = screen.getByRole('button', { name: 'Evidence filters — coming soon' })
+    expect(screen.getByText('podcasts.podcastLibrary.noEpisodes')).toBeVisible()
+    const evidenceFilter = screen.getByRole('button', { name: 'podcasts.podcastLibrary.evidenceFiltersComingSoon' })
     expect(evidenceFilter).toBeDisabled()
-    expect(evidenceFilter).toHaveAttribute('title', 'Evidence-state filters are not available yet')
+    expect(evidenceFilter).toHaveAttribute('title', 'podcasts.podcastLibrary.evidenceFiltersUnavailable')
     // Internal roadmap labels are not user-facing copy.
     expect(document.body).not.toHaveTextContent(/Phase[- ]\d/)
   })

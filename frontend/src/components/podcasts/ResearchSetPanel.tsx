@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/lib/hooks/use-translation'
 import type { PodcastSelection } from '@/lib/podcasts/selection'
 import type { PodcastSelectionPreview, PodcastSelectionPreviewEntry, PodcastSelectionState } from '@/lib/types/podcasts'
 import { isAbsoluteFilesystemPath, redactAbsolutePaths } from '@/lib/podcasts/safe-text'
@@ -12,22 +13,22 @@ export interface ResearchSetPanelProps {
 }
 
 const PROBLEM_STATES: PodcastSelectionState[] = ['unavailable', 'changed', 'empty', 'failed_parse']
-const STATE_LABELS: Record<PodcastSelectionState, string> = {
-  included: 'Included',
-  duplicate: 'Duplicate',
-  unavailable: 'Unavailable',
-  changed: 'Changed since preview',
-  empty: 'Empty',
-  failed_parse: 'Failed to parse',
-  oversize: 'Oversize',
+const STATE_LABEL_KEYS: Record<PodcastSelectionState, string> = {
+  included: 'podcasts.researchSetPanel.stateIncluded',
+  duplicate: 'podcasts.researchSetPanel.stateDuplicate',
+  unavailable: 'podcasts.researchSetPanel.stateUnavailable',
+  changed: 'podcasts.researchSetPanel.stateChanged',
+  empty: 'podcasts.researchSetPanel.stateEmpty',
+  failed_parse: 'podcasts.researchSetPanel.stateFailedParse',
+  oversize: 'podcasts.researchSetPanel.stateOversize',
 }
 
 function entriesFor(preview: PodcastSelectionPreview | null | undefined): PodcastSelectionPreviewEntry[] {
   return preview?.entries ?? []
 }
 
-function safeTitle(value: string): string {
-  if (isAbsoluteFilesystemPath(value)) return value.split(/[\\/]/).filter(Boolean).pop() || 'Untitled reference'
+function safeTitle(value: string, untitledLabel: string): string {
+  if (isAbsoluteFilesystemPath(value)) return value.split(/[\\/]/).filter(Boolean).pop() || untitledLabel
   return redactAbsolutePaths(value)
 }
 
@@ -36,7 +37,9 @@ function safeReason(value: string): string {
 }
 
 function EntryList({ entries, label }: { entries: PodcastSelectionPreviewEntry[]; label: string }) {
+  const { t } = useTranslation()
   if (entries.length === 0) return null
+  const untitledLabel = t('podcasts.researchSetPanel.untitledReference')
   return (
     <section aria-label={label} className="space-y-2">
       <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</h4>
@@ -44,10 +47,10 @@ function EntryList({ entries, label }: { entries: PodcastSelectionPreviewEntry[]
         {entries.map((entry) => (
           <li key={`${entry.stableId}:${entry.revisionId ?? 'current'}:${entry.state}`} className="flex items-start justify-between gap-3 rounded border px-3 py-2">
             <div className="min-w-0">
-              <span className="block truncate" title={safeTitle(entry.title)}>{safeTitle(entry.title)}</span>
+              <span className="block truncate" title={safeTitle(entry.title, untitledLabel)}>{safeTitle(entry.title, untitledLabel)}</span>
               <span className="block truncate text-xs text-muted-foreground" title={safeReason(entry.reason)}>{safeReason(entry.reason)}</span>
             </div>
-            <span className="shrink-0 text-xs text-muted-foreground">{STATE_LABELS[entry.state]}</span>
+            <span className="shrink-0 text-xs text-muted-foreground">{t(STATE_LABEL_KEYS[entry.state])}</span>
           </li>
         ))}
       </ul>
@@ -56,6 +59,7 @@ function EntryList({ entries, label }: { entries: PodcastSelectionPreviewEntry[]
 }
 
 export function ResearchSetPanel({ selections, preview, onPrepare, isPreparing = false }: ResearchSetPanelProps) {
+  const { t } = useTranslation()
   const entries = entriesFor(preview)
   const included = entries.filter((entry) => entry.state === 'included')
   const duplicates = entries.filter((entry) => entry.state === 'duplicate')
@@ -64,40 +68,40 @@ export function ResearchSetPanel({ selections, preview, onPrepare, isPreparing =
   const hasEmptySelection = selections.length === 0 || (preview != null && entries.length === 0)
 
   return (
-    <section data-studio-region="research-set" data-region="research-set" aria-label="Research Set" className="space-y-3 rounded-md border p-4">
+    <section data-studio-region="research-set" data-region="research-set" aria-label={t('podcasts.researchSetPanel.title')} className="space-y-3 rounded-md border p-4">
       <header>
-        <h3 className="font-semibold">Research Set</h3>
+        <h3 className="font-semibold">{t('podcasts.researchSetPanel.title')}</h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          {preview ? `${included.length} included · ${problems.length + duplicates.length + oversize.length} excluded/problem` : `${selections.length} selected reference${selections.length === 1 ? '' : 's'}`}
+          {preview ? t('podcasts.researchSetPanel.previewSummary', { included: included.length, excluded: problems.length + duplicates.length + oversize.length }) : selections.length === 1 ? t('podcasts.researchSetPanel.selectedReferencesOne', { count: selections.length }) : t('podcasts.researchSetPanel.selectedReferencesOther', { count: selections.length })}
         </p>
       </header>
 
       {!preview && onPrepare ? (
         <button type="button" className="rounded-md border px-3 py-2 text-sm" onClick={onPrepare} disabled={isPreparing || selections.length === 0}>
-          {isPreparing ? 'Preparing research set…' : 'Prepare research set'}
+          {isPreparing ? t('podcasts.researchSetPanel.preparing') : t('podcasts.researchSetPanel.prepare')}
         </button>
       ) : null}
 
       {hasEmptySelection ? (
-        <p className="rounded border border-dashed p-3 text-sm text-muted-foreground">No readable references selected</p>
+        <p className="rounded border border-dashed p-3 text-sm text-muted-foreground">{t('podcasts.researchSetPanel.noReadableReferences')}</p>
       ) : null}
 
       <div className="space-y-3">
-        <EntryList entries={included} label="Included" />
-        <EntryList entries={problems} label="Problems" />
-        <EntryList entries={duplicates} label="Duplicates" />
-        <EntryList entries={oversize} label="Oversize" />
+        <EntryList entries={included} label={t('podcasts.researchSetPanel.included')} />
+        <EntryList entries={problems} label={t('podcasts.researchSetPanel.problems')} />
+        <EntryList entries={duplicates} label={t('podcasts.researchSetPanel.duplicates')} />
+        <EntryList entries={oversize} label={t('podcasts.researchSetPanel.oversize')} />
       </div>
 
       {preview ? (
         <div className="space-y-1 text-xs text-muted-foreground" aria-live="polite">
-          <p>{preview.includedCharacters.toLocaleString()} characters included in the current worker.</p>
-          {preview.requiresBatchEngine ? <p>Selection requires a batch engine; the current worker will not truncate it.</p> : null}
-          {!preview.currentWorkerEligible && !preview.requiresBatchEngine ? <p>Selection is not eligible until the listed problems are resolved.</p> : null}
+          <p>{t('podcasts.researchSetPanel.charactersIncluded', { characters: preview.includedCharacters.toLocaleString() })}</p>
+          {preview.requiresBatchEngine ? <p>{t('podcasts.researchSetPanel.requiresBatchEngine')}</p> : null}
+          {!preview.currentWorkerEligible && !preview.requiresBatchEngine ? <p>{t('podcasts.researchSetPanel.notEligible')}</p> : null}
           {preview.blockedReasons.length > 0 ? <p>{preview.blockedReasons.map(safeReason).join(', ')}</p> : null}
         </div>
       ) : (
-        <p className="text-xs text-muted-foreground">References are resolved server-side; absolute source paths are never displayed.</p>
+        <p className="text-xs text-muted-foreground">{t('podcasts.researchSetPanel.referencesNotice')}</p>
       )}
     </section>
   )

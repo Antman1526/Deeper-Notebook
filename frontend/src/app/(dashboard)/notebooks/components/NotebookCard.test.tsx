@@ -74,7 +74,7 @@ describe('NotebookCard keyboard access', () => {
 
     const link = screen.getByRole('link', { name: 'Deterministic Research Notebook' })
     expect(link.className).toMatch(/z-\[1\]/)
-    expect(screen.getByRole('button', { name: 'Actions for Deterministic Research Notebook' }).className)
+    expect(screen.getByRole('button', { name: 'notebooks.notebookCard.actionsFor' }).className)
       .toContain('z-10')
     expect(screen.getByRole('button', { name: 'Turn into podcast' }).parentElement?.className)
       .toContain('z-10')

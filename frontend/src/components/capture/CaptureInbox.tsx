@@ -9,9 +9,11 @@ import { Input } from '@/components/ui/input'
 import { useCaptureActions, useCaptureItems, useCaptureRoots } from '@/lib/hooks/use-capture'
 import { isVisualSystemV2Enabled } from '@/lib/features'
 import { useSourceVisualsEnabled } from '@/lib/features-client'
+import { useTranslation } from '@/lib/hooks/use-translation'
 import { CaptureItemRow } from './CaptureItemRow'
 
 export function CaptureInbox() {
+  const { t } = useTranslation()
   const roots = useCaptureRoots()
   const items = useCaptureItems()
   const actions = useCaptureActions()
@@ -34,9 +36,9 @@ export function CaptureInbox() {
         <div className="rounded-xl bg-card p-5 space-y-4 border">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-base font-semibold text-foreground">Approved folders</h2>
+              <h2 className="text-base font-semibold text-foreground">{t('capture.captureInbox.approvedFolders')}</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Only folders you add here are scanned. Originals remain in place.
+                {t('capture.captureInbox.approvedFoldersDesc')}
               </p>
             </div>
             <Button
@@ -50,7 +52,7 @@ export function CaptureInbox() {
               <RefreshCw
                 className={`mr-2 h-4 w-4 ${actions.scan.isPending ? 'animate-spin' : ''}`}
               />
-              Scan now
+              {t('capture.captureInbox.scanNow')}
             </Button>
           </div>
 
@@ -67,10 +69,10 @@ export function CaptureInbox() {
 
           <div className="flex gap-2">
             <Input
-              aria-label="Capture folder path"
+              aria-label={t('capture.captureInbox.folderPathLabel')}
               value={path}
               onChange={(event) => setPath(event.target.value)}
-              placeholder="Add a local or Google Drive Desktop folder"
+              placeholder={t('capture.captureInbox.folderPathPlaceholder')}
               className="font-mono text-xs rounded-xl"
             />
             <Button
@@ -81,7 +83,7 @@ export function CaptureInbox() {
               className="shrink-0 rounded-xl duration-150"
             >
               <FolderPlus className="mr-2 h-4 w-4" />
-              Add
+              {t('common.add')}
             </Button>
           </div>
         </div>
@@ -89,17 +91,17 @@ export function CaptureInbox() {
 
       <section className="space-y-4">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-base font-semibold text-foreground">Inbox</h2>
+          <h2 className="text-base font-semibold text-foreground">{t('capture.captureInbox.inbox')}</h2>
           <span className="text-xs text-muted-foreground font-medium">
-            {items.data?.length ?? 0} items
+            {t('capture.captureInbox.itemsCount', { count: items.data?.length ?? 0 })}
           </span>
         </div>
 
         {items.isLoading ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">Loading local intake…</p>
+          <p className="py-6 text-center text-sm text-muted-foreground">{t('capture.captureInbox.loading')}</p>
         ) : items.isError ? (
           <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
-            The capture inbox could not be loaded.
+            {t('capture.captureInbox.loadError')}
           </p>
         ) : items.data?.length ? (
           <Card className="divide-y border">
@@ -115,9 +117,9 @@ export function CaptureInbox() {
           </Card>
         ) : (
           <div className="rounded-lg border border-dashed border-border p-8 text-center">
-            <p className="text-sm font-medium text-foreground">No supported files in inbox</p>
+            <p className="text-sm font-medium text-foreground">{t('capture.captureInbox.emptyTitle')}</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Add a folder above and click Scan now after copying documents, audio, or video into it.
+              {t('capture.captureInbox.emptyDesc')}
             </p>
           </div>
         )}

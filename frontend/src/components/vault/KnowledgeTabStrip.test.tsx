@@ -76,15 +76,15 @@ describe('KnowledgeTabStrip', () => {
     renderTabStrip()
 
     expect(screen.getByRole('tablist', { name: 'Open tabs' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Read: Research' })).toHaveAttribute(
+    expect(screen.getByRole('tab', { name: 'knowledge.commands.modeRead: Research' })).toHaveAttribute(
       'aria-selected',
       'true',
     )
-    expect(screen.getByRole('tab', { name: 'Read: Research' })).toHaveAttribute(
+    expect(screen.getByRole('tab', { name: 'knowledge.commands.modeRead: Research' })).toHaveAttribute(
       'tabindex',
       '0',
     )
-    expect(screen.getByRole('tab', { name: 'Read: Plan' })).toHaveAttribute(
+    expect(screen.getByRole('tab', { name: 'knowledge.commands.modeRead: Plan' })).toHaveAttribute(
       'tabindex',
       '-1',
     )
@@ -93,7 +93,7 @@ describe('KnowledgeTabStrip', () => {
   it('activates a clicked tab without conflating its adjacent close control', () => {
     const { onActivateTab, onCloseTab } = renderTabStrip()
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Read: Plan' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'knowledge.commands.modeRead: Plan' }))
     expect(onActivateTab).toHaveBeenCalledWith('pane-1', 'tab-1')
     expect(onCloseTab).not.toHaveBeenCalled()
 
@@ -106,7 +106,7 @@ describe('KnowledgeTabStrip', () => {
   it('associates every stable tab ID with its pane content panel', () => {
     renderTabStrip()
 
-    expect(screen.getByRole('tab', { name: 'Read: Plan' })).toHaveAttribute(
+    expect(screen.getByRole('tab', { name: 'knowledge.commands.modeRead: Plan' })).toHaveAttribute(
       'id',
       'knowledge-tab-6:pane-1-5:tab-1',
     )
@@ -187,8 +187,8 @@ describe('KnowledgeTabStrip', () => {
 
     fireEvent.click(closeActiveTab)
 
-    expect(screen.queryByRole('tab', { name: 'Read: Research' })).not.toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Graph: Decisions' })).toHaveFocus()
+    expect(screen.queryByRole('tab', { name: 'knowledge.commands.modeRead: Research' })).not.toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'knowledge.commands.modeGraph: Decisions' })).toHaveFocus()
   })
 
   it('requests focus on the pane fallback after its final tab closes', () => {
@@ -238,10 +238,10 @@ describe('KnowledgeTabStrip', () => {
   })
 
   it.each([
-    { start: 'Graph: Decisions', key: 'ArrowRight', target: 'Read: Plan', targetTitle: 'Plan' },
-    { start: 'Read: Plan', key: 'ArrowLeft', target: 'Graph: Decisions', targetTitle: 'Decisions' },
-    { start: 'Read: Research', key: 'Home', target: 'Read: Plan', targetTitle: 'Plan' },
-    { start: 'Read: Research', key: 'End', target: 'Graph: Decisions', targetTitle: 'Decisions' },
+    { start: 'knowledge.commands.modeGraph: Decisions', key: 'ArrowRight', target: 'knowledge.commands.modeRead: Plan', targetTitle: 'Plan' },
+    { start: 'knowledge.commands.modeRead: Plan', key: 'ArrowLeft', target: 'knowledge.commands.modeGraph: Decisions', targetTitle: 'Decisions' },
+    { start: 'knowledge.commands.modeRead: Research', key: 'Home', target: 'knowledge.commands.modeRead: Plan', targetTitle: 'Plan' },
+    { start: 'knowledge.commands.modeRead: Research', key: 'End', target: 'knowledge.commands.modeGraph: Decisions', targetTitle: 'Decisions' },
   ])('moves focus and selection from $start to $target with $key', ({
     start,
     key,

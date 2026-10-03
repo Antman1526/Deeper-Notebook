@@ -1,5 +1,6 @@
 import * as React from 'react'
 
+import { useTranslation } from '@/lib/hooks/use-translation'
 import { cn } from '@/lib/utils'
 
 export type StatePanelKind =
@@ -48,6 +49,7 @@ export const StatePanel = React.forwardRef<HTMLElement, StatePanelProps>(
     },
     ref,
   ) {
+    const { t } = useTranslation()
     const generatedId = React.useId()
     const titleId = `${generatedId}-title`
     const descriptionId = `${generatedId}-description`
@@ -88,7 +90,7 @@ export const StatePanel = React.forwardRef<HTMLElement, StatePanelProps>(
         ) : null}
         {details ? (
           <details data-dn-state-panel-details="true" className="dn-state-panel-details">
-            <summary>Details</summary>
+            <summary>{t('workspace.statePanel.details')}</summary>
             <div data-dn-state-panel-details-content="true">{details}</div>
           </details>
         ) : null}

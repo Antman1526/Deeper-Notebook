@@ -3,6 +3,15 @@ import { render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { LocalModelHealthBadges } from './LocalModelHealthBadges'
 
+// The status label is interpolated, so this suite needs a t() that fills {{placeholders}}
+// (the global setup mock returns the bare key).
+vi.mock('@/lib/hooks/use-translation', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: { name?: string; status?: string }) =>
+      key === 'chat.localModelHealthBadges.statusAria' ? `${options?.name}: ${options?.status}` : key,
+  }),
+}))
+
 vi.mock('@/lib/hooks/use-local-models', () => ({
   useLocalModelsHealth: () => ({
     data: {
@@ -51,7 +60,7 @@ describe('LocalModelHealthBadges', () => {
         <LocalModelHealthBadges />
       </QueryClientProvider>
     )
-    // Note: t() is mocked globally in setup.ts to return the key string
+    // Note: t() is mocked above to return the key string (with the aria template filled in)
     expect(screen.getByLabelText(/Local GGUF: models\.status\.healthy/)).toBeInTheDocument()
     expect(screen.getByLabelText(/Local Embeddings: models\.status\.unhealthy/)).toBeInTheDocument()
   })

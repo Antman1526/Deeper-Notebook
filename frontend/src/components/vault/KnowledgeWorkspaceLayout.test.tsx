@@ -84,16 +84,16 @@ describe('KnowledgeWorkspaceLayout', () => {
     useKnowledgeWorkspaceStore.getState().openTab(research)
     renderLayout()
     const panel = screen.getByRole('tabpanel')
-    const researchTab = screen.getByRole('tab', { name: 'Read: Research' })
+    const researchTab = screen.getByRole('tab', { name: 'knowledge.commands.modeRead: Research' })
 
     expect(panel).toHaveAttribute('id', 'knowledge-panel-pane-1')
     expect(panel).toHaveAttribute('aria-labelledby', researchTab.id)
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Read: Plan' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'knowledge.commands.modeRead: Plan' }))
 
     expect(panel).toHaveAttribute(
       'aria-labelledby',
-      screen.getByRole('tab', { name: 'Read: Plan' }).id,
+      screen.getByRole('tab', { name: 'knowledge.commands.modeRead: Plan' }).id,
     )
   })
 
@@ -118,7 +118,7 @@ describe('KnowledgeWorkspaceLayout', () => {
     ))
 
     render(<KnowledgeWorkspaceLayout renderPane={renderPane} />)
-    const firstTab = screen.getByRole('tab', { name: 'Read: Plan' })
+    const firstTab = screen.getByRole('tab', { name: 'knowledge.commands.modeRead: Plan' })
     const tabPanel = screen.getByRole('tabpanel')
     const effectiveTabId = paneWithNoActiveId.tabs[0].id
 

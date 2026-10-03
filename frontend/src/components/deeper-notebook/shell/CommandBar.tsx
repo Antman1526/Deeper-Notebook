@@ -48,7 +48,7 @@ export function CommandBar({ showBrand = true, onMenu, menuOpen = false, focusSh
       : navMatch?.name ?? routeLabel
 
   return (
-    <header className="dn-command-bar" aria-label="Command bar">
+    <header className="dn-command-bar" aria-label={t('workspace.commandBar.ariaLabel')}>
       <div className="dn-command-breadcrumb flex items-center gap-2.5">
         {onMenu ? (
           <Button
@@ -96,7 +96,7 @@ export function CommandBar({ showBrand = true, onMenu, menuOpen = false, focusSh
           type="button"
           variant="outline"
           className="dn-command-trigger group h-9 px-3 gap-2.5 border-border/80 bg-background/80 hover:bg-background/95 hover:border-primary/40 duration-150"
-          aria-label="Open command palette"
+          aria-label={t('workspace.commandBar.openPalette')}
           onClick={(event) => requestCommandSurface('global', '', event.currentTarget)}
         >
           <Search className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary transition-colors" aria-hidden="true" />

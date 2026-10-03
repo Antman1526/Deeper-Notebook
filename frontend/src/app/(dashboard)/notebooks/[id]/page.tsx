@@ -184,7 +184,7 @@ export default function NotebookPage() {
     // and a UX dead-end if the request hung.
     return (
       <>
-        <FolioRouteFrame section="Organize" title="Notebook workspace">
+        <FolioRouteFrame section={t('notebooks.idPage.organize')} title={t('notebooks.idPage.workspaceTitle')}>
           <div className="flex flex-1 items-center justify-center">
             <LoadingSpinner size="lg" />
           </div>
@@ -196,7 +196,7 @@ export default function NotebookPage() {
   if (!notebook) {
     return (
       <>
-        <FolioRouteFrame section="Organize" title="Notebook workspace">
+        <FolioRouteFrame section={t('notebooks.idPage.organize')} title={t('notebooks.idPage.workspaceTitle')}>
           <div>
             <h2 className="mb-4 text-2xl font-semibold">{t('notebooks.notFound')}</h2>
             <p className="text-muted-foreground">{t('notebooks.notFoundDesc')}</p>

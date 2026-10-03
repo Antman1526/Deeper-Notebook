@@ -127,6 +127,7 @@ function createResearchModeTab(
   id: string,
   activeTab: KnowledgeTab | undefined,
   navigation: ReturnType<typeof useKnowledgeWorkspaceStore.getState>['navigation'],
+  titles: Record<'graph' | 'ask' | 'search' | 'podcast', string>,
 ): KnowledgeTab | null {
   const base = {
     id, vaultId: '', noteId: '', relativePath: '', viewMode: 'reading' as const,
@@ -149,7 +150,7 @@ function createResearchModeTab(
   }
   if (mode === 'graph') {
     return {
-      ...(activeTab ?? base), id, title: activeTab?.title ?? 'Graph', mode,
+      ...(activeTab ?? base), id, title: activeTab?.title ?? titles.graph, mode,
       viewMode: 'graph', graphViewport: activeTab?.graphViewport ?? { x: 0, y: 0, zoom: 1 },
       target: {
         kind: 'graph', root_document_id: document?.knowledge_document_id ?? activeTab?.knowledgeDocumentId ?? null,
@@ -158,9 +159,9 @@ function createResearchModeTab(
       },
     }
   }
-  if (mode === 'ask') return { ...base, title: 'Ask', mode, target: { kind: 'ask', thread_id: null, selected_document_ids: document?.knowledge_document_id ? [document.knowledge_document_id] : [] } }
-  if (mode === 'search') return { ...base, title: 'Search', mode, target: { kind: 'search', query: navigation.searchQuery, search_mode: navigation.searchMode, space_ids: navigation.selectedSpaceIds, authority_kinds: navigation.authorityFilters } }
-  return { ...base, title: 'Podcast', mode, target: { kind: 'podcast', production_id: null, seed_document_ids: document?.knowledge_document_id ? [document.knowledge_document_id] : [] } }
+  if (mode === 'ask') return { ...base, title: titles.ask, mode, target: { kind: 'ask', thread_id: null, selected_document_ids: document?.knowledge_document_id ? [document.knowledge_document_id] : [] } }
+  if (mode === 'search') return { ...base, title: titles.search, mode, target: { kind: 'search', query: navigation.searchQuery, search_mode: navigation.searchMode, space_ids: navigation.selectedSpaceIds, authority_kinds: navigation.authorityFilters } }
+  return { ...base, title: titles.podcast, mode, target: { kind: 'podcast', production_id: null, seed_document_ids: document?.knowledge_document_id ? [document.knowledge_document_id] : [] } }
 }
 
 function namedTargetForTab(
@@ -550,6 +551,14 @@ export function KnowledgeExplorer() {
     openTab(tabFromFile(file), paneId)
   }
 
+  // Translated outside the callbacks/memos below so their dependencies are plain strings.
+  const graphTabTitle = t('knowledge.commands.modeGraph')
+  const askTabTitle = t('knowledge.commands.modeAsk')
+  const searchTabTitle = t('knowledge.commands.modeSearch')
+  const podcastTabTitle = t('knowledge.commands.modePodcast')
+  const requiresDocumentReason = t('knowledge.knowledgeExplorer.requiresDocumentTarget')
+  const externalReadOnlyReason = t('knowledge.researchModes.externalReadOnly')
+  const restoreFailedMessage = t('knowledge.knowledgeExplorer.restoreFailed')
   const openResearchMode = useCallback((mode: ResearchMode, paneId: string) => {
     const state = useKnowledgeWorkspaceStore.getState()
     const pane = state.panes[paneId]
@@ -566,7 +575,9 @@ export function KnowledgeExplorer() {
     let nextId = state.nextId
     const usedIds = new Set(Object.values(state.panes).flatMap((candidate) => candidate.tabs.map((tab) => tab.id)))
     while (usedIds.has(`tab-${nextId}`)) nextId += 1
-    const created = createResearchModeTab(mode, `tab-${nextId}`, active, state.navigation)
+    const created = createResearchModeTab(mode, `tab-${nextId}`, active, state.navigation, {
+      graph: graphTabTitle, ask: askTabTitle, search: searchTabTitle, podcast: podcastTabTitle,
+    })
     if (!created) return
     useKnowledgeWorkspaceStore.setState({
       activePaneId: paneId,
@@ -588,7 +599,7 @@ export function KnowledgeExplorer() {
         [paneId]: { ...pane, activeTabId: created.id, tabs: [...pane.tabs, created] },
       },
     })
-  }, [])
+  }, [graphTabTitle, askTabTitle, searchTabTitle, podcastTabTitle])
 
   const authoritySummary = Object.values(panes).flatMap((pane) => pane.tabs)
     .reduce((summary, tab) => ({
@@ -599,13 +610,18 @@ export function KnowledgeExplorer() {
     (model) => model.status === 'healthy',
   ) ?? []
   const localReadiness = localModelsHealth.isLoading
-    ? { state: 'loading' as const, detail: 'Checking local model readiness', models: [] }
+    ? { state: 'loading' as const, detail: t('knowledge.knowledgeExplorer.readinessChecking'), models: [] }
     : localModelsHealth.isError || localModelsHealth.data?.overall !== 'healthy'
-      ? { state: 'unavailable' as const, detail: 'Local model readiness is unavailable', models: [] }
+      ? { state: 'unavailable' as const, detail: t('knowledge.researchModes.readinessUnavailable'), models: [] }
       : {
           state: 'ready' as const,
-          detail: `${healthyLocalModels.length} local model${healthyLocalModels.length === 1 ? '' : 's'} ready`,
-          models: healthyLocalModels.map((model) => ({ id: model.name, provider: model.runtime ?? 'Local' })),
+          detail: t(
+            healthyLocalModels.length === 1
+              ? 'knowledge.knowledgeExplorer.localModelReadyOne'
+              : 'knowledge.knowledgeExplorer.localModelReadyOther',
+            { count: healthyLocalModels.length },
+          ),
+          models: healthyLocalModels.map((model) => ({ id: model.name, provider: model.runtime ?? t('knowledge.knowledgeExplorer.localProvider') })),
         }
   const modeAvailability = useMemo(() => {
     const hasOpenMode = (mode: ResearchMode) => activePane?.tabs.some((tab) => (
@@ -614,10 +630,10 @@ export function KnowledgeExplorer() {
     return {
     read: activeTab?.target?.kind === 'document' || hasOpenMode('read')
       ? { available: true, reason: null }
-      : { available: false, reason: 'Requires a document target' },
+      : { available: false, reason: requiresDocumentReason },
     write: (activeTab?.target?.kind === 'document' && activeTab.target.authority === 'overlay') || hasOpenMode('write')
       ? { available: true, reason: null }
-      : { available: false, reason: 'External source — read only' },
+      : { available: false, reason: externalReadOnlyReason },
     ask: localReadiness.state === 'ready'
       ? { available: true, reason: null }
       : { available: false, reason: localReadiness.detail },
@@ -625,7 +641,7 @@ export function KnowledgeExplorer() {
     graph: { available: true, reason: null },
     podcast: { available: true, reason: null },
   }
-  }, [activePane?.tabs, activeTab?.target, localReadiness.detail, localReadiness.state])
+  }, [activePane?.tabs, activeTab?.target, localReadiness.detail, localReadiness.state, requiresDocumentReason, externalReadOnlyReason])
   const hasUnsavedOverlayDraft = Boolean(
     activeTab?.sourceAuthority === 'overlay' && overlayDrafts[`${activePaneId}:${activeTab.id}`],
   )
@@ -738,11 +754,11 @@ export function KnowledgeExplorer() {
       setPostRestoreState({ blocks: restoredBlocks, activeGraphContext })
       setPendingWorkspaceRestore(null)
     } catch {
-      setRestoreError('Available targets could not be opened. Your current session was left unchanged.')
+      setRestoreError(restoreFailedMessage)
     } finally {
       setRestoreApplying(false)
     }
-  }, [setPendingWorkspaceRestore])
+  }, [setPendingWorkspaceRestore, restoreFailedMessage])
   const openNamedWorkspace = useCallback(async (workspace: NamedKnowledgeWorkspaceSummary) => {
     restoreInvokerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const plan = await restoreWorkspace({ workspaceId: workspace.id, revision: workspace.revision })
@@ -851,14 +867,14 @@ export function KnowledgeExplorer() {
         authorityKinds: navigation.authorityFilters,
         tags: navigation.bookmarkTags,
       },
-      displayLabel: `Search: ${query}`,
+      displayLabel: t('knowledge.knowledgeExplorer.searchBookmarkLabel', { query }),
       authorityKind: null,
       spaceId: null,
       folderId: navigation.activeBookmarkFolderId,
       tags: navigation.bookmarkTags,
       position: 0,
     })
-  }, [createBookmark, navigation.activeBookmarkFolderId, navigation.authorityFilters, navigation.bookmarkTags, navigation.selectedSpaceIds])
+  }, [createBookmark, navigation.activeBookmarkFolderId, navigation.authorityFilters, navigation.bookmarkTags, navigation.selectedSpaceIds, t])
   const openBookmark = useCallback(async (bookmark: KnowledgeBookmark) => {
     if (bookmark.target.kind === 'search') {
       setActiveSearchContext({
@@ -993,9 +1009,9 @@ export function KnowledgeExplorer() {
       <ResearchCoreHeader
         workspaceTitle={t('navigation.knowledge')}
         authoritySummary={authoritySummary}
-        saveState={persistence.isPending ? 'Saving locally' : persistence.isError ? 'Save needs attention' : 'Saved locally'}
+        saveState={persistence.isPending ? t('knowledge.knowledgeExplorer.savingLocally') : persistence.isError ? t('knowledge.knowledgeExplorer.saveNeedsAttention') : t('knowledge.knowledgeExplorer.savedLocally')}
         readiness={localReadiness}
-        memoryPressure={{ state: 'normal', detail: 'Memory pressure not reported' }}
+        memoryPressure={{ state: 'normal', detail: t('knowledge.knowledgeExplorer.memoryPressureNotReported') }}
         queuedWorkCount={Number(persistence.isPending) + Number(scanPending)}
         actions={selectedRoot.authority === 'external-vault' ? (
           <div className="flex items-center gap-2">
@@ -1006,7 +1022,7 @@ export function KnowledgeExplorer() {
               onClick={() => setGitHistoryOpen(true)}
             >
               <GitBranch className="mr-2 h-4 w-4" />
-              History
+              {t('knowledge.knowledgeExplorer.history')}
             </Button>
             <Button
               type="button"
@@ -1205,7 +1221,7 @@ export function KnowledgeExplorer() {
         </aside>}
         {navigation.sidebarVisible && <div
           role="separator"
-          aria-label="Resize utility sidebar"
+          aria-label={t('knowledge.knowledgeExplorer.resizeUtilitySidebar')}
           aria-orientation="vertical"
           aria-valuemin={240}
           aria-valuemax={640}
@@ -1242,17 +1258,17 @@ export function KnowledgeExplorer() {
           type="button"
           size="icon"
           variant="ghost"
-          aria-label="Restore utility sidebar"
+          aria-label={t('knowledge.knowledgeExplorer.restoreUtilitySidebar')}
           className="absolute left-2 top-2 z-10"
           onClick={() => setNavigation({ sidebarVisible: true })}
         >
           <span aria-hidden="true">›</span>
         </Button>}
         <div className="research-core-main min-h-0 w-full max-w-full min-w-0 overflow-hidden">
-          {activeSearchContext && <section aria-label="Active knowledge search" className="border-b px-3 py-2 text-sm">
+          {activeSearchContext && <section aria-label={t('knowledge.knowledgeExplorer.activeSearch')} className="border-b px-3 py-2 text-sm">
             <p>{activeSearchContext.mode}: {activeSearchContext.query}</p>
-            <p className="text-muted-foreground">Spaces: {activeSearchContext.spaceIds.join(', ') || 'all'} · Authorities: {activeSearchContext.authorityKinds.join(', ') || 'all'}</p>
-            <ul aria-label="Knowledge search results">{(activeSearchContext.mode === 'semantic' ? indexedSearch.semantic.data?.results : indexedSearch.text.data?.results)?.map((result) => <li key={result.id}>{result.title}</li>)}</ul>
+            <p className="text-muted-foreground">{t('knowledge.knowledgeExplorer.searchScope', { spaces: activeSearchContext.spaceIds.join(', ') || t('knowledge.knowledgeExplorer.scopeAll'), authorities: activeSearchContext.authorityKinds.join(', ') || t('knowledge.knowledgeExplorer.scopeAll') })}</p>
+            <ul aria-label={t('knowledge.knowledgeExplorer.searchResults')}>{(activeSearchContext.mode === 'semantic' ? indexedSearch.semantic.data?.results : indexedSearch.text.data?.results)?.map((result) => <li key={result.id}>{result.title}</li>)}</ul>
           </section>}
           <KnowledgeWorkspaceLayout
             onPaneElement={onPaneElement}
@@ -1275,10 +1291,12 @@ export function KnowledgeExplorer() {
             onCloseDrawer={closeIntelligenceDrawer}
             activeContext={{
               evidence: activeTab?.knowledgeDocumentId
-                ? 'Active document is ready for evidence review'
-                : 'Select a document to review evidence',
-              properties: activeTab ? `${activeTab.sourceAuthority === 'overlay' ? 'App-owned' : 'External read-only'} source` : 'No active source',
-              production: 'No production queued',
+                ? t('knowledge.knowledgeExplorer.evidenceReady')
+                : t('knowledge.knowledgeExplorer.evidenceSelect'),
+              properties: activeTab
+                ? (activeTab.sourceAuthority === 'overlay' ? t('knowledge.knowledgeExplorer.propertiesAppOwned') : t('knowledge.knowledgeExplorer.propertiesExternalReadOnly'))
+                : t('knowledge.knowledgeExplorer.noActiveSource'),
+              production: t('knowledge.knowledgeExplorer.noProductionQueued'),
             }}
             initialPanel="connections"
             onNavigate={navigate}
@@ -1329,7 +1347,7 @@ export function KnowledgeExplorer() {
         open={gitHistoryOpen}
         onOpenChange={setGitHistoryOpen}
         vaultId={selectedRoot.authority === 'external-vault' ? selectedRoot.id : ''}
-        vaultName={selectedRoot.authority === 'external-vault' ? (mounts.data?.find(m => m.id === selectedRoot.id)?.name || 'Vault') : 'Vault'}
+        vaultName={selectedRoot.authority === 'external-vault' ? (mounts.data?.find(m => m.id === selectedRoot.id)?.name || t('knowledge.knowledgeExplorer.vaultFallback')) : t('knowledge.knowledgeExplorer.vaultFallback')}
       />
       </>} />
     </div>

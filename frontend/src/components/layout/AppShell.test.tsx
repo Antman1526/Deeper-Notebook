@@ -51,7 +51,7 @@ describe('AppShell feature switch', () => {
     process.env.NEXT_PUBLIC_DN_LUMINOUS_FOLIO = '1'
     render(<AppShell><div data-testid="luminous-page">Luminous page</div></AppShell>)
 
-    expect(screen.getByRole('navigation', { name: 'Primary tools' })).toBeInTheDocument()
+    expect(screen.getByRole('navigation', { name: 'workspace.instrumentDock.ariaLabel' })).toBeInTheDocument()
     expect(screen.getByTestId('luminous-page')).toBeInTheDocument()
     expect(screen.queryByTestId('visual-system-v2-shell')).not.toBeInTheDocument()
   })
@@ -64,8 +64,8 @@ describe('AppShell feature switch', () => {
     expect(screen.getByTestId('legacy-sidebar')).toBeInTheDocument()
     expect(screen.getByTestId('legacy-page')).toBeInTheDocument()
     expect(screen.queryByRole('main')).toBeNull()
-    expect(screen.queryByRole('navigation', { name: 'Primary tools' })).toBeNull()
-    expect(screen.getByRole('button', { name: 'Enter Focus mode' })).toBeInTheDocument()
+    expect(screen.queryByRole('navigation', { name: 'workspace.instrumentDock.ariaLabel' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'workspace.displayPreferencesPanel.enterFocusMode' })).toBeInTheDocument()
   })
 
   it('keeps the legacy utility route mounted when Focus mode is active', () => {
@@ -73,10 +73,10 @@ describe('AppShell feature switch', () => {
     process.env.NEXT_PUBLIC_DN_LUMINOUS_FOLIO = '0'
     render(<AppShell><div data-testid="legacy-page">Legacy page</div></AppShell>)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Enter Focus mode' }))
+    fireEvent.click(screen.getByRole('button', { name: 'workspace.displayPreferencesPanel.enterFocusMode' }))
 
     expect(screen.getByTestId('legacy-sidebar')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Exit Focus mode' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'workspace.displayPreferencesPanel.exitFocusMode' })).toBeInTheDocument()
   })
 
   it('renders only the Luminous shell when the flag is on', () => {
@@ -86,9 +86,9 @@ describe('AppShell feature switch', () => {
     process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2 = '0'
     render(<AppShell><div data-testid="luminous-page">Luminous page</div></AppShell>)
 
-    expect(screen.getByRole('navigation', { name: 'Primary tools' })).toBeInTheDocument()
+    expect(screen.getByRole('navigation', { name: 'workspace.instrumentDock.ariaLabel' })).toBeInTheDocument()
     expect(screen.getByTestId('luminous-page')).toBeInTheDocument()
     expect(screen.queryByTestId('legacy-sidebar')).toBeNull()
-    expect(screen.getByRole('button', { name: 'Enter Focus mode' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'workspace.displayPreferencesPanel.enterFocusMode' })).toBeInTheDocument()
   })
 })

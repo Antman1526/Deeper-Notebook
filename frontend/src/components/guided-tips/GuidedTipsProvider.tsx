@@ -7,6 +7,7 @@ import { usePathname } from 'next/navigation'
 import { getGuidedTipForPath } from '@/lib/guided-tips/catalog'
 import { useGuidedTipsStore } from '@/lib/stores/guided-tips-store'
 import { Button } from '@/components/ui/button'
+import { useTranslation } from '@/lib/hooks/use-translation'
 
 const CALLOUT_WIDTH = 320
 const VIEWPORT_INSET = 16
@@ -23,6 +24,7 @@ function clamp(value: number, minimum: number, maximum: number) {
 }
 
 export function GuidedTipsProvider() {
+  const { t } = useTranslation()
   const pathname = usePathname()
   const enabled = useGuidedTipsStore((state) => state.enabled)
   const completed = useGuidedTipsStore((state) => state.completed)
@@ -129,18 +131,18 @@ export function GuidedTipsProvider() {
     <aside
       ref={calloutRef}
       role="note"
-      aria-label={`${tip.title} tip`}
+      aria-label={t('workspace.guidedTipsProvider.ariaLabel', { title: t(tip.titleKey) })}
       className="w-80 rounded-lg border bg-card p-4 text-card-foreground shadow-lg"
       style={{ position: 'fixed', top: position.top, left: position.left, zIndex: 50 }}
     >
-      <p className="text-sm font-medium">{tip.title}</p>
-      <p className="mt-1 text-sm text-muted-foreground">{tip.body}</p>
+      <p className="text-sm font-medium">{t(tip.titleKey)}</p>
+      <p className="mt-1 text-sm text-muted-foreground">{t(tip.bodyKey)}</p>
       <div className="mt-3 flex items-center justify-end gap-2">
         <Button type="button" variant="ghost" size="sm" onClick={disable}>
-          Don&apos;t show again
+          {t('workspace.guidedTipsProvider.dontShowAgain')}
         </Button>
         <Button type="button" size="sm" onClick={dismiss}>
-          Got it
+          {t('workspace.guidedTipsProvider.gotIt')}
         </Button>
       </div>
     </aside>,

@@ -38,7 +38,7 @@ test('Luminous intelligence horizon — research-core-dark 1440x900', async ({ p
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.goto('/')
 
-  await expect(page.getByText('Intelligence Horizon', { exact: true })).toBeVisible()
+  await expect(page.getByText('Intelligence horizon', { exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Deeper Notebook', exact: true })).toBeVisible()
   await expect(page).toHaveScreenshot('horizon-research-core-dark-1440x900.png', {
     animations: 'disabled',

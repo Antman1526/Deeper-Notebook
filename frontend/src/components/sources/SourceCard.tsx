@@ -134,8 +134,8 @@ function fileNameFromPath(path: string | undefined): string | null {
 function getSourceTypeLabel(sourceType: SourceType, t: TFunction): string {
   if (sourceType === 'link') return t('sources.addUrl')
   if (sourceType === 'upload') return t('sources.uploadFile')
-  if (sourceType === 'web_import') return 'Web import'
-  if (sourceType === 'deep_research_report') return 'Deep research'
+  if (sourceType === 'web_import') return t('sources.sourceCard.webImport')
+  if (sourceType === 'deep_research_report') return t('sources.sourceCard.deepResearch')
   return t('sources.enterText')
 }
 
@@ -302,16 +302,16 @@ export function SourceCard({
   const hasLowExtractedText = isCompleted && source.extraction_quality === 'low_text'
   const canRetry = !isFileUnavailable
   const podcastDisabledReason = !isCompleted
-    ? 'Source processing must finish before it can become a podcast.'
+    ? t('sources.sourceCard.podcastNeedsProcessing')
     : isFileUnavailable
-      ? 'The original source file is unavailable.'
+      ? t('sources.sourceCard.podcastFileUnavailable')
       : hasNoExtractedText
-        ? 'No readable source content is available.'
+        ? t('sources.sourceCard.podcastNoContent')
         : undefined
   const insightsPodcastDisabledReason = !isCompleted
-    ? 'Source processing must finish before its insights can become a podcast.'
+    ? t('sources.sourceCard.insightsPodcastNeedsProcessing')
     : source.insights_count <= 0
-      ? 'No source insights are available.'
+      ? t('sources.sourceCard.insightsPodcastNone')
       : undefined
   const progressPercent = getProgressPercent(statusData?.processing_info ?? source.processing_info)
   const notebookCount = source.notebook_count ?? 0
@@ -354,7 +354,7 @@ export function SourceCard({
     isCompleted && source.insights_count > 0 && (
       <span key="insights">{t('sources.insightsCount').replace('{count}', source.insights_count.toString())}</span>
     ),
-    isShared && <span key="shared">{notebookCount > 1 ? `Shared with ${notebookCount}` : 'Shared'}</span>,
+    isShared && <span key="shared">{notebookCount > 1 ? t('sources.sourceCard.sharedWithCount', { count: notebookCount }) : t('sources.sourceCard.shared')}</span>,
     provenanceLabel && <span key="provenance">{provenanceLabel}</span>,
     ...(isCompleted && source.topics ? source.topics.slice(0, 2).map((topic) => <span key={`topic-${topic}`}>{topic}</span>) : []),
     isCompleted && source.topics && source.topics.length > 2 && <span key="topics-more">+{source.topics.length - 2}</span>,
@@ -441,7 +441,7 @@ export function SourceCard({
                 <Button
                   variant="ghost"
                   size="sm"
-                  aria-label="Source actions"
+                  aria-label={t('sources.sourceCard.sourceActions')}
                   className="h-8 w-8 rounded-md bg-card p-0 shadow-xs"
                   onClick={(e) => e.stopPropagation()}
                 >
@@ -494,8 +494,8 @@ export function SourceCard({
               >
                 <Podcast className="h-4 w-4 mr-2" />
                 {podcastDisabledReason
-                  ? `Turn source into podcast — ${podcastDisabledReason}`
-                  : 'Turn source into podcast'}
+                  ? t('sources.sourceCard.turnIntoPodcastDisabled', { reason: podcastDisabledReason })
+                  : t('sources.sourceCard.turnIntoPodcast')}
               </DropdownMenuItem>
 
               <DropdownMenuItem
@@ -511,8 +511,8 @@ export function SourceCard({
               >
                 <Podcast className="h-4 w-4 mr-2" />
                 {insightsPodcastDisabledReason
-                  ? `Turn source insights into podcast — ${insightsPodcastDisabledReason}`
-                  : 'Turn source insights into podcast'}
+                  ? t('sources.sourceCard.turnInsightsIntoPodcastDisabled', { reason: insightsPodcastDisabledReason })
+                  : t('sources.sourceCard.turnInsightsIntoPodcast')}
               </DropdownMenuItem>
 
               <DropdownMenuSeparator />

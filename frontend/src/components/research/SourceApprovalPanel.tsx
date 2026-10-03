@@ -4,10 +4,12 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import type { ResearchCandidate } from '@/lib/api/research'
+import { useTranslation } from '@/lib/hooks/use-translation'
 
 import { EvidenceReceipt } from './EvidenceReceipt'
 
 export function SourceApprovalPanel({ candidates, disabled, onApprove }: { candidates: ResearchCandidate[]; disabled?: boolean; onApprove: (accepted: string[]) => void }) {
+  const { t } = useTranslation()
   const pending = useMemo(
     () => candidates.filter((candidate) => candidate.decision === 'pending'),
     [candidates],
@@ -21,10 +23,10 @@ export function SourceApprovalPanel({ candidates, disabled, onApprove }: { candi
   // The checkbox is a fixed 16px on the title's first line: in a stretching flex label
   // it grew to the label's full height and was drawn as a large square.
   return (
-    <section aria-label="Source approval" className="rounded-md border bg-background p-4 @max-md:border-0 @max-md:bg-transparent @max-md:p-0">
-      <h2 className="text-sm font-semibold">Approve sources before import</h2><p className="mt-1 text-xs text-muted-foreground">Only selected public URLs will be fetched. Unselected candidates remain rejected in the local audit trail.</p>
+    <section aria-label={t('research.sourceApprovalPanel.sectionLabel')} className="rounded-md border bg-background p-4 @max-md:border-0 @max-md:bg-transparent @max-md:p-0">
+      <h2 className="text-sm font-semibold">{t('research.sourceApprovalPanel.title')}</h2><p className="mt-1 text-xs text-muted-foreground">{t('research.sourceApprovalPanel.description')}</p>
       <div className="mt-3 space-y-2">{pending.map((candidate) => <div key={candidate.candidate_id} className="rounded-md border p-3 text-sm @max-md:p-2.5"><label className="flex cursor-pointer items-start gap-3"><input type="checkbox" data-dn-checkbox-on-first-line="" className="mt-0.5 size-4 shrink-0 accent-primary" checked={accepted.includes(candidate.candidate_id)} onChange={() => toggle(candidate.candidate_id)} /><span className="min-w-0"><span className="block font-medium">{candidate.title ?? candidate.domain}</span><span className="block truncate text-xs text-muted-foreground">{candidate.domain} · {candidate.url}</span>{candidate.snippet ? <span className="mt-1 block text-xs text-muted-foreground">{candidate.snippet}</span> : null}</span></label><EvidenceReceipt evidence={candidate.evidence} /></div>)}</div>
-      <Button type="button" className="mt-3" disabled={disabled} onClick={() => onApprove(accepted)}>Approve selected sources</Button>
+      <Button type="button" className="mt-3" disabled={disabled} onClick={() => onApprove(accepted)}>{t('research.sourceApprovalPanel.approveSelected')}</Button>
     </section>
   )
 }

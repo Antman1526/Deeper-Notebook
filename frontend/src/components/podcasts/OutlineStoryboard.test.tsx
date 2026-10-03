@@ -4,25 +4,30 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { OutlineStoryboard } from './OutlineStoryboard'
 
+// Echo interpolation values so segment-labelled buttons and announcements stay addressable.
+vi.mock('@/lib/hooks/use-translation', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown>) => (options ? `${key} ${JSON.stringify(options)}` : key),
+  }),
+}))
+
 describe('OutlineStoryboard', () => {
   it('reorders with keyboard buttons, preserves focus, and announces position', () => {
     const onChange = vi.fn()
     render(<OutlineStoryboard segments={['Introduction', 'Findings', 'Takeaway']} onChange={onChange} />)
 
-    const moveEarlier = screen.getByRole('button', { name: 'Move Findings earlier' })
+    const moveEarlier = screen.getByRole('button', { name: 'podcasts.outlineStoryboard.moveEarlierLabel {"label":"Findings"}' })
     fireEvent.click(moveEarlier)
 
     expect(onChange).toHaveBeenCalledWith(['Findings', 'Introduction', 'Takeaway'])
     expect(document.activeElement).toBe(moveEarlier)
-    expect(screen.getByRole('status')).toHaveTextContent('Findings moved to position 1')
+    expect(screen.getByRole('status')).toHaveTextContent('podcasts.outlineStoryboard.movedAnnouncement {"label":"Findings","position":1}')
   })
 
   it('describes the review in plain language, without internal phase labels', () => {
     render(<OutlineStoryboard segments={['Introduction']} onChange={vi.fn()} />)
 
-    expect(screen.getByText(
-      'Review the outline storyboard before production. Cited storyboard artifacts are not available yet.',
-    )).toBeVisible()
+    expect(screen.getByText('podcasts.outlineStoryboard.description')).toBeVisible()
     expect(document.body).not.toHaveTextContent(/Phase[- ]\d/)
   })
 
@@ -44,7 +49,7 @@ describe('OutlineStoryboard', () => {
     const segments = [{ id: 'one', title: 'One' }, { id: 'two', title: 'Two' }]
     render(<OutlineStoryboard segments={segments} onChange={onChange} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Move Two earlier' }))
+    fireEvent.click(screen.getByRole('button', { name: 'podcasts.outlineStoryboard.moveEarlierLabel {"label":"Two"}' }))
 
     expect(onChange).toHaveBeenCalledWith([segments[1], segments[0]])
   })
@@ -61,16 +66,16 @@ describe('OutlineStoryboard', () => {
 
     const beforeIds = screen.getAllByRole('listitem').map((item) => item.getAttribute('data-segment-id'))
     expect(new Set(beforeIds).size).toBe(3)
-    const duplicateMoveLater = screen.getAllByRole('button', { name: 'Move Intro later' })[0]
+    const duplicateMoveLater = screen.getAllByRole('button', { name: 'podcasts.outlineStoryboard.moveLaterLabel {"label":"Intro"}' })[0]
     fireEvent.click(duplicateMoveLater)
 
     expect(screen.getAllByRole('listitem').map((item) => item.textContent)).toEqual([
       expect.stringContaining('Intro'), expect.stringContaining('Intro'), expect.stringContaining('Takeaway'),
     ])
-    expect(screen.getByRole('status')).toHaveTextContent('Intro moved to position 2')
+    expect(screen.getByRole('status')).toHaveTextContent('podcasts.outlineStoryboard.movedAnnouncement {"label":"Intro","position":2}')
     expect(screen.getAllByRole('listitem').map((item) => item.getAttribute('data-segment-id'))).toEqual([
       beforeIds[1], beforeIds[0], beforeIds[2],
     ])
-    expect(document.activeElement).toHaveAttribute('aria-label', 'Move Intro later')
+    expect(document.activeElement).toHaveAttribute('aria-label', 'podcasts.outlineStoryboard.moveLaterLabel {"label":"Intro"}')
   })
 })

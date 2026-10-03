@@ -46,7 +46,7 @@ export function ProcessingStep({
 
   return (
     <div className="space-y-8">
-      <FormSection title={`${t('navigation.transformations')} (${t('common.optional')})`}>
+      <FormSection title={t('sources.processingStep.titleOptional')}>
         <CheckboxList
           items={transformationItems}
           selectedIds={selectedTransformations}

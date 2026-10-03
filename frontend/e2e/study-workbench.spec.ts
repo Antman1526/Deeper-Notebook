@@ -315,9 +315,9 @@ for (const state of STUDY_STATES) {
               ...Array.from({ length: 2 }, () => `GET ${planApiPath}/sources/readiness`),
               ...Array.from({ length: 3 }, () => `GET ${planApiPath}/progress`),
             )
-            await page.getByText('Confirm explicit import into this Study Plan').click()
+            await page.getByText('Confirm explicit import into this study plan').click()
             await page.getByRole('button', { name: 'Import cards' }).click()
-            await expect(page.getByText('Cards imported into the native Study deck.')).toBeVisible()
+            await expect(page.getByText('Cards imported into the native study deck.')).toBeVisible()
           }
         }
       }

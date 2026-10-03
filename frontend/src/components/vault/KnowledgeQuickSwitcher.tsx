@@ -135,10 +135,11 @@ export function KnowledgeQuickSwitcher({ mounts, searchMode = 'text', onBookmark
             <CommandGroup>
               {query.trim() && onBookmarkSearch && (
                 <CommandItem
-                  value={`Bookmark search for ${query}`}
+                  // Non-rendered cmdk match token: it embeds the raw query so the row always matches.
+                  value={`bookmark-search ${query}`}
                   onSelect={() => { onBookmarkSearch(query.trim(), searchMode); close(false) }}
                 >
-                  Bookmark search for {query.trim()}
+                  {t('knowledge.knowledgeQuickSwitcher.bookmarkSearchFor', { query: query.trim() })}
                 </CommandItem>
               )}
               {candidates.map(candidate => (

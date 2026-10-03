@@ -39,20 +39,20 @@ describe('ResearchSetPanel', () => {
   it('renders included, problem, duplicate, and oversize states without absolute paths', () => {
     render(<ResearchSetPanel selections={[]} preview={preview()} />)
 
-    expect(screen.getByRole('region', { name: 'Research Set' })).toBeVisible()
+    expect(screen.getByRole('region', { name: 'podcasts.researchSetPanel.title' })).toBeVisible()
     expect(screen.getByText('Included note')).toBeVisible()
     expect(screen.getByText('Changed note')).toBeVisible()
     expect(screen.getByText('Duplicate note')).toBeVisible()
     expect(screen.getByText('Oversize note')).toBeVisible()
-    expect(screen.getByText('Selection requires a batch engine; the current worker will not truncate it.')).toBeVisible()
+    expect(screen.getByText('podcasts.researchSetPanel.requiresBatchEngine')).toBeVisible()
     expect(screen.queryByText(/\/Users\//)).not.toBeInTheDocument()
   })
 
   it('shows an explicit empty state and worker boundary', () => {
     render(<ResearchSetPanel selections={[]} preview={preview({ entries: [], includedCharacters: 0, requiresBatchEngine: false, currentWorkerEligible: false, blockedReasons: ['empty_selection'] })} />)
 
-    expect(screen.getByText('No readable references selected')).toBeVisible()
-    expect(screen.getByText(/current worker/i)).toBeVisible()
+    expect(screen.getByText('podcasts.researchSetPanel.noReadableReferences')).toBeVisible()
+    expect(screen.getByText('podcasts.researchSetPanel.charactersIncluded')).toBeVisible()
   })
 
   it('redacts absolute title and reason text before presentation', () => {

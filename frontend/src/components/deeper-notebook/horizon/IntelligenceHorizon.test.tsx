@@ -56,15 +56,15 @@ describe('IntelligenceHorizon', () => {
 
     const horizonPage = screen.getByRole('main', { name: 'Deeper Notebook' })
     expect(horizonPage).toHaveAttribute('data-dn-horizon-page', 'true')
-    expect(screen.getByRole('navigation', { name: 'Horizon actions' })).toHaveAttribute(
+    expect(screen.getByRole('navigation', { name: 'workspace.intelligenceHorizon.actionsAriaLabel' })).toHaveAttribute(
       'data-dn-horizon-actions',
       'true',
     )
 
-    expect(screen.getByRole('link', { name: 'Studio' })).toHaveAttribute('href', '/studio')
-    expect(screen.getByRole('button', { name: 'New Notebook' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'Podcast' })).toBeEnabled()
-    expect(screen.getByRole('link', { name: 'Ask' })).toHaveAttribute('href', '/search')
+    expect(screen.getByRole('link', { name: 'workspace.intelligenceHorizon.studio' })).toHaveAttribute('href', '/studio')
+    expect(screen.getByRole('button', { name: 'workspace.intelligenceHorizon.newNotebook' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'workspace.intelligenceHorizon.podcast' })).toBeEnabled()
+    expect(screen.getByRole('link', { name: 'workspace.intelligenceHorizon.ask' })).toHaveAttribute('href', '/search')
     expect(screen.getByRole('link', { name: 'Research notebook' })).toHaveAttribute(
       'href',
       '/notebooks/research-notebook',
@@ -75,10 +75,10 @@ describe('IntelligenceHorizon', () => {
     expect(props.onCreatePodcast).not.toHaveBeenCalled()
     expect(props.onAsk).not.toHaveBeenCalled()
 
-    fireEvent.click(screen.getByRole('link', { name: 'Studio' }))
-    fireEvent.click(screen.getByRole('button', { name: 'New Notebook' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Podcast' }))
-    fireEvent.click(screen.getByRole('link', { name: 'Ask' }))
+    fireEvent.click(screen.getByRole('link', { name: 'workspace.intelligenceHorizon.studio' }))
+    fireEvent.click(screen.getByRole('button', { name: 'workspace.intelligenceHorizon.newNotebook' }))
+    fireEvent.click(screen.getByRole('button', { name: 'workspace.intelligenceHorizon.podcast' }))
+    fireEvent.click(screen.getByRole('link', { name: 'workspace.intelligenceHorizon.ask' }))
 
     expect(props.onOpenStudio).toHaveBeenCalledTimes(1)
     expect(props.onCreateNotebook).toHaveBeenCalledTimes(1)
@@ -100,7 +100,7 @@ describe('IntelligenceHorizon', () => {
   it('shows ready trust status, command hint, and local data path', () => {
     renderHorizon()
 
-    expect(screen.getByRole('status', { name: 'Runtime status Ready' })).toBeVisible()
+    expect(screen.getByRole('status', { name: 'workspace.runtimeStatusPanel.ariaLabelReady' })).toBeVisible()
     expect(screen.getByText(/⌘K|Ctrl\+K/)).toBeVisible()
     expect(screen.getByText('~/.deeper-notebook/')).toBeVisible()
   })
@@ -131,13 +131,13 @@ describe('IntelligenceHorizon', () => {
   it('preserves runtime loading separately from notebooks', () => {
     renderHorizon({ runtimeSnapshotLoading: true })
 
-    expect(screen.getByRole('status', { name: 'Runtime status loading' })).toBeInTheDocument()
+    expect(screen.getByRole('status', { name: 'workspace.runtimeStatusPanel.loadingAriaLabel' })).toBeInTheDocument()
   })
 
   it('preserves degraded runtime readiness separately from notebooks', () => {
     renderHorizon({ runtimeSnapshot: distinctRuntimeSnapshot })
 
-    expect(screen.getByRole('alert', { name: 'Runtime status Degraded' })).toBeInTheDocument()
+    expect(screen.getByRole('alert', { name: 'workspace.runtimeStatusPanel.ariaLabelDegraded' })).toBeInTheDocument()
   })
 
   it('keeps loaded notebook links visible while readiness is offline', () => {
@@ -150,25 +150,25 @@ describe('IntelligenceHorizon', () => {
   it('keeps notebook loading independent from readiness state', () => {
     renderHorizon({ runtimeSnapshot: distinctRuntimeSnapshot, notebooksLoading: true })
 
-    expect(screen.getByRole('status', { name: 'Loading your notebook desk' })).toBeInTheDocument()
+    expect(screen.getByRole('status', { name: 'workspace.intelligenceHorizon.loadingTitle' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Research notebook' })).toBeNull()
   })
 
   it('preserves distinct API, database, and migration readiness details', () => {
     renderHorizon({ runtimeSnapshot: distinctRuntimeSnapshot })
 
-    expect(screen.getByText('Ready')).toBeInTheDocument()
-    expect(screen.getByText('Database is offline')).toBeInTheDocument()
-    expect(screen.getByText('Migrations are pending')).toBeInTheDocument()
-    expect(screen.getByText('Database status is unavailable')).toBeInTheDocument()
-    expect(screen.getByText('Migration status is unavailable')).toBeInTheDocument()
+    expect(screen.getByText('workspace.runtimeStatusPanel.stateReady')).toBeInTheDocument()
+    expect(screen.getByText('workspace.runtimeStatusPanel.reasons.databaseOffline')).toBeInTheDocument()
+    expect(screen.getByText('workspace.runtimeStatusPanel.reasons.migrationsPending')).toBeInTheDocument()
+    expect(screen.getByText('workspace.runtimeStatusPanel.reasons.databaseCheckFailed')).toBeInTheDocument()
+    expect(screen.getByText('workspace.runtimeStatusPanel.reasons.migrationsCheckFailed')).toBeInTheDocument()
     expect(screen.queryByText(/database unavailable|pending migrations/)).not.toBeInTheDocument()
   })
 
   it('leaves modified and middle clicks to native link behavior', () => {
     const { props } = renderHorizon()
-    const studio = screen.getByRole('link', { name: 'Studio' })
-    const ask = screen.getByRole('link', { name: 'Ask' })
+    const studio = screen.getByRole('link', { name: 'workspace.intelligenceHorizon.studio' })
+    const ask = screen.getByRole('link', { name: 'workspace.intelligenceHorizon.ask' })
     // Keep jsdom from attempting a real document navigation while preserving
     // the production assertion above that both links expose their routes.
     studio.setAttribute('href', '#')
@@ -189,8 +189,8 @@ describe('IntelligenceHorizon', () => {
     const onOpenStudio = vi.fn()
     renderHorizon({ recentNotebooks: [], onOpenStudio })
 
-    expect(screen.getByRole('status', { name: 'Your notebook is ready to begin' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Open Studio' }))
+    expect(screen.getByRole('status', { name: 'workspace.intelligenceHorizon.emptyTitle' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'workspace.intelligenceHorizon.openStudio' }))
     expect(onOpenStudio).toHaveBeenCalledTimes(1)
   })
 })

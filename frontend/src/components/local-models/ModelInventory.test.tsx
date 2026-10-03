@@ -37,7 +37,7 @@ describe('ModelInventory', () => {
     />)
 
     expect(screen.getByText('/resolved/by-api/Qwen.gguf')).toBeInTheDocument()
-    expect(screen.getByText('ready verified')).toBeInTheDocument()
-    expect(screen.getByText('standard tier')).toBeInTheDocument()
+    expect(screen.getByText('settings.modelReadiness.readyVerified')).toBeInTheDocument()
+    expect(screen.getByText('settings.modelInventory.tierBadge')).toBeInTheDocument()
   })
 })

@@ -81,7 +81,7 @@ function renderSearchResultCard(
     visualGalleryEnabled: boolean
     openModal: (type: ModalType, id: string) => void
     onViewEvidence: (result: SearchResult) => void
-    t: (key: string, options?: { defaultValue?: string }) => string
+    t: (key: string, options?: Record<string, unknown>) => string
   }
 ): React.ReactNode {
   // A result's own record ID defines its route and kind.
@@ -123,7 +123,7 @@ function renderSearchResultCard(
                 </Badge>
                 {result.rerank_score !== undefined && (
                   <Badge variant="outline" className="ml-2 rounded-full border-primary/30 text-primary text-xs font-mono bg-primary/[0.04]">
-                    Rerank: {result.rerank_score.toFixed(3)}
+                    {t('searchPage.searchResultsList.rerankScore', { score: result.rerank_score.toFixed(3) })}
                   </Badge>
                 )}
                 {result.vault_provenance && (
@@ -208,14 +208,14 @@ export function SearchResultsList({
           {searchData.reranked && (
             <Badge variant="secondary" className="border-primary/30 text-primary gap-1">
               <Sparkles className="h-3 w-3" />
-              Cross-Encoder Reranked
+              {t('searchPage.searchResultsList.crossEncoderReranked')}
             </Badge>
           )}
           <Badge variant="outline">
             {searchData.search_type === 'text'
               ? t('searchPage.textSearch')
               : searchData.search_type === 'hybrid'
-                ? 'Hybrid Search'
+                ? t('searchPage.searchResultsList.hybridSearch')
                 : t('searchPage.vectorSearch')}
           </Badge>
         </div>

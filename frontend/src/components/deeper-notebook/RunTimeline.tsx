@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { useTranslation } from '@/lib/hooks/use-translation'
 import { cn } from '@/lib/utils'
 import type { McpToolCall, NotebookChatMessage } from '@/lib/types/api'
 
@@ -53,47 +54,52 @@ function latestAiMessage(messages: NotebookChatMessage[]) {
   return [...messages].reverse().find((message) => message.type === 'ai')
 }
 
-function formatCount(count: number, singular: string, plural = `${singular}s`) {
-  return `${count} ${count === 1 ? singular : plural}`
+type TranslateFn = ReturnType<typeof useTranslation>['t']
+
+// Plural handling mirrors the old singular/plural split: one key per form, no
+// per-language plural suffixes.
+function formatCount(t: TranslateFn, count: number, oneKey: string, otherKey: string) {
+  return t(count === 1 ? oneKey : otherKey, { count })
 }
 
-function contextSummary(stats?: RunTimelineContextStats) {
-  if (!stats) return 'No context profile yet'
+function contextSummary(t: TranslateFn, stats?: RunTimelineContextStats) {
+  if (!stats) return t('workspace.runTimeline.noContextProfile')
   const parts = [
-    formatCount(stats.sourcesInsights, 'insight source'),
-    formatCount(stats.sourcesFull, 'full source'),
-    formatCount(stats.notesCount, 'note'),
+    formatCount(t, stats.sourcesInsights, 'workspace.runTimeline.insightSourceOne', 'workspace.runTimeline.insightSourceOther'),
+    formatCount(t, stats.sourcesFull, 'workspace.runTimeline.fullSourceOne', 'workspace.runTimeline.fullSourceOther'),
+    formatCount(t, stats.notesCount, 'workspace.runTimeline.noteOne', 'workspace.runTimeline.noteOther'),
   ]
   if (typeof stats.tokenCount === 'number' && stats.tokenCount > 0) {
-    parts.push(`${stats.tokenCount.toLocaleString()} tokens`)
+    parts.push(t('workspace.runTimeline.tokens', { tokens: stats.tokenCount.toLocaleString() }))
   }
   return parts.join(' / ')
 }
 
-function routeSummary(selection?: CachedRunSelection, currentModel?: string) {
+function routeSummary(t: TranslateFn, selection?: CachedRunSelection, currentModel?: string) {
   if (selection?.offline_fallback) {
-    return `offline fallback -> ${selection.offline_fallback.to_model_name || 'local model'}`
+    return t('workspace.runTimeline.offlineFallback', {
+      model: selection.offline_fallback.to_model_name || t('workspace.runTimeline.localModel'),
+    })
   }
   if (selection?.selected_provider) {
     return `${selection.selected_provider}${selection.selected_model_id ? ` / ${selection.selected_model_id}` : ''}`
   }
-  if (currentModel) return `manual / ${currentModel}`
-  return 'auto route pending'
+  if (currentModel) return t('workspace.runTimeline.manualRoute', { model: currentModel })
+  return t('workspace.runTimeline.autoRoutePending')
 }
 
-function privacySummary(selection?: CachedRunSelection) {
+function privacySummary(t: TranslateFn, selection?: CachedRunSelection) {
   if (selection?.privacy_gated) {
-    const categories = selection.privacy_categories?.length
-      ? ` (${selection.privacy_categories.join(', ')})`
-      : ''
-    return `kept local${categories}`
+    return selection.privacy_categories?.length
+      ? t('workspace.runTimeline.keptLocalCategories', { categories: selection.privacy_categories.join(', ') })
+      : t('workspace.runTimeline.keptLocal')
   }
-  return 'no gate triggered'
+  return t('workspace.runTimeline.noGate')
 }
 
-function agentSummary(selection?: CachedRunSelection, isStreaming?: boolean) {
-  if (isStreaming) return 'working'
-  return selection?.agent_state || 'complete'
+function agentSummary(t: TranslateFn, selection?: CachedRunSelection, isStreaming?: boolean) {
+  if (isStreaming) return t('workspace.runTimeline.agentWorking')
+  return selection?.agent_state || t('workspace.runTimeline.agentComplete')
 }
 
 export function RunTimeline({
@@ -103,6 +109,7 @@ export function RunTimeline({
   currentModel,
   disabledMcpServers = [],
 }: RunTimelineProps) {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const detailsId = useId()
   const [open, setOpen] = useState(false)
@@ -129,8 +136,8 @@ export function RunTimeline({
     ? queryClient.getQueryData<McpToolCall[]>(['mcp', 'tool-calls', latestAi.id]) ?? []
     : []
   const disabledToolLabel = disabledMcpServers.length > 0
-    ? `${disabledMcpServers.length} disabled`
-    : 'all available'
+    ? t('workspace.runTimeline.disabledCount', { count: disabledMcpServers.length })
+    : t('workspace.runTimeline.allAvailable')
 
   // v0.8.130 — Phase 2c: the five-card "Run timeline · idle" panel sat above every chat,
   // empty ones included. Now: nothing before the first run, one status line while a
@@ -141,25 +148,29 @@ export function RunTimeline({
     return (
       <div role="status" className="flex items-center gap-2 text-xs text-muted-foreground">
         <Radio className="h-3.5 w-3.5 flex-none text-primary motion-safe:animate-pulse" aria-hidden="true" />
-        <span>Streaming response</span>
+        <span>{t('workspace.runTimeline.streaming')}</span>
         <span aria-hidden="true">·</span>
-        <span className="min-w-0 truncate">{routeSummary(runSelection, currentModel)}</span>
+        <span className="min-w-0 truncate">{routeSummary(t, runSelection, currentModel)}</span>
       </div>
     )
   }
 
   const steps = [
-    { label: 'Context built', value: contextSummary(contextStats), Icon: Database },
+    { label: t('workspace.runTimeline.contextBuilt'), value: contextSummary(t, contextStats), Icon: Database },
     {
-      label: 'Model route',
-      value: routeSummary(runSelection, currentModel),
+      label: t('workspace.runTimeline.modelRoute'),
+      value: routeSummary(t, runSelection, currentModel),
       Icon: runSelection?.offline_fallback ? WifiOff : runSelection?.selected_provider === 'cloud' ? Cloud : Bot,
     },
-    { label: 'MCP tools', value: `${formatCount(mcpCalls.length, 'call')} / ${disabledToolLabel}`, Icon: Plug },
-    { label: 'Privacy gate', value: privacySummary(runSelection), Icon: runSelection?.privacy_gated ? ShieldCheck : Lock },
     {
-      label: 'Agent state',
-      value: agentSummary(runSelection, false),
+      label: t('workspace.runTimeline.mcpTools'),
+      value: `${formatCount(t, mcpCalls.length, 'workspace.runTimeline.callOne', 'workspace.runTimeline.callOther')} / ${disabledToolLabel}`,
+      Icon: Plug,
+    },
+    { label: t('workspace.runTimeline.privacyGate'), value: privacySummary(t, runSelection), Icon: runSelection?.privacy_gated ? ShieldCheck : Lock },
+    {
+      label: t('workspace.runTimeline.agentState'),
+      value: agentSummary(t, runSelection, false),
       Icon: runSelection?.agent_state === 'clarify' ? HelpCircle : CheckCircle2,
     },
   ]
@@ -176,7 +187,7 @@ export function RunTimeline({
         className="h-auto gap-1.5 px-2 py-1 text-xs font-normal text-muted-foreground hover:text-foreground"
       >
         <Activity className="h-3.5 w-3.5" aria-hidden="true" />
-        Run details
+        {t('workspace.runTimeline.runDetails')}
         <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-180')} aria-hidden="true" />
       </Button>
       <dl

@@ -75,7 +75,7 @@ export function ContextToggle<TMode extends ContextMode = ContextMode>({
           <Button
             variant="ghost"
             size="sm"
-            aria-label={`${config.label}: ${t('common.contextModes.clickToCycle')}`}
+            aria-label={t('common.contextToggle.ariaLabel', { label: config.label, hint: t('common.contextModes.clickToCycle') })}
             className={cn(
               'h-8 w-8 p-0',
               config.bgColor,

@@ -41,7 +41,7 @@ describe('KnowledgePage source visuals', () => {
     expect(screen.getByRole('region', { name: 'Knowledge explorer' })).toHaveTextContent('Vault authority')
     expect(mockRecentSources).toHaveBeenCalledOnce()
     expect(mockRecentSources).toHaveBeenCalledWith(4)
-    expect(screen.getByRole('region', { name: 'Recent visual sources' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'workspace.recentSourceStrip.ariaLabel' })).toBeInTheDocument()
     expect(document.querySelector('[data-dn-recent-source-slot="true"]')).toHaveClass(
       'min-h-[15rem]',
       'sm:min-h-[12rem]',
@@ -58,6 +58,6 @@ describe('KnowledgePage source visuals', () => {
     render(<KnowledgePage />)
 
     expect(screen.getByRole('region', { name: 'Knowledge explorer' })).toBeInTheDocument()
-    expect(screen.queryByRole('region', { name: 'Recent visual sources' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'workspace.recentSourceStrip.ariaLabel' })).not.toBeInTheDocument()
   })
 })

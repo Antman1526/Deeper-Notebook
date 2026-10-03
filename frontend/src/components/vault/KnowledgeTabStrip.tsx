@@ -39,10 +39,15 @@ export function getEffectiveKnowledgeTabId(pane: KnowledgePane): string | null {
   return pane.activeTabId ?? pane.tabs[0]?.id ?? null
 }
 
-function modeLabel(tab: KnowledgePane['tabs'][number]): string {
+function modeLabel(tab: KnowledgePane['tabs'][number], t: (key: string) => string): string {
   const mode = tab.mode ?? (tab.viewMode === 'graph' ? 'graph' : tab.sourceAuthority === 'overlay' ? 'write' : 'read')
   const labels: Record<ResearchMode, string> = {
-    read: 'Read', write: 'Write', ask: 'Ask', search: 'Search', graph: 'Graph', podcast: 'Podcast',
+    read: t('knowledge.commands.modeRead'),
+    write: t('knowledge.commands.modeWrite'),
+    ask: t('knowledge.commands.modeAsk'),
+    search: t('knowledge.commands.modeSearch'),
+    graph: t('knowledge.commands.modeGraph'),
+    podcast: t('knowledge.commands.modePodcast'),
   }
   return labels[mode]
 }
@@ -134,7 +139,7 @@ export function KnowledgeTabStrip({
         const authorityLabel = isOverlay
           ? t('knowledge.overlay.writable')
           : t('knowledge.overlay.externalReadOnly')
-        const accessibleTabName = `${modeLabel(tab)}: ${tab.title}`
+        const accessibleTabName = `${modeLabel(tab, t)}: ${tab.title}`
 
         return (
           <div

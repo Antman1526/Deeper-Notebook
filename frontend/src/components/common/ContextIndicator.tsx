@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/lib/hooks/use-translation'
 
 interface ContextIndicatorProps {
   sourcesInsights: number
@@ -42,6 +43,7 @@ export function ContextIndicator({
   contextSourceTitles,
   className
 }: ContextIndicatorProps) {
+  const { t } = useTranslation()
   const hasContext = (sourcesInsights + sourcesFull) > 0 || notesCount > 0
   // v0.8.89 — when we know the total, always render the "Using X of Y" summary
   // (even at 0) so the filtering is discoverable. Legacy callers (no total)
@@ -52,7 +54,7 @@ export function ContextIndicator({
   if (!hasContext && !showSummary) {
     return (
       <div className={cn('flex-shrink-0 text-xs text-muted-foreground py-2 px-3 border-t', className)}>
-        No sources or notes included in context. Toggle icons on cards to include them.
+        {t('common.contextIndicator.noContext')}
       </div>
     )
   }
@@ -67,7 +69,9 @@ export function ContextIndicator({
                 type="button"
                 className="text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
               >
-                Using {inContextSources} of {totalSources} source{totalSources === 1 ? '' : 's'}
+                {totalSources === 1
+                  ? t('common.contextIndicator.usingSourcesOne', { used: inContextSources, total: totalSources })
+                  : t('common.contextIndicator.usingSourcesOther', { used: inContextSources, total: totalSources })}
               </button>
             </PopoverTrigger>
             <PopoverContent align="start" className="max-h-64 w-72 overflow-y-auto">
@@ -82,13 +86,13 @@ export function ContextIndicator({
                 </ul>
               ) : (
                 <p className="text-xs text-muted-foreground">
-                  No sources in context. Toggle a source’s icon in the Sources panel to include it.
+                  {t('common.contextIndicator.noSourcesInContext')}
                 </p>
               )}
             </PopoverContent>
           </Popover>
         ) : (
-          <span className="text-xs font-medium text-muted-foreground">Context:</span>
+          <span className="text-xs font-medium text-muted-foreground">{t('common.contextIndicator.context')}</span>
         )}
 
         <div className="flex items-center gap-1.5">
@@ -102,7 +106,7 @@ export function ContextIndicator({
                 </Badge>
               </TooltipTrigger>
               <TooltipContent>
-                <p>Insights for {sourcesInsights} source{sourcesInsights !== 1 ? 's' : ''}</p>
+                <p>{sourcesInsights !== 1 ? t('common.contextIndicator.insightsForOther', { count: sourcesInsights }) : t('common.contextIndicator.insightsForOne', { count: sourcesInsights })}</p>
               </TooltipContent>
             </Tooltip>
           )}
@@ -116,7 +120,7 @@ export function ContextIndicator({
                 </Badge>
               </TooltipTrigger>
               <TooltipContent>
-                <p>{sourcesFull} full source{sourcesFull !== 1 ? 's' : ''}</p>
+                <p>{sourcesFull !== 1 ? t('common.contextIndicator.fullSourceOther', { count: sourcesFull }) : t('common.contextIndicator.fullSourceOne', { count: sourcesFull })}</p>
               </TooltipContent>
             </Tooltip>
           )}
@@ -135,7 +139,7 @@ export function ContextIndicator({
                 </Badge>
               </TooltipTrigger>
               <TooltipContent>
-                <p>{notesCount} full note{notesCount !== 1 ? 's' : ''}</p>
+                <p>{notesCount !== 1 ? t('common.contextIndicator.fullNoteOther', { count: notesCount }) : t('common.contextIndicator.fullNoteOne', { count: notesCount })}</p>
               </TooltipContent>
             </Tooltip>
           </>
@@ -145,13 +149,13 @@ export function ContextIndicator({
       {(tokenCount !== undefined || charCount !== undefined) && (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           {tokenCount !== undefined && tokenCount > 0 && (
-            <span>{formatNumber(tokenCount)} tokens</span>
+            <span>{t('common.contextIndicator.tokens', { value: formatNumber(tokenCount) })}</span>
           )}
           {tokenCount !== undefined && charCount !== undefined && tokenCount > 0 && charCount > 0 && (
             <span>/</span>
           )}
           {charCount !== undefined && charCount > 0 && (
-            <span>{formatNumber(charCount)} chars</span>
+            <span>{t('common.contextIndicator.chars', { value: formatNumber(charCount) })}</span>
           )}
         </div>
       )}

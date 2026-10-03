@@ -43,25 +43,25 @@ const projection = {
 describe('StudyProgressPanel', () => {
   it('renders loading, empty, and error states', () => {
     const { rerender } = render(<StudyProgressPanel state="loading" />)
-    expect(screen.getByRole('status')).toHaveTextContent('Loading study progress')
+    expect(screen.getByRole('status')).toHaveTextContent('study.studyProgressPanel.loading')
 
     rerender(<StudyProgressPanel state="empty" />)
-    expect(screen.getByText('No study progress yet.')).toBeVisible()
+    expect(screen.getByText('study.studyProgressPanel.empty')).toBeVisible()
 
     rerender(<StudyProgressPanel state="error" onRetry={vi.fn()} />)
-    expect(screen.getByRole('alert')).toHaveTextContent('Study progress could not be loaded')
-    expect(screen.getByRole('button', { name: 'Retry' })).toBeEnabled()
+    expect(screen.getByRole('alert')).toHaveTextContent('study.studyProgressPanel.loadError')
+    expect(screen.getByRole('button', { name: 'study.studyProgressPanel.retry' })).toBeEnabled()
   })
 
   it('requires explicit confirmation before accepting a proposal', () => {
     const onAccept = vi.fn()
     render(<StudyProgressPanel state="ready" projection={projection} onAccept={onAccept} />)
 
-    const accept = screen.getByRole('button', { name: 'Accept Review the prerequisite first' })
+    const accept = screen.getByRole('button', { name: 'study.studyProgressPanel.acceptProposal' })
     expect(onAccept).not.toHaveBeenCalled()
     fireEvent.click(accept)
     expect(onAccept).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    fireEvent.click(screen.getByRole('button', { name: 'common.confirm' }))
     expect(onAccept).toHaveBeenCalledWith('proposal:one', expect.stringMatching(/^study-decision:/))
   })
 
@@ -76,24 +76,24 @@ describe('StudyProgressPanel', () => {
       />,
     )
 
-    expect(screen.getByText('This adaptation is unavailable.')).toBeVisible()
-    expect(screen.queryByRole('button', { name: /Accept/ })).not.toBeInTheDocument()
+    expect(screen.getByText('study.studyProgressPanel.adaptationUnavailable')).toBeVisible()
+    expect(screen.queryByRole('button', { name: /acceptProposal/ })).not.toBeInTheDocument()
   })
 
   it('fails closed when an available proposal has no decision handlers', () => {
     render(<StudyProgressPanel state="ready" projection={projection} />)
 
-    expect(screen.getByText('This adaptation is unavailable.')).toBeVisible()
-    expect(screen.queryByRole('button', { name: /Accept/ })).not.toBeInTheDocument()
+    expect(screen.getByText('study.studyProgressPanel.adaptationUnavailable')).toBeVisible()
+    expect(screen.queryByRole('button', { name: /acceptProposal/ })).not.toBeInTheDocument()
   })
 
   it('confirms a dismissal and rejects malformed projection data', () => {
     const onDismiss = vi.fn()
     render(<StudyProgressPanel state="ready" projection={projection} onDismiss={onDismiss} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Dismiss Review the prerequisite first' }))
+    fireEvent.click(screen.getByRole('button', { name: 'study.studyProgressPanel.dismissProposalAria' }))
     expect(onDismiss).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    fireEvent.click(screen.getByRole('button', { name: 'common.confirm' }))
     expect(onDismiss).toHaveBeenCalledWith('proposal:one', expect.stringMatching(/^study-decision:/))
 
     expect(() => decodeStudyMasteryProjection({ ...projection, proposals: [{ ...projection.proposals[0], unexpected: true }] })).toThrow('Invalid Study progress response')
@@ -106,8 +106,8 @@ describe('StudyProgressPanel', () => {
     const onRetry = vi.fn()
     render(<StudyProgressPanel state="ready" projection={{ ...projection, generated_at: '2026-08-12T12:00:00' } as never} onRetry={onRetry} />)
 
-    expect(screen.getByRole('alert')).toHaveTextContent('Study progress could not be read')
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('study.studyProgressPanel.readError')
+    fireEvent.click(screen.getByRole('button', { name: 'study.studyProgressPanel.retry' }))
     expect(onRetry).toHaveBeenCalledOnce()
   })
 
@@ -115,13 +115,13 @@ describe('StudyProgressPanel', () => {
     const onDismiss = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(undefined)
     render(<StudyProgressPanel state="ready" projection={projection} onDismiss={onDismiss} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Dismiss Review the prerequisite first' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    fireEvent.click(screen.getByRole('button', { name: 'study.studyProgressPanel.dismissProposalAria' }))
+    fireEvent.click(screen.getByRole('button', { name: 'common.confirm' }))
     await screen.findByRole('alert')
-    expect(screen.getByRole('button', { name: 'Confirm' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'common.confirm' })).toBeEnabled()
     expect(screen.getByRole('dialog')).toBeVisible()
     const firstRequestId = onDismiss.mock.calls[0][1]
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    fireEvent.click(screen.getByRole('button', { name: 'common.confirm' }))
     await waitFor(() => expect(onDismiss).toHaveBeenCalledTimes(2))
     expect(onDismiss.mock.calls[1][1]).toBe(firstRequestId)
   })

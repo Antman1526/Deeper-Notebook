@@ -280,7 +280,7 @@ test.describe('2c — chat column', () => {
       // At 1024 the mic and send buttons squeezed the textarea to ~95px ("Ask / anything / about").
       expect(textareaBox!.width).toBeGreaterThanOrEqual(composerBox!.width * 0.75)
       expect(await composer.evaluate((el) => parseFloat(getComputedStyle(el).borderTopLeftRadius))).toBeGreaterThanOrEqual(20)
-      await expect(composer.getByRole('button', { name: 'Enter Debate mode' })).toBeVisible()
+      await expect(composer.getByRole('button', { name: 'Enter debate mode' })).toBeVisible()
       await expect(composer.getByRole('button', { name: /send/i })).toBeVisible()
       // One row of controls: at 1024 the mic and send buttons wrapped below the model picker.
       const [modelBox, sendBox] = await Promise.all([

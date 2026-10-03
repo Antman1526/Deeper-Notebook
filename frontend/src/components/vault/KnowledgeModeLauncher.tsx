@@ -7,6 +7,7 @@ import {
   RESEARCH_MODE_DESCRIPTORS,
   type ResearchMode,
 } from '@/lib/knowledge/research-modes'
+import { useTranslation } from '@/lib/hooks/use-translation'
 import { cn } from '@/lib/utils'
 
 interface KnowledgeModeLauncherProps {
@@ -30,6 +31,7 @@ export function KnowledgeModeLauncher({
   onActivateTab,
   onOpenMode,
 }: KnowledgeModeLauncherProps) {
+  const { t } = useTranslation()
   const [focusedIndex, setFocusedIndex] = useState(0)
   const modeRefs = useRef<Partial<Record<ResearchMode, HTMLButtonElement | null>>>({})
   const compatibleTabs = useMemo(() => new Map(
@@ -66,7 +68,7 @@ export function KnowledgeModeLauncher({
   }
 
   return (
-    <div role="toolbar" aria-label="Research modes" onKeyDown={onKeyDown} className="research-core-mode-surfaces flex flex-wrap gap-1">
+    <div role="toolbar" aria-label={t('knowledge.knowledgeModeLauncher.modes')} onKeyDown={onKeyDown} className="research-core-mode-surfaces flex flex-wrap gap-1">
       {MODES.map((descriptor, index) => {
         const modeAvailability = availability[descriptor.id]
         const isDisabled = modeAvailability?.available === false
@@ -78,7 +80,7 @@ export function KnowledgeModeLauncher({
             tabIndex={focusedIndex === index ? 0 : -1}
             disabled={isDisabled}
             title={modeAvailability?.reason ?? undefined}
-            aria-label={`${descriptor.label} (Alt+${descriptor.shortcut})`}
+            aria-label={t('knowledge.knowledgeModeLauncher.modeAria', { label: t(descriptor.labelKey), shortcut: descriptor.shortcut })}
             aria-pressed={tabs.find((tab) => tab.id === activeTabId)?.mode === descriptor.id}
             onFocus={() => setFocusedIndex(index)}
             onClick={() => activateMode(descriptor.id)}
@@ -87,12 +89,12 @@ export function KnowledgeModeLauncher({
               'disabled:cursor-not-allowed disabled:opacity-50',
             )}
           >
-            {descriptor.label}<span aria-hidden="true" className="ml-1 text-xs text-muted-foreground">Alt+{descriptor.shortcut}</span>
+            {t(descriptor.labelKey)}<span aria-hidden="true" className="ml-1 text-xs text-muted-foreground">Alt+{descriptor.shortcut}</span>
           </button>
         )
       })}
       {hasUnsavedOverlayDraft ? (
-        <span className="sr-only" role="status">Unsaved Overlay draft remains open</span>
+        <span className="sr-only" role="status">{t('knowledge.knowledgeModeLauncher.unsavedDraft')}</span>
       ) : null}
     </div>
   )

@@ -37,17 +37,17 @@ export function AdaptiveNavigator() {
         aria-controls="dn-notebook-index"
         onClick={() => setIsOpen((open) => !open)}
       >
-        Notebook index
+        {t('workspace.adaptiveNavigator.toggle')}
       </Button>
       <nav
         id="dn-notebook-index"
-        aria-label="Notebook index"
+        aria-label={t('workspace.adaptiveNavigator.ariaLabel')}
         className={cn('dn-adaptive-navigator', isOpen && 'is-open')}
         data-mobile-mode="sheet"
       >
         <div className="dn-navigator-heading">
-          <p className="dn-command-kicker">Index</p>
-          <h2>Notebook index</h2>
+          <p className="dn-command-kicker">{t('workspace.adaptiveNavigator.kicker')}</p>
+          <h2>{t('workspace.adaptiveNavigator.heading')}</h2>
         </div>
         <div className="dn-navigator-list">
           {navigation.map((section) => (

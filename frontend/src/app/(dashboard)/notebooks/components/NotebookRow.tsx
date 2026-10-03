@@ -81,7 +81,7 @@ export function NotebookRow({ notebook }: NotebookRowProps) {
           <TurnIntoPodcastAction
             selection={{ kind: 'notebook', notebookId: notebook.id }}
             destination="quick"
-            disabledReason={noReadableContent ? 'No readable content is available' : undefined}
+            disabledReason={noReadableContent ? t('notebooks.notebookRow.noReadableContent') : undefined}
             onOpen={openPodcastReview}
           />
           <Badge
@@ -91,7 +91,7 @@ export function NotebookRow({ notebook }: NotebookRowProps) {
                 ? 'text-foreground bg-muted/40 border-border'
                 : 'text-muted-foreground/70 bg-transparent border-border/50'
             }`}
-            title={`${notebook.source_count} sources`}
+            title={notebook.source_count === 1 ? t('notebooks.notebookRow.sourceTitleOne', { count: 1 }) : t('notebooks.notebookRow.sourcesTitle', { count: notebook.source_count })}
           >
             <FileText className={`h-3 w-3 ${notebook.source_count > 0 ? 'text-primary' : 'text-muted-foreground/60'}`} />
             <span>{notebook.source_count}</span>
@@ -103,7 +103,7 @@ export function NotebookRow({ notebook }: NotebookRowProps) {
                 ? 'text-foreground bg-muted/40 border-border'
                 : 'text-muted-foreground/70 bg-transparent border-border/50'
             }`}
-            title={`${notebook.note_count} notes`}
+            title={notebook.note_count === 1 ? t('notebooks.notebookRow.noteTitleOne', { count: 1 }) : t('notebooks.notebookRow.notesTitle', { count: notebook.note_count })}
           >
             {/* v0.8.130 — status colours from theme tokens (UI audit Phase 1) */}
             <StickyNote className={`h-3 w-3 ${notebook.note_count > 0 ? 'text-warning-ink' : 'text-muted-foreground/60'}`} />

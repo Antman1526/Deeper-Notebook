@@ -69,13 +69,19 @@ vi.mock('@/lib/hooks/use-video-overviews', () => ({
 // assertions below meaningful.
 vi.mock('@/lib/hooks/use-translation', async () => {
   const { enUS } = await import('@/lib/locales/en-US')
-  const resolve = (key: string): string => {
+  const resolve = (key: string, options?: Record<string, unknown>): string => {
     let node: unknown = enUS
     for (const part of key.split('.')) {
       if (typeof node !== 'object' || node === null || !(part in (node as Record<string, unknown>))) return key
       node = (node as Record<string, unknown>)[part]
     }
-    return typeof node === 'string' ? node : key
+    if (typeof node !== 'string') return key
+    // Mirror i18next's {{name}} interpolation so interpolated strings render in English.
+    return options
+      ? node.replace(/\{\{\s*(\w+)\s*\}\}/g, (match, name: string) => (
+        name in options ? String(options[name]) : match
+      ))
+      : node
   }
   return { useTranslation: () => ({ t: resolve }) }
 })
@@ -295,7 +301,7 @@ describe('ArtifactRail', () => {
       />,
     )
 
-    expect(screen.getByText('App Mode templates')).toBeInTheDocument()
+    expect(screen.getByText('App mode templates')).toBeInTheDocument()
     expect(screen.getByText(/Source readiness/)).toBeInTheDocument()
     expect(screen.getByText(/Artifact generation/)).toBeInTheDocument()
     expect(screen.getByText(/Evidence export/)).toBeInTheDocument()
@@ -896,7 +902,7 @@ describe('ArtifactRail', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Course Pack' }))
     fireEvent.click(screen.getByRole('button', { name: 'Flashcards' }))
     fireEvent.click(screen.getByRole('button', { name: 'Quiz' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Data Table' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Data table' }))
     fireEvent.click(screen.getByRole('button', { name: 'Mind map' }))
     fireEvent.click(screen.getByRole('button', { name: 'Slide deck' }))
     fireEvent.click(screen.getByRole('button', { name: 'Infographic' }))
@@ -942,7 +948,7 @@ describe('ArtifactRail', () => {
       expect(createArtifact).toHaveBeenCalledWith({
         notebook_id: 'notebook:alpha',
         artifact_type: 'data_table',
-        title: 'Data Table',
+        title: 'Data table',
         source_ids: [],
       })
       expect(createArtifact).toHaveBeenCalledWith({
@@ -1379,7 +1385,9 @@ describe('ArtifactRail', () => {
     render(<ArtifactRail notebookId="notebook:alpha" />)
     fireEvent.click(screen.getByRole('button', { name: 'Open Data Table' }))
 
-    expect(screen.getByText('Data table')).toBeInTheDocument()
+    // The quick-action tile is also "Data table" now, so scope the heading to the viewer's table block.
+    const tableViewer = screen.getByRole('table').closest('div.space-y-3') as HTMLElement
+    expect(within(tableViewer).getByText('Data table')).toBeInTheDocument()
     expect(screen.getByText('1 row extracted from source-grounded output.')).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Topic' })).toBeInTheDocument()
     expect(screen.getAllByText('Evidence Studio').length).toBeGreaterThanOrEqual(1)
@@ -1926,10 +1934,10 @@ describe('ArtifactRail', () => {
 
       const toggle = screen.getByRole('button', { name: 'How generation works' })
       expect(toggle).toHaveAttribute('aria-expanded', 'false')
-      expect(screen.getByText('App Mode templates').closest('#artifact-rail-explainer')).toHaveAttribute('hidden')
+      expect(screen.getByText('App mode templates').closest('#artifact-rail-explainer')).toHaveAttribute('hidden')
       fireEvent.click(toggle)
       expect(toggle).toHaveAttribute('aria-expanded', 'true')
-      expect(screen.getByText('App Mode templates')).toBeVisible()
+      expect(screen.getByText('App mode templates')).toBeVisible()
     })
   })
 })

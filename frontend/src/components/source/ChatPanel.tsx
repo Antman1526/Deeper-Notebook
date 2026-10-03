@@ -556,12 +556,16 @@ export function ChatPanel({
           {mindMapContext && (
             <div data-testid="mind-map-context-chip" className="flex items-start justify-between gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs">
               <div className="min-w-0">
-                <div className="font-medium">Mind-map context: {mindMapContext.label}</div>
+                <div className="font-medium">{t('sources.chatPanel.mindMapContext', { label: mindMapContext.label })}</div>
                 <div className="mt-0.5 break-words text-muted-foreground">
-                  {mindMapContext.relationship || 'No relationship specified'} · {mindMapContext.citations.join(' ') || 'No citations'} · artifact {mindMapContext.artifact_id}
+                  {t('sources.chatPanel.mindMapDetail', {
+                    relationship: mindMapContext.relationship || t('sources.chatPanel.noRelationship'),
+                    citations: mindMapContext.citations.join(' ') || t('sources.chatPanel.noCitations'),
+                    artifactId: mindMapContext.artifact_id,
+                  })}
                 </div>
               </div>
-              <Button type="button" variant="ghost" size="icon" className="h-6 w-6 shrink-0" aria-label="Remove mind-map context" onClick={() => setMindMapContext(null)}>
+              <Button type="button" variant="ghost" size="icon" className="h-6 w-6 shrink-0" aria-label={t('sources.chatPanel.removeMindMapContext')} onClick={() => setMindMapContext(null)}>
                 <X className="h-3.5 w-3.5" />
               </Button>
             </div>
@@ -607,14 +611,14 @@ export function ChatPanel({
                   variant={debateMode ? 'secondary' : 'ghost'}
                   size="sm"
                   aria-pressed={debateMode}
-                  aria-label={debateMode ? 'Leave Debate mode' : 'Enter Debate mode'}
-                  title="Debate mode — the assistant argues the opposing case, grounded in your sources"
+                  aria-label={debateMode ? t('sources.chatPanel.leaveDebateMode') : t('sources.chatPanel.enterDebateMode')}
+                  title={t('sources.chatPanel.debateModeTitle')}
                   onClick={onToggleDebateMode}
                   className="h-8 gap-1.5 rounded-md px-2.5 text-xs"
                   data-testid="debate-mode-toggle"
                 >
                   <Swords className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span className="hidden @[18rem]:inline">Debate</span>
+                  <span className="hidden @[18rem]:inline">{t('sources.chatPanel.debate')}</span>
                 </Button>
               )}
               {onToggleMcpServer && (
@@ -634,8 +638,8 @@ export function ChatPanel({
                     type="button"
                     variant="outline"
                     size="icon"
-                    aria-label="Stop generating"
-                    title="Stop generating"
+                    aria-label={t('sources.chatPanel.stopGenerating')}
+                    title={t('sources.chatPanel.stopGenerating')}
                     onClick={onCancelStreaming}
                     className="h-9 w-9 flex-shrink-0 rounded-md"
                   >
@@ -729,6 +733,7 @@ function ThoughtAccordion({
   thinking: string
   isThinkingActive: boolean
 }) {
+  const { t } = useTranslation()
   const [isOpen, setIsOpen] = useState(isThinkingActive)
 
   const wasActiveRef = useRef(isThinkingActive)
@@ -752,7 +757,7 @@ function ThoughtAccordion({
         <div className="flex items-center gap-2">
           <Sparkles className={cn('h-3.5 w-3.5 transition-colors', isThinkingActive ? 'text-primary animate-pulse' : 'text-muted-foreground')} />
           <span className="font-mono text-xs uppercase tracking-wider">
-            {isThinkingActive ? 'Thinking…' : 'Thought process'}
+            {isThinkingActive ? t('sources.chatPanel.thinking') : t('sources.chatPanel.thoughtProcess')}
           </span>
           {isThinkingActive && (
             <span className="relative flex h-1.5 w-1.5">

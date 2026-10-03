@@ -5,8 +5,10 @@ import { useParams } from 'next/navigation'
 import { KnowledgeRouteFrame } from '@/components/deeper-notebook/route-frames/KnowledgeRouteFrames'
 import { StudyPlanWorkspace } from '@/components/study/StudyPlanWorkspace'
 import { isStudyWorkbenchEnabled } from '@/lib/features'
+import { useTranslation } from '@/lib/hooks/use-translation'
 
 export default function StudyPlanPage() {
+  const { t } = useTranslation()
   const params = useParams<{ planId?: string | string[] }>()
   const rawPlanId = params?.planId
   const planId = Array.isArray(rawPlanId) ? rawPlanId.at(-1) : rawPlanId
@@ -16,19 +18,19 @@ export default function StudyPlanPage() {
     <>
       <KnowledgeRouteFrame
         route="/study"
-        title="Study"
-        description="Review a source-grounded study plan and its explicit syllabus approval boundary."
+        title={t('study.planIdPage.title')}
+        description={t('study.planIdPage.description')}
       >
         <div className="mx-auto w-full max-w-6xl">
           {!studyWorkbenchEnabled ? (
             <div role="status" className="rounded-lg border p-6 text-sm text-muted-foreground">
-              This Study plan route is not available in the current release. Return to the Study review surface.
+              {t('study.planIdPage.routeUnavailable')}
             </div>
           ) : planId ? (
             <StudyPlanWorkspace planId={planId} />
           ) : (
             <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/5 p-6 text-sm text-destructive">
-              This study plan could not be identified. Return to Study and choose a plan again.
+              {t('study.planIdPage.planNotIdentified')}
             </div>
           )}
         </div>

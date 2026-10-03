@@ -1,6 +1,9 @@
+'use client'
+
 import type { ReactNode } from 'react'
 
 import { SourceCover } from './SourceCover'
+import { useTranslation } from '@/lib/hooks/use-translation'
 import type { SourceListResponse } from '@/lib/types/api'
 
 type SourceGalleryProps = {
@@ -24,16 +27,17 @@ export function SourceGallery({
   onRemove,
   onDelete,
 }: SourceGalleryProps) {
+  const { t } = useTranslation()
   const featuredId = selectedId && sources.some(source => source.id === selectedId) ? selectedId : sources[0]?.id
 
   return (
-    <section className="dn-source-gallery" data-dn-source-gallery="true" aria-label="Source gallery">
+    <section className="dn-source-gallery" data-dn-source-gallery="true" aria-label={t('workspace.sourceGallery.ariaLabel')}>
       {filters ? <div className="dn-source-gallery__filters">{filters}</div> : null}
       {/* v0.8.130 — Phase 4b: a list of li (an article may not take role=listitem). The
           explicit roles keep list semantics in Safari, which drops them for unstyled lists. */}
       <ul className="dn-source-gallery__grid" role="list">
         {sources.map(source => {
-          const title = source.title?.trim() || 'Untitled source'
+          const title = source.title?.trim() || t('sources.untitledSource')
           const featured = source.id === featuredId
           return (
             <li
@@ -49,7 +53,7 @@ export function SourceGallery({
                 onClick={() => onSelect?.(source.id)}
                 aria-pressed={featured}
               >
-                Select {title}
+                {t('workspace.sourceGallery.selectLabel', { title })}
               </button>
               <SourceCover
                 source={source}

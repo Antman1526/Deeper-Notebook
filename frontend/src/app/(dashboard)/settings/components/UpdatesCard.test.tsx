@@ -81,8 +81,8 @@ describe('UpdatesCard verification states', () => {
 
     render(<UpdatesCard />)
 
-    expect(screen.getByText('Verified release available (manual review only)')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Open verified release (manual)' })).toHaveAttribute(
+    expect(screen.getByText('settings.updatesCard.verifiedAvailable')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'settings.updatesCard.openVerifiedRelease' })).toHaveAttribute(
       'href',
       'https://github.com/Antman1526/Deeper-Notebook/releases/tag/v0.8.70',
     )
@@ -90,8 +90,8 @@ describe('UpdatesCard verification states', () => {
   })
 
   it.each([
-    ['unverified', 'Release needs verification before it can be offered.'],
-    ['unknown', 'Release status unavailable.'],
+    ['unverified', 'settings.updatesCard.needsVerification'],
+    ['unknown', 'settings.updatesCard.releaseStatusUnavailable'],
   ] as const)('renders a safe plain-language state for %s candidates', (verification, message) => {
     updateData = {
       current: '0.8.69',
@@ -115,7 +115,7 @@ describe('UpdatesCard verification states', () => {
 
     render(<UpdatesCard />)
 
-    expect(screen.getByText('Release status unavailable.')).toBeInTheDocument()
+    expect(screen.getByText('settings.updatesCard.releaseStatusUnavailable')).toBeInTheDocument()
     expect(screen.queryByText(/download|install/i)).not.toBeInTheDocument()
   })
 })

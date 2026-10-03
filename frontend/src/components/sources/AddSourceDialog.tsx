@@ -39,7 +39,8 @@ function boundedSourceId(value: unknown): string | null {
   return normalized.length > 0 && normalized.length <= 512 ? normalized : null
 }
 
-const createSourceSchema = z.object({
+// Built per render-language so the validation messages are translated (zod runs outside React).
+const buildCreateSourceSchema = (t: (key: string) => string) => z.object({
   type: z.enum(['link', 'upload', 'text']),
   title: z.string().optional(),
   url: z.string().optional(),
@@ -64,7 +65,7 @@ const createSourceSchema = z.object({
   }
   return true
 }, {
-  message: 'Please provide the required content for the selected source type',
+  message: t('sources.addSourceDialog.requiredContent'),
   path: ['type'],
 }).refine((data) => {
   // Make title mandatory for text sources
@@ -73,11 +74,11 @@ const createSourceSchema = z.object({
   }
   return true
 }, {
-  message: 'Title is required for text sources',
+  message: t('sources.addSourceDialog.titleRequired'),
   path: ['title'],
 })
 
-type CreateSourceFormData = z.infer<typeof createSourceSchema>
+type CreateSourceFormData = z.infer<ReturnType<typeof buildCreateSourceSchema>>
 
 interface AddSourceDialogProps {
   open: boolean
@@ -147,6 +148,7 @@ export function AddSourceDialog({
   const { data: settings } = useSettings()
 
   // Form setup
+  const createSourceSchema = useMemo(() => buildCreateSourceSchema(t), [t])
   const {
     register,
     handleSubmit,

@@ -1,5 +1,24 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+// The readiness summary interpolates the (path-redacted) detail into one sentence key.
+// An identity `t` would drop that detail and make the redaction assertions vacuous, so
+// resolve just the keys this component uses to their English.
+vi.mock('@/lib/hooks/use-translation', () => {
+  const en: Record<string, string> = {
+    'knowledge.researchCoreHeader.workspace': 'Research Core workspace',
+    'knowledge.researchCoreHeader.appOwnedEditable': '{{count}} app-owned editable',
+    'knowledge.researchCoreHeader.externalReadOnly': '{{count}} external read-only',
+    'knowledge.researchCoreHeader.queued': '{{count}} queued',
+    'knowledge.researchCoreHeader.readinessReady': 'Local readiness: ready — {{detail}}',
+    'knowledge.researchCoreHeader.readinessLoading': 'Local readiness: loading — {{detail}}',
+    'knowledge.researchCoreHeader.readinessUnavailable': 'Local readiness: unavailable — {{detail}}',
+    'knowledge.researchCoreHeader.pathRedacted': '[local path redacted]',
+  }
+  const t = (key: string, options?: Record<string, unknown>) => (en[key] ?? key)
+    .replace(/\{\{(\w+)\}\}/g, (_match, name: string) => String(options?.[name] ?? ''))
+  return { useTranslation: () => ({ t, language: 'en-US', setLanguage: vi.fn() }) }
+})
 
 import { ResearchCoreHeader } from './ResearchCoreHeader'
 

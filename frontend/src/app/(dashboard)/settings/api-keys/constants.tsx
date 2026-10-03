@@ -101,9 +101,10 @@ export const TYPE_COLORS: Record<ModelType, string> = {
 export const TYPE_COLOR_INACTIVE =
   'bg-muted text-muted-foreground opacity-50'
 
-export const TYPE_LABELS: Record<ModelType, string> = {
-  language: 'Language',
-  embedding: 'Embedding',
-  text_to_speech: 'TTS',
-  speech_to_text: 'STT',
+/** Locale keys for the model-type chips; render with `t(TYPE_LABEL_KEYS[type])`. */
+export const TYPE_LABEL_KEYS: Record<ModelType, string> = {
+  language: 'apiKeys.typeLabels.language',
+  embedding: 'apiKeys.typeLabels.embedding',
+  text_to_speech: 'apiKeys.typeLabels.textToSpeech',
+  speech_to_text: 'apiKeys.typeLabels.speechToText',
 }

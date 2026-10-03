@@ -20,8 +20,8 @@ describe('StudyVoiceTutor', () => {
 
   it('shows spoken tutoring only when the local capability receipt is ready', () => {
     render(<StudyVoiceTutor planId="study_plan:one" capability={{ stt: 'unavailable', tts: 'ready' }} />)
-    expect(screen.getByRole('button', { name: 'Record question' })).toBeDisabled()
-    expect(screen.getByText('Local speech recognition is unavailable.')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'study.studyVoiceTutor.recordQuestion' })).toBeDisabled()
+    expect(screen.getByText('study.studyVoiceTutor.sttUnavailable')).toBeVisible()
   })
 
   it('requests the microphone only after the record gesture and handles denial', async () => {
@@ -30,17 +30,17 @@ describe('StudyVoiceTutor', () => {
     render(<StudyVoiceTutor planId="study_plan:one" capability={{ stt: 'ready', tts: 'unavailable' }} />)
     expect(getUserMedia).not.toHaveBeenCalled()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Record question' }))
+    fireEvent.click(screen.getByRole('button', { name: 'study.studyVoiceTutor.recordQuestion' }))
     await waitFor(() => expect(getUserMedia).toHaveBeenCalledWith({ audio: true }))
-    expect(screen.getByRole('alert')).toHaveTextContent('Microphone access was denied.')
+    expect(screen.getByRole('alert')).toHaveTextContent('study.studyVoiceTutor.errors.micDenied')
   })
 
   it('keeps the text tutor optional when speech is ready or unavailable', () => {
     const { rerender } = render(<StudyVoiceTutor planId="study_plan:one" capability={{ stt: 'ready', tts: 'ready' }} />)
-    expect(screen.getByRole('button', { name: 'Record question' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'study.studyVoiceTutor.recordQuestion' })).toBeEnabled()
     rerender(<StudyVoiceTutor planId="study_plan:one" capability={{ stt: 'unavailable', tts: 'unavailable' }} />)
-    expect(screen.getByText('Local speech recognition is unavailable.')).toBeVisible()
-    expect(screen.getByText('Local speech synthesis is unavailable.')).toBeVisible()
+    expect(screen.getByText('study.studyVoiceTutor.sttUnavailable')).toBeVisible()
+    expect(screen.getByText('study.studyVoiceTutor.ttsUnavailable')).toBeVisible()
   })
 
   it('cancels an active recorder and releases the local stream', async () => {
@@ -60,9 +60,9 @@ describe('StudyVoiceTutor', () => {
     }
     vi.stubGlobal('MediaRecorder', RecorderStub)
     render(<StudyVoiceTutor planId="study_plan:one" capability={{ stt: 'ready', tts: 'unavailable' }} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Record question' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel voice' })).toBeVisible())
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel voice' }))
+    fireEvent.click(screen.getByRole('button', { name: 'study.studyVoiceTutor.recordQuestion' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'study.studyVoiceTutor.cancelVoice' })).toBeVisible())
+    fireEvent.click(screen.getByRole('button', { name: 'study.studyVoiceTutor.cancelVoice' }))
     expect(tracks[0].stop).toHaveBeenCalled()
     expect(transcribe).not.toHaveBeenCalled()
   })
@@ -74,10 +74,10 @@ describe('StudyVoiceTutor', () => {
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL })
     synthesize.mockResolvedValue(new Blob([new Uint8Array([1, 2])], { type: 'audio/wav' }))
     render(<StudyVoiceTutor planId="study_plan:one" capability={{ stt: 'unavailable', tts: 'ready' }} assistantText="A local answer." />)
-    fireEvent.click(screen.getByRole('button', { name: 'Play tutor response' }))
-    await waitFor(() => expect(screen.getByLabelText('Tutor response audio')).toBeVisible())
+    fireEvent.click(screen.getByRole('button', { name: 'study.studyVoiceTutor.playResponse' }))
+    await waitFor(() => expect(screen.getByLabelText('study.studyVoiceTutor.responseAudio')).toBeVisible())
     expect(createObjectURL).toHaveBeenCalled()
-    fireEvent.ended(screen.getByLabelText('Tutor response audio'))
+    fireEvent.ended(screen.getByLabelText('study.studyVoiceTutor.responseAudio'))
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:study-audio')
   })
 
@@ -89,10 +89,10 @@ describe('StudyVoiceTutor', () => {
     synthesize.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
     render(<StudyVoiceTutor planId="study_plan:one" capability={{ stt: 'unavailable', tts: 'ready' }} assistantText="A local answer." />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Play tutor response' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel voice' })).toBeVisible())
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel voice' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Play tutor response' }))
+    fireEvent.click(screen.getByRole('button', { name: 'study.studyVoiceTutor.playResponse' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'study.studyVoiceTutor.cancelVoice' })).toBeVisible())
+    fireEvent.click(screen.getByRole('button', { name: 'study.studyVoiceTutor.cancelVoice' }))
+    fireEvent.click(screen.getByRole('button', { name: 'study.studyVoiceTutor.playResponse' }))
     await waitFor(() => expect(synthesize).toHaveBeenCalledTimes(2))
 
     first.resolve(new Blob([new Uint8Array([1])], { type: 'audio/wav' }))

@@ -16,10 +16,10 @@ describe('LocalExecutionPolicyPanel', () => {
       onConfirmCloudRoute={onConfirmCloudRoute}
     />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Review pending cloud fallback' }))
+    fireEvent.click(screen.getByRole('button', { name: 'settings.localExecutionPolicyPanel.reviewPendingCloudFallback' }))
     expect(screen.getByRole('alertdialog')).toHaveTextContent('Research Chat')
-    expect(screen.getByRole('button', { name: 'Confirm cloud continuation' })).toBeDisabled()
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.getByRole('button', { name: 'settings.localExecutionPolicyPanel.confirmAction' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'common.cancel' }))
 
     expect(onSave).not.toHaveBeenCalled()
     expect(onConfirmCloudRoute).not.toHaveBeenCalled()
@@ -32,10 +32,10 @@ describe('LocalExecutionPolicyPanel', () => {
       pendingCloudRoute={{ stage: 'Evidence', contentClass: 'External evidence summary' }}
       onConfirmCloudRoute={onConfirmCloudRoute} onSave={vi.fn()}
     />)
-    fireEvent.click(screen.getByRole('button', { name: 'Review pending cloud fallback' }))
-    fireEvent.change(screen.getByLabelText('stage'), { target: { value: 'Evidence' } })
-    fireEvent.change(screen.getByLabelText('content class'), { target: { value: 'External evidence summary' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm cloud continuation' }))
+    fireEvent.click(screen.getByRole('button', { name: 'settings.localExecutionPolicyPanel.reviewPendingCloudFallback' }))
+    fireEvent.change(screen.getByLabelText('settings.localExecutionPolicyPanel.stageAria'), { target: { value: 'Evidence' } })
+    fireEvent.change(screen.getByLabelText('settings.localExecutionPolicyPanel.contentClassAria'), { target: { value: 'External evidence summary' } })
+    fireEvent.click(screen.getByRole('button', { name: 'settings.localExecutionPolicyPanel.confirmAction' }))
     expect(onConfirmCloudRoute).toHaveBeenCalledWith({ stage: 'Evidence', contentClass: 'External evidence summary' })
   })
 
@@ -44,15 +44,15 @@ describe('LocalExecutionPolicyPanel', () => {
       policy="local_preferred" computeProfile="balanced" memoryLimitBytes={0}
       pendingCloudRoute={{ stage: 'Research Chat', contentClass: 'Selected knowledge' }} onConfirmCloudRoute={vi.fn()} onSave={vi.fn()}
     />)
-    fireEvent.click(screen.getByRole('button', { name: 'Review pending cloud fallback' }))
-    fireEvent.change(screen.getByLabelText('stage'), { target: { value: 'Research Chat' } })
-    fireEvent.change(screen.getByLabelText('content class'), { target: { value: 'Selected knowledge' } })
-    expect(screen.getByRole('button', { name: 'Confirm cloud continuation' })).toBeEnabled()
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Review pending cloud fallback' }))
-    expect(screen.getByLabelText('stage')).toHaveValue('')
-    expect(screen.getByLabelText('content class')).toHaveValue('')
-    expect(screen.getByRole('button', { name: 'Confirm cloud continuation' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'settings.localExecutionPolicyPanel.reviewPendingCloudFallback' }))
+    fireEvent.change(screen.getByLabelText('settings.localExecutionPolicyPanel.stageAria'), { target: { value: 'Research Chat' } })
+    fireEvent.change(screen.getByLabelText('settings.localExecutionPolicyPanel.contentClassAria'), { target: { value: 'Selected knowledge' } })
+    expect(screen.getByRole('button', { name: 'settings.localExecutionPolicyPanel.confirmAction' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'common.cancel' }))
+    fireEvent.click(screen.getByRole('button', { name: 'settings.localExecutionPolicyPanel.reviewPendingCloudFallback' }))
+    expect(screen.getByLabelText('settings.localExecutionPolicyPanel.stageAria')).toHaveValue('')
+    expect(screen.getByLabelText('settings.localExecutionPolicyPanel.contentClassAria')).toHaveValue('')
+    expect(screen.getByRole('button', { name: 'settings.localExecutionPolicyPanel.confirmAction' })).toBeDisabled()
   })
 
   it('does not offer cloud continuation under Strict Local', () => {
@@ -65,10 +65,10 @@ describe('LocalExecutionPolicyPanel', () => {
       onSave={onSave}
     />)
 
-    expect(screen.getByText('Strict Local blocks cloud routes.')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Review pending cloud fallback' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Save local execution policy' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'Save local execution policy' })).toHaveClass(
+    expect(screen.getByText('settings.localExecutionPolicyPanel.strictBlocksCloud')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'settings.localExecutionPolicyPanel.reviewPendingCloudFallback' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'settings.localExecutionPolicyPanel.save' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'settings.localExecutionPolicyPanel.save' })).toHaveClass(
       'w-full',
       'whitespace-normal',
       'sm:w-auto',

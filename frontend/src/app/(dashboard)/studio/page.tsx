@@ -96,14 +96,14 @@ interface RejectionReason {
   key: 'studio.unsupportedType' | 'studio.fileTooLarge'
   params: Record<string, string>
 }
-function isAllowed(file: File): { ok: boolean; reason?: RejectionReason } {
+function isAllowed(file: File, noExtensionLabel: string): { ok: boolean; reason?: RejectionReason } {
   const ext = fileExt(file.name)
   if (!ALLOWED_EXTS.has(ext)) {
     return {
       ok: false,
       reason: {
         key: 'studio.unsupportedType',
-        params: { ext: ext || '(no extension)' },
+        params: { ext: ext || noExtensionLabel },
       },
     }
   }
@@ -156,7 +156,7 @@ export default function StudioPage() {
     const rejected: { name: string; reason: string }[] = []
     const accepted: File[] = []
     for (const f of Array.from(incoming)) {
-      const { ok, reason } = isAllowed(f)
+      const { ok, reason } = isAllowed(f, t('common.studioPage.noExtension'))
       if (!ok) {
         // v0.7.203 — format the rejection reason via t() with the
         // returned key+params, so the user sees a translated string
@@ -168,7 +168,7 @@ export default function StudioPage() {
               (s, [k, v]) => s.replace(`{${k}}`, v),
               t(reason.key),
             )
-          : 'rejected'
+          : t('common.studioPage.rejectedFallback')
         rejected.push({ name: f.name, reason: reasonText })
         continue
       }
@@ -427,7 +427,7 @@ export default function StudioPage() {
                   <FileText className="h-4 w-4 shrink-0 text-primary" />
                   <span className="flex-1 truncate font-medium">{f.name}</span>
                   <span className="text-xs font-mono text-muted-foreground shrink-0">
-                    {(f.size / 1024).toFixed(0)} KB
+                    {t('common.studioPage.fileSizeKb', { size: (f.size / 1024).toFixed(0) })}
                   </span>
                   <button
                     type="button"

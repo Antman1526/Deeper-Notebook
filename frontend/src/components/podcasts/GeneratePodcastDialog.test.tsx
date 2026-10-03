@@ -40,12 +40,12 @@ describe('GeneratePodcastDialog Audio Overview formats', () => {
   it('offers the complete closed overview-format menu', () => {
     renderDialog()
 
-    fireEvent.click(screen.getByRole('combobox', { name: 'Audio overview format' }))
+    fireEvent.click(screen.getByRole('combobox', { name: 'podcasts.overviewFormat' }))
 
-    expect(screen.getAllByText('Deep Dive')).toHaveLength(2)
-    expect(screen.getByText('Brief')).toBeInTheDocument()
-    expect(screen.getByText('Critique')).toBeInTheDocument()
-    expect(screen.getByText('Debate')).toBeInTheDocument()
+    expect(screen.getAllByText('podcasts.generatePodcastDialog.modeDeepDive')).toHaveLength(2)
+    expect(screen.getByText('podcasts.generatePodcastDialog.modeBrief')).toBeInTheDocument()
+    expect(screen.getByText('podcasts.generatePodcastDialog.modeCritique')).toBeInTheDocument()
+    expect(screen.getByText('podcasts.generatePodcastDialog.modeDebate')).toBeInTheDocument()
   })
 
   it('resets the closed format selection when the dialog closes', () => {
@@ -56,8 +56,8 @@ describe('GeneratePodcastDialog Audio Overview formats', () => {
         <GeneratePodcastDialog open onOpenChange={onOpenChange} />
       </QueryClientProvider>,
     )
-    fireEvent.click(screen.getByRole('combobox', { name: 'Audio overview format' }))
-    fireEvent.click(screen.getByText('Debate'))
+    fireEvent.click(screen.getByRole('combobox', { name: 'podcasts.overviewFormat' }))
+    fireEvent.click(screen.getByText('podcasts.generatePodcastDialog.modeDebate'))
 
     rerender(
       <QueryClientProvider client={client}>
@@ -70,6 +70,6 @@ describe('GeneratePodcastDialog Audio Overview formats', () => {
       </QueryClientProvider>,
     )
 
-    expect(screen.getByRole('combobox', { name: 'Audio overview format' })).toHaveTextContent('Deep Dive')
+    expect(screen.getByRole('combobox', { name: 'podcasts.overviewFormat' })).toHaveTextContent('podcasts.generatePodcastDialog.modeDeepDive')
   })
 })

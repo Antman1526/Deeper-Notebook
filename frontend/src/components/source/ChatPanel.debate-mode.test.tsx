@@ -110,7 +110,7 @@ describe('ChatPanel — v0.8.97 Debate mode toggle', () => {
       />,
     )
     expect(screen.getByTestId('debate-mode-toggle')).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: 'Leave Debate mode' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'sources.chatPanel.leaveDebateMode' })).toBeInTheDocument()
   })
 
   it('does NOT render the toggle when onToggleDebateMode is omitted', () => {

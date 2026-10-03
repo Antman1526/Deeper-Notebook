@@ -36,15 +36,15 @@ describe('RecoveryCenter', () => {
     const resetError = vi.fn()
     render(<RecoveryCenter resetError={resetError} error={new Error('/Users/private/token=secret')} />)
 
-    expect(screen.getByRole('alert')).toHaveTextContent('Recovery Center')
+    expect(screen.getByRole('alert')).toHaveTextContent('common.recoveryCenter.title')
     expect(screen.queryByText(/Users|private|token|secret|Error:/i)).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Try again' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'Reload page' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'Copy diagnostic code' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'common.retry' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'common.recoveryCenter.reloadPage' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'common.recoveryCenter.copyDiagnosticCode' })).toBeEnabled()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Reload page' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Copy diagnostic code' }))
+    fireEvent.click(screen.getByRole('button', { name: 'common.retry' }))
+    fireEvent.click(screen.getByRole('button', { name: 'common.recoveryCenter.reloadPage' }))
+    fireEvent.click(screen.getByRole('button', { name: 'common.recoveryCenter.copyDiagnosticCode' }))
 
     expect(resetError).toHaveBeenCalledOnce()
     expect(reload).toHaveBeenCalledOnce()
@@ -56,7 +56,7 @@ describe('RecoveryCenter', () => {
     ;(window as RecoveryWindow).DN = { relaunch }
     render(<RecoveryCenter resetError={vi.fn()} />)
 
-    const button = screen.getByRole('button', { name: 'Relaunch desktop app' })
+    const button = screen.getByRole('button', { name: 'common.recoveryCenter.relaunchDesktopApp' })
     expect(relaunch).not.toHaveBeenCalled()
     fireEvent.click(button)
     expect(relaunch).toHaveBeenCalledOnce()
@@ -66,8 +66,8 @@ describe('RecoveryCenter', () => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined })
     render(<RecoveryCenter resetError={vi.fn()} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Copy diagnostic code' }))
-    expect(screen.getByRole('status')).toHaveTextContent('Copy unavailable')
-    expect(screen.queryByRole('button', { name: 'Relaunch desktop app' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'common.recoveryCenter.copyDiagnosticCode' }))
+    expect(screen.getByRole('status')).toHaveTextContent('common.recoveryCenter.copyUnavailable')
+    expect(screen.queryByRole('button', { name: 'common.recoveryCenter.relaunchDesktopApp' })).not.toBeInTheDocument()
   })
 })

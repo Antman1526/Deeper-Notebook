@@ -92,11 +92,11 @@ export function NotebookHeader({ notebook }: NotebookHeaderProps) {
           onClick={() => setShowSynthesisDialog(true)}
           className="gap-1.5"
           data-testid="executive-synthesis-button"
-          aria-label="Synthesis"
+          aria-label={t('notebooks.notebookHeader.synthesis')}
         >
           <Sparkles className="h-4 w-4" />
           {/* v0.8.130 — icon-only below 640px so the title keeps room. */}
-          <span className="hidden sm:inline">Synthesis</span>
+          <span className="hidden sm:inline">{t('notebooks.notebookHeader.synthesis')}</span>
         </Button>
         <MindMapButton notebookId={notebook.id} />
         <Popover>

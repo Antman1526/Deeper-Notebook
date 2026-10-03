@@ -15,6 +15,7 @@ import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import { searchApi } from '@/lib/api/search'
 import type { ModalType } from '@/lib/hooks/use-modal-manager'
+import { useTranslation } from '@/lib/hooks/use-translation'
 
 export type DeepResearchResult = Awaited<ReturnType<typeof searchApi.deepResearch>>
 
@@ -27,6 +28,7 @@ interface DeepResearchPanelProps {
 }
 
 export function DeepResearchPanel({ result, openModal, copiedBrief, onCopyBrief, onSaveNote }: DeepResearchPanelProps) {
+  const { t } = useTranslation()
   return (
     <Card className="border-primary/40 shadow-sm">
       <CardHeader className="pb-3 border-b">
@@ -36,7 +38,7 @@ export function DeepResearchPanel({ result, openModal, copiedBrief, onCopyBrief,
               <Sparkles className="h-4 w-4" />
             </div>
             <div>
-              <CardTitle className="text-base font-semibold">Deep Research Synthesis</CardTitle>
+              <CardTitle className="text-base font-semibold">{t('searchPage.deepResearchPanel.title')}</CardTitle>
               <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
                 {result.objective}
               </p>
@@ -44,7 +46,7 @@ export function DeepResearchPanel({ result, openModal, copiedBrief, onCopyBrief,
           </div>
           <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
             <Badge variant="secondary" className="text-xs font-mono">
-              {result.evidence_count} sources
+              {t('searchPage.deepResearchPanel.sourcesCount', { count: result.evidence_count })}
             </Badge>
             <Button
               type="button"
@@ -56,12 +58,12 @@ export function DeepResearchPanel({ result, openModal, copiedBrief, onCopyBrief,
               {copiedBrief ? (
                 <>
                   <Check className="h-3.5 w-3.5 mr-1 text-primary" />
-                  Copied
+                  {t('searchPage.deepResearchPanel.copied')}
                 </>
               ) : (
                 <>
                   <Copy className="h-3.5 w-3.5 mr-1" />
-                  Copy Brief
+                  {t('searchPage.deepResearchPanel.copyBrief')}
                 </>
               )}
             </Button>
@@ -73,7 +75,7 @@ export function DeepResearchPanel({ result, openModal, copiedBrief, onCopyBrief,
               className="h-8 px-2.5 text-xs"
             >
               <Save className="h-3.5 w-3.5 mr-1" />
-              Save Note
+              {t('searchPage.deepResearchPanel.saveNote')}
             </Button>
           </div>
         </div>
@@ -81,7 +83,7 @@ export function DeepResearchPanel({ result, openModal, copiedBrief, onCopyBrief,
       <CardContent className="space-y-5 pt-4">
         {result.plan?.inquiry_paths && result.plan.inquiry_paths.length > 0 && (
           <div className="space-y-2">
-            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Inquiry Paths Explored</Label>
+            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('searchPage.deepResearchPanel.inquiryPaths')}</Label>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
               {result.plan.inquiry_paths.map((p, idx) => (
                 <div key={idx} className="p-3 rounded-lg border bg-card/60 text-xs space-y-1.5 shadow-xs">
@@ -98,7 +100,7 @@ export function DeepResearchPanel({ result, openModal, copiedBrief, onCopyBrief,
                     )}
                   </div>
                   <div className="text-muted-foreground font-mono text-xs bg-muted/60 px-2 py-1 rounded truncate">
-                    &ldquo;{p.search_query}&rdquo;
+                    {t('searchPage.deepResearchPanel.quotedQuery', { query: p.search_query })}
                   </div>
                   {p.rationale && (
                     <p className="text-xs text-muted-foreground leading-normal line-clamp-2">
@@ -112,7 +114,7 @@ export function DeepResearchPanel({ result, openModal, copiedBrief, onCopyBrief,
         )}
 
         <div className="space-y-2">
-          <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Research Brief</Label>
+          <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('searchPage.deepResearchPanel.researchBrief')}</Label>
           <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none break-words p-5 rounded-lg border bg-card/40 leading-relaxed shadow-xs prose-headings:font-semibold prose-a:text-primary prose-a:underline prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-table:my-4">
             <ReactMarkdown
               remarkPlugins={[remarkGfm, remarkMath]}
@@ -137,7 +139,7 @@ export function DeepResearchPanel({ result, openModal, copiedBrief, onCopyBrief,
 
         {result.citations && result.citations.length > 0 && (
           <div className="space-y-2">
-            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Grounded Citations</Label>
+            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('searchPage.deepResearchPanel.groundedCitations')}</Label>
             <div className="flex flex-wrap gap-1.5">
               {result.citations.map((c, idx) => (
                 <Badge
@@ -149,7 +151,7 @@ export function DeepResearchPanel({ result, openModal, copiedBrief, onCopyBrief,
                       openModal('source', c.id)
                     }
                   }}
-                  title="Click to open source preview"
+                  title={t('searchPage.deepResearchPanel.openSourcePreview')}
                 >
                   <span className="font-mono font-semibold text-primary">[{c.ref || idx + 1}]</span>
                   <span>{c.title || c.id}</span>

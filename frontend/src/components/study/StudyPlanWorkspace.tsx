@@ -20,19 +20,21 @@ import {
   useStudyPlanReadiness,
   useStudySyllabus,
 } from '@/lib/hooks/use-study-plans'
+import { STUDY_PLAN_STATE_KEYS, enumLabel, spacedEnum } from '@/lib/enum-labels'
+import { useTranslation } from '@/lib/hooks/use-translation'
 import type { StudyPlanState } from '@/lib/types/study-plans'
 
 export const STUDY_PLAN_TABS = [
-  { value: 'overview', label: 'Overview' },
-  { value: 'syllabus', label: 'Syllabus' },
-  { value: 'learn', label: 'Learn' },
-  { value: 'guide', label: 'Guide' },
-  { value: 'map', label: 'Map' },
-  { value: 'practice', label: 'Practice' },
-  { value: 'flashcards', label: 'Flashcards' },
-  { value: 'sources', label: 'Sources' },
-  { value: 'progress', label: 'Progress' },
-  { value: 'package', label: 'Anki package' },
+  { value: 'overview', labelKey: 'study.studyPlanWorkspace.tabs.overview' },
+  { value: 'syllabus', labelKey: 'study.studyPlanWorkspace.tabs.syllabus' },
+  { value: 'learn', labelKey: 'study.studyPlanWorkspace.tabs.learn' },
+  { value: 'guide', labelKey: 'study.studyPlanWorkspace.tabs.guide' },
+  { value: 'map', labelKey: 'study.studyPlanWorkspace.tabs.map' },
+  { value: 'practice', labelKey: 'study.studyPlanWorkspace.tabs.practice' },
+  { value: 'flashcards', labelKey: 'study.studyPlanWorkspace.tabs.flashcards' },
+  { value: 'sources', labelKey: 'study.studyPlanWorkspace.tabs.sources' },
+  { value: 'progress', labelKey: 'study.studyPlanWorkspace.tabs.progress' },
+  { value: 'package', labelKey: 'study.studyPlanWorkspace.tabs.ankiPackage' },
 ] as const
 
 export type StudyPlanTab = typeof STUDY_PLAN_TABS[number]['value']
@@ -50,15 +52,15 @@ export function normalizeStudyPlanTab(value: string | null | undefined): StudyPl
     : 'overview'
 }
 
-function safeErrorMessage(error: unknown): string {
+function safeErrorMessage(error: unknown, t: (key: string) => string): string {
   const status = (error as { response?: { status?: number } })?.response?.status
-  if (status === 409) return 'This plan changed elsewhere. Refresh the workspace before continuing.'
-  if (status === 503) return 'The syllabus service is temporarily unavailable. Try again shortly.'
-  return 'The syllabus could not be loaded. Nothing was changed; try again.'
+  if (status === 409) return t('study.studyPlanWorkspace.errors.planChanged')
+  if (status === 503) return t('study.studyPlanWorkspace.errors.serviceUnavailable')
+  return t('study.studyPlanWorkspace.errors.couldNotLoad')
 }
 
-function stateLabel(state: StudyPlanState): string {
-  return state.replaceAll('_', ' ')
+function stateLabel(t: (key: string) => string, state: StudyPlanState): string {
+  return enumLabel(t, STUDY_PLAN_STATE_KEYS, state, spacedEnum(state))
 }
 
 export interface StudyPlanWorkspaceProps {
@@ -66,6 +68,7 @@ export interface StudyPlanWorkspaceProps {
 }
 
 export function StudyPlanWorkspace({ planId }: StudyPlanWorkspaceProps) {
+  const { t } = useTranslation()
   const router = useRouter()
   const searchParams = useSearchParams()
   const activeTab = normalizeStudyPlanTab(searchParams.get('tab'))
@@ -98,10 +101,14 @@ export function StudyPlanWorkspace({ planId }: StudyPlanWorkspaceProps) {
     : false
   const canPropose = plan.data?.state === 'analyzing_sources' && !readiness.isLoading && !readiness.isError && readiness.data?.ready === true && allSourcesReady
   const sourceSummary = useMemo(() => {
-    if (!readiness.data) return `${sourceCount} linked ${sourceCount === 1 ? 'source' : 'sources'}`
+    if (!readiness.data) {
+      return sourceCount === 1
+        ? t('study.studyPlanWorkspace.sourceSummaryOne', { count: sourceCount })
+        : t('study.studyPlanWorkspace.sourceSummaryOther', { count: sourceCount })
+    }
     const readyCount = readiness.data.items.filter((item) => item.ready && item.fingerprint_status === 'available').length
-    return `${readyCount} of ${readiness.data.items.length} sources ready`
-  }, [readiness.data, sourceCount])
+    return t('study.studyPlanWorkspace.sourceSummaryReady', { ready: readyCount, total: readiness.data.items.length })
+  }, [readiness.data, sourceCount, t])
 
   const proposeSyllabus = async () => {
     if (!plan.data || !canPropose) return
@@ -110,7 +117,7 @@ export function StudyPlanWorkspace({ planId }: StudyPlanWorkspaceProps) {
       await propose.mutateAsync({ planId, input: { expected_revision: plan.data.version } })
       await Promise.all([plan.refetch(), syllabus.refetch()])
     } catch (error) {
-      setActionError(safeErrorMessage(error))
+      setActionError(safeErrorMessage(error, t))
     }
   }
 
@@ -135,15 +142,15 @@ export function StudyPlanWorkspace({ planId }: StudyPlanWorkspaceProps) {
   }
 
   if (plan.isLoading) {
-    return <div role="status" className="space-y-4 rounded-lg border p-6 text-sm text-muted-foreground">Loading study plan…</div>
+    return <div role="status" className="space-y-4 rounded-lg border p-6 text-sm text-muted-foreground">{t('study.studyPlanWorkspace.loadingPlan')}</div>
   }
 
   if (plan.isError || !plan.data) {
     return (
       <div className="space-y-4 rounded-lg border border-destructive/40 bg-destructive/5 p-6" role="alert">
-        <h2 className="text-xl font-semibold">Study plan unavailable</h2>
-        <p className="text-sm text-destructive">This plan could not be loaded. Your existing study cards and sources are unchanged.</p>
-        <Button type="button" variant="outline" onClick={() => void refreshAll()}>Retry</Button>
+        <h2 className="text-xl font-semibold">{t('study.studyPlanWorkspace.planUnavailableTitle')}</h2>
+        <p className="text-sm text-destructive">{t('study.studyPlanWorkspace.planUnavailableDescription')}</p>
+        <Button type="button" variant="outline" onClick={() => void refreshAll()}>{t('study.studyPlanWorkspace.retry')}</Button>
       </div>
     )
   }
@@ -152,24 +159,24 @@ export function StudyPlanWorkspace({ planId }: StudyPlanWorkspaceProps) {
   const tutorAvailable = ASSISTANT_PLAN_STATES.has(currentPlan.state)
     && currentPlan.approved_syllabus_version !== null
   const syllabusContent = syllabus.isLoading ? (
-    <p role="status" className="rounded-lg border p-6 text-sm text-muted-foreground">Loading proposed syllabus…</p>
+    <p role="status" className="rounded-lg border p-6 text-sm text-muted-foreground">{t('study.studyPlanWorkspace.loadingSyllabus')}</p>
   ) : syllabus.isError ? (
     <div role="alert" className="space-y-3 rounded-lg border border-destructive/40 bg-destructive/5 p-6">
-      <p className="text-sm text-destructive">The proposed syllabus could not be loaded. No version was changed.</p>
-      <Button type="button" variant="outline" onClick={() => void refreshAll()}>Retry syllabus</Button>
+      <p className="text-sm text-destructive">{t('study.studyPlanWorkspace.syllabusLoadError')}</p>
+      <Button type="button" variant="outline" onClick={() => void refreshAll()}>{t('study.studyPlanWorkspace.retrySyllabus')}</Button>
     </div>
   ) : !syllabus.data ? (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">No syllabus proposal yet</CardTitle>
+        <CardTitle className="text-base">{t('study.studyPlanWorkspace.noProposalTitle')}</CardTitle>
         <CardDescription>
-          Link and verify every source before proposing a typed syllabus. The server keeps each proposal immutable.
+          {t('study.studyPlanWorkspace.noProposalDescription')}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        {!canPropose ? <p className="text-sm text-muted-foreground">Syllabus proposal is available after source analysis reports every linked source ready.</p> : null}
+        {!canPropose ? <p className="text-sm text-muted-foreground">{t('study.studyPlanWorkspace.proposalAfterAnalysis')}</p> : null}
         <Button type="button" onClick={() => void proposeSyllabus()} disabled={!canPropose || propose.isPending}>
-          {propose.isPending ? 'Preparing proposal…' : 'Propose syllabus'}
+          {propose.isPending ? t('study.studyPlanWorkspace.preparingProposal') : t('study.studyPlanWorkspace.proposeSyllabus')}
         </Button>
         {actionError ? <p role="alert" className="text-sm text-destructive">{actionError}</p> : null}
       </CardContent>
@@ -189,27 +196,27 @@ export function StudyPlanWorkspace({ planId }: StudyPlanWorkspaceProps) {
     <div data-testid={`study-plan-workspace-${planId}`} className="space-y-6">
       <header className="flex flex-col gap-4 border-b pb-5 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 space-y-2">
-          <Link href="/study" className="text-sm text-muted-foreground underline-offset-4 hover:underline">Back to Study</Link>
+          <Link href="/study" className="text-sm text-muted-foreground underline-offset-4 hover:underline">{t('study.studyPlanWorkspace.backToStudy')}</Link>
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-2xl font-semibold tracking-tight">{currentPlan.goal}</h2>
-            <Badge variant={currentPlan.state === 'approved' ? 'default' : 'outline'}>{stateLabel(currentPlan.state)}</Badge>
+            <Badge variant={currentPlan.state === 'approved' ? 'default' : 'outline'}>{stateLabel(t, currentPlan.state)}</Badge>
           </div>
           <p className="max-w-2xl text-sm text-muted-foreground">
-            {currentPlan.starting_level} · {sourceSummary} · Revision {currentPlan.version}
+            {t('study.studyPlanWorkspace.planMeta', { level: currentPlan.starting_level, sources: sourceSummary, version: currentPlan.version })}
           </p>
         </div>
-        <Button type="button" variant="outline" onClick={() => void refreshAll()}>Refresh</Button>
+        <Button type="button" variant="outline" onClick={() => void refreshAll()}>{t('common.refresh')}</Button>
       </header>
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-5">
-        <TabsList aria-label="Study plan sections" data-dn-horizontal-scroll="study-tabs" className="w-full justify-start overflow-x-auto">
+        <TabsList aria-label={t('study.studyPlanWorkspace.sectionsLabel')} data-dn-horizontal-scroll="study-tabs" className="w-full justify-start overflow-x-auto">
           {STUDY_PLAN_TABS.map((tab) => (
             <TabsTrigger
               key={tab.value}
               value={tab.value}
               onClick={() => handleTabChange(tab.value)}
             >
-              {tab.label}
+              {t(tab.labelKey)}
             </TabsTrigger>
           ))}
         </TabsList>
@@ -217,16 +224,16 @@ export function StudyPlanWorkspace({ planId }: StudyPlanWorkspaceProps) {
         <TabsContent value="overview" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Plan overview</CardTitle>
-              <CardDescription>Keep this goal and its source boundary visible while the plan moves through review.</CardDescription>
+              <CardTitle>{t('study.studyPlanWorkspace.overview.title')}</CardTitle>
+              <CardDescription>{t('study.studyPlanWorkspace.overview.description')}</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-4 sm:grid-cols-3">
-              <div><p className="text-xs uppercase tracking-wide text-muted-foreground">Starting level</p><p className="mt-1 font-medium">{currentPlan.starting_level}</p></div>
-              <div><p className="text-xs uppercase tracking-wide text-muted-foreground">Linked sources</p><p className="mt-1 font-medium">{sourceCount}</p></div>
-              <div><p className="text-xs uppercase tracking-wide text-muted-foreground">Approved version</p><p className="mt-1 font-medium">{currentPlan.approved_syllabus_version ?? 'Not approved'}</p></div>
+              <div><p className="text-xs uppercase tracking-wide text-muted-foreground">{t('study.studyPlanWorkspace.overview.startingLevel')}</p><p className="mt-1 font-medium">{currentPlan.starting_level}</p></div>
+              <div><p className="text-xs uppercase tracking-wide text-muted-foreground">{t('study.studyPlanWorkspace.overview.linkedSources')}</p><p className="mt-1 font-medium">{sourceCount}</p></div>
+              <div><p className="text-xs uppercase tracking-wide text-muted-foreground">{t('study.studyPlanWorkspace.overview.approvedVersion')}</p><p className="mt-1 font-medium">{currentPlan.approved_syllabus_version ?? t('study.studyPlanWorkspace.overview.notApproved')}</p></div>
             </CardContent>
           </Card>
-          <p className="text-sm text-muted-foreground">Your existing review cards remain available on the <Link href="/study" className="underline underline-offset-4">Study home</Link>.</p>
+          <p className="text-sm text-muted-foreground">{t('study.studyPlanWorkspace.overview.existingCardsLead')} <Link href="/study" className="underline underline-offset-4">{t('study.studyPlanWorkspace.overview.studyHome')}</Link>.</p>
         </TabsContent>
 
         <TabsContent value="syllabus" className="space-y-4">{syllabusContent}</TabsContent>
@@ -243,9 +250,9 @@ export function StudyPlanWorkspace({ planId }: StudyPlanWorkspaceProps) {
           ) : (
             <Card role="status" aria-live="polite">
               <CardHeader>
-                <CardTitle>Learning session unavailable</CardTitle>
+                <CardTitle>{t('study.studyPlanWorkspace.learnUnavailableTitle')}</CardTitle>
                 <CardDescription>
-                  Tutor unavailable until the syllabus is approved. This plan is still being prepared or archived, so no learning session can start yet.
+                  {t('study.studyPlanWorkspace.learnUnavailableDescription')}
                 </CardDescription>
               </CardHeader>
             </Card>
@@ -270,11 +277,11 @@ export function StudyPlanWorkspace({ planId }: StudyPlanWorkspaceProps) {
           <TabsContent key={tab} value={tab} className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>{STUDY_PLAN_TABS.find((entry) => entry.value === tab)?.label}</CardTitle>
-                <CardDescription>This workspace section will use the approved syllabus and source boundary.</CardDescription>
+                <CardTitle>{t(STUDY_PLAN_TABS.find((entry) => entry.value === tab)?.labelKey ?? 'study.studyPlanWorkspace.tabs.overview')}</CardTitle>
+                <CardDescription>{t('study.studyPlanWorkspace.reserved.description')}</CardDescription>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-muted-foreground">This section is reserved for a later Study Workbench stage. No downstream artifact has been generated.</p>
+                <p className="text-sm text-muted-foreground">{t('study.studyPlanWorkspace.reserved.body')}</p>
               </CardContent>
             </Card>
           </TabsContent>

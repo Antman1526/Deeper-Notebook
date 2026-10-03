@@ -79,7 +79,7 @@ export default function NotebooksPage() {
             <Button
               variant="outline"
               size="sm"
-              aria-label="Refresh notebooks"
+              aria-label={t('notebooks.notebooksPage.refresh')}
               onClick={() => refetch()}
             >
               <RefreshCw className="h-4 w-4" />

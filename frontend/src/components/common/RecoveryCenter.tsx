@@ -5,6 +5,7 @@ import * as React from 'react'
 
 import { Button } from '@/components/ui/button'
 import { FolioState } from '@/components/deeper-notebook/folio/FolioState'
+import { useTranslation } from '@/lib/hooks/use-translation'
 
 const DIAGNOSTIC_CODE = 'DN-UI-RECOVERY'
 
@@ -26,6 +27,7 @@ function getRelaunch(): (() => boolean) | undefined {
 }
 
 export function RecoveryCenter({ resetError }: RecoveryCenterProps) {
+  const { t } = useTranslation()
   const [copyState, setCopyState] = React.useState<'idle' | 'copied' | 'unavailable'>('idle')
   const [relaunchUnavailable, setRelaunchUnavailable] = React.useState(false)
   const relaunch = getRelaunch()
@@ -52,25 +54,25 @@ export function RecoveryCenter({ resetError }: RecoveryCenterProps) {
     <div className="motion-reduce:transition-none">
       <FolioState
         kind="error"
-        title="Recovery Center"
-        description="This view could not be rendered. Your local data was not changed. Try the view again or reload the page."
+        title={t('common.recoveryCenter.title')}
+        description={t('common.recoveryCenter.description')}
         action={
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="outline" onClick={resetError}>
               <RefreshCw aria-hidden="true" className="mr-2 h-4 w-4" />
-              Try again
+              {t('common.retry')}
             </Button>
             <Button type="button" onClick={() => window.location.reload()}>
-              Reload page
+              {t('common.recoveryCenter.reloadPage')}
             </Button>
             <Button type="button" variant="ghost" onClick={() => void copyDiagnostic()}>
               <Copy aria-hidden="true" className="mr-2 h-4 w-4" />
-              Copy diagnostic code
+              {t('common.recoveryCenter.copyDiagnosticCode')}
             </Button>
             {relaunch ? (
               <Button type="button" variant="ghost" onClick={relaunchDesktop}>
                 <RotateCw aria-hidden="true" className="mr-2 h-4 w-4" />
-                Relaunch desktop app
+                {t('common.recoveryCenter.relaunchDesktopApp')}
               </Button>
             ) : null}
           </div>
@@ -78,12 +80,12 @@ export function RecoveryCenter({ resetError }: RecoveryCenterProps) {
       />
       <p role="status" aria-live="polite" className="mt-3 text-sm text-muted-foreground">
         {copyState === 'copied'
-          ? 'Diagnostic code copied'
+          ? t('common.recoveryCenter.diagnosticCodeCopied')
           : copyState === 'unavailable'
-            ? 'Copy unavailable'
+            ? t('common.recoveryCenter.copyUnavailable')
             : relaunchUnavailable
-              ? 'Desktop relaunch unavailable'
-              : 'Diagnostic code: DN-UI-RECOVERY'}
+              ? t('common.recoveryCenter.relaunchUnavailable')
+              : t('common.recoveryCenter.diagnosticCode', { code: DIAGNOSTIC_CODE })}
       </p>
     </div>
   )

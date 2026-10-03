@@ -15,25 +15,25 @@ describe('Guided Tips catalog', () => {
     // stays 2 so people who already dismissed the tip are not shown it again.
     expect(GUIDED_TIPS.find(tip => tip.id === 'dashboard-overview')).toMatchObject({
       version: 2,
-      title: 'The rail',
+      titleKey: 'workspace.catalog.dashboardOverviewTitle',
     })
     expect(GUIDED_TIPS.find(tip => tip.id === 'knowledge-overview')).toMatchObject({
       version: 2,
-      title: 'Notebook Index',
+      titleKey: 'workspace.catalog.knowledgeOverviewTitle',
     })
     // v0.8.130 — the tip advertised the Context lens, which is no longer mounted. The
     // version stays 2 so people who already dismissed the tip are not shown it again.
     expect(GUIDED_TIPS.find(tip => tip.id === 'search-overview')).toMatchObject({
       version: 2,
-      title: 'Ask and Search',
+      titleKey: 'workspace.catalog.searchOverviewTitle',
     })
     expect(GUIDED_TIPS.find(tip => tip.id === 'studio-overview')).toMatchObject({
       version: 2,
-      title: 'Evidence Inserts',
+      titleKey: 'workspace.catalog.studioOverviewTitle',
     })
     expect(GUIDED_TIPS.find(tip => tip.id === 'podcasts-overview')).toMatchObject({
       version: 2,
-      title: 'Podcast production review',
+      titleKey: 'workspace.catalog.podcastsOverviewTitle',
     })
     expect(GUIDED_TIPS.filter(tip => tip.version === 2)).toHaveLength(5)
   })

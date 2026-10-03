@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 
+import { useTranslation } from '@/lib/hooks/use-translation'
 import {
   normalizeRuntimeSnapshot,
   type RuntimeBackupFreshness,
@@ -12,49 +13,64 @@ export interface BackupProvenancePanelProps {
   snapshot?: unknown
 }
 
-const FRESHNESS_LABELS: Record<RuntimeBackupFreshness, string> = {
-  valid: 'Valid',
-  stale: 'Stale',
-  unknown: 'Unknown',
+type TranslateFn = ReturnType<typeof useTranslation>['t']
+
+const FRESHNESS_RECEIPT_KEYS: Record<RuntimeBackupFreshness, string> = {
+  valid: 'workspace.backupProvenancePanel.receiptValid',
+  stale: 'workspace.backupProvenancePanel.receiptStale',
+  unknown: 'workspace.backupProvenancePanel.receiptUnknown',
 }
 
-function formatBytes(value: number | null | undefined): string {
-  if (value === null || value === undefined) return 'Unknown size'
-  if (value < 1024) return `${value} B`
-  if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`
-  if (value < 1024 * 1024 * 1024) return `${Math.round(value / (1024 * 1024))} MB`
-  return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB`
+function formatBytes(t: TranslateFn, value: number | null | undefined): string {
+  if (value === null || value === undefined) return t('workspace.backupProvenancePanel.unknownSize')
+  if (value < 1024) return t('workspace.backupProvenancePanel.sizeBytes', { value })
+  if (value < 1024 * 1024) {
+    return t('workspace.backupProvenancePanel.sizeKb', { value: Math.round(value / 1024) })
+  }
+  if (value < 1024 * 1024 * 1024) {
+    return t('workspace.backupProvenancePanel.sizeMb', { value: Math.round(value / (1024 * 1024)) })
+  }
+  return t('workspace.backupProvenancePanel.sizeGb', {
+    value: (value / (1024 * 1024 * 1024)).toFixed(1),
+  })
 }
 
-function formatAge(value: number | null): string {
-  if (value === null) return 'Unknown age'
-  if (value < 60) return `${value} seconds ago`
-  if (value < 3600) return `${Math.floor(value / 60)} minutes ago`
-  if (value < 86_400) return `${Math.floor(value / 3600)} hours ago`
-  return `${Math.floor(value / 86_400)} days ago`
+function formatAge(t: TranslateFn, value: number | null): string {
+  if (value === null) return t('workspace.backupProvenancePanel.unknownAge')
+  if (value < 60) return t('workspace.backupProvenancePanel.ageSeconds', { count: value })
+  if (value < 3600) {
+    return t('workspace.backupProvenancePanel.ageMinutes', { count: Math.floor(value / 60) })
+  }
+  if (value < 86_400) {
+    return t('workspace.backupProvenancePanel.ageHours', { count: Math.floor(value / 3600) })
+  }
+  return t('workspace.backupProvenancePanel.ageDays', { count: Math.floor(value / 86_400) })
 }
 
-function formatTimestamp(value: string | null | undefined): string {
-  if (!value) return 'Unknown timestamp'
+function formatTimestamp(t: TranslateFn, value: string | null | undefined): string {
+  if (!value) return t('workspace.backupProvenancePanel.unknownTimestamp')
   try {
     return new Date(value).toISOString()
   } catch {
-    return 'Unknown timestamp'
+    return t('workspace.backupProvenancePanel.unknownTimestamp')
   }
 }
 
-function backupMessage(freshness: RuntimeBackupFreshness): string {
-  if (freshness === 'valid') return 'A recent local backup receipt is available'
-  if (freshness === 'stale') return 'Backup is older than the local retention window'
-  return 'No local backup receipt is available'
+function backupMessage(t: TranslateFn, freshness: RuntimeBackupFreshness): string {
+  if (freshness === 'valid') return t('workspace.backupProvenancePanel.messageValid')
+  if (freshness === 'stale') return t('workspace.backupProvenancePanel.messageStale')
+  return t('workspace.backupProvenancePanel.messageUnknown')
 }
 
-function provenanceMessage(state: string, count: number): string {
-  if (state === 'unknown') return 'External read-only provenance is unavailable'
-  return `${count} external read-only ${count === 1 ? 'space' : 'spaces'}`
+function provenanceMessage(t: TranslateFn, state: string, count: number): string {
+  if (state === 'unknown') return t('workspace.backupProvenancePanel.provenanceUnavailable')
+  return count === 1
+    ? t('workspace.backupProvenancePanel.externalSpaceOne', { count })
+    : t('workspace.backupProvenancePanel.externalSpaceOther', { count })
 }
 
 export function BackupProvenancePanel({ snapshot }: BackupProvenancePanelProps) {
+  const { t } = useTranslation()
   const normalized = normalizeRuntimeSnapshot(snapshot)
   const backup = normalized.backup
   const freshness = backup.freshness ?? 'unknown'
@@ -68,53 +84,54 @@ export function BackupProvenancePanel({ snapshot }: BackupProvenancePanelProps) 
   return (
     <section
       role="region"
-      aria-label="Backup and provenance"
+      aria-label={t('workspace.backupProvenancePanel.ariaLabel')}
       data-testid="backup-provenance-panel"
       className="grid gap-4 rounded-xl border border-[var(--dn-paper-edge)] bg-[var(--dn-lens)] p-4 motion-reduce:transition-none"
     >
       <header>
         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--dn-brass)]">
-          Local backup and provenance
+          {t('workspace.backupProvenancePanel.eyebrow')}
         </p>
-        <h2 className="mt-1 text-base font-semibold">{FRESHNESS_LABELS[freshness]} backup receipt</h2>
-        <p className="mt-1 text-sm text-muted-foreground">{backupMessage(freshness)}</p>
+        <h2 className="mt-1 text-base font-semibold">{t(FRESHNESS_RECEIPT_KEYS[freshness])}</h2>
+        <p className="mt-1 text-sm text-muted-foreground">{backupMessage(t, freshness)}</p>
       </header>
 
       <dl className="grid gap-3 text-sm sm:grid-cols-2">
         <div>
-          <dt className="font-semibold">Newest export</dt>
-          <dd className="text-muted-foreground">{formatAge(backup.newest_age_seconds ?? null)}</dd>
+          <dt className="font-semibold">{t('workspace.backupProvenancePanel.newestExport')}</dt>
+          <dd className="text-muted-foreground">{formatAge(t, backup.newest_age_seconds ?? null)}</dd>
         </div>
         <div>
-          <dt className="font-semibold">Size</dt>
-          <dd className="text-muted-foreground">{formatBytes(backup.newest_size_bytes)}</dd>
+          <dt className="font-semibold">{t('workspace.backupProvenancePanel.size')}</dt>
+          <dd className="text-muted-foreground">{formatBytes(t, backup.newest_size_bytes)}</dd>
         </div>
         <div>
-          <dt className="font-semibold">Recorded at</dt>
-          <dd className="text-muted-foreground">{formatTimestamp(backup.newest_timestamp)}</dd>
+          <dt className="font-semibold">{t('workspace.backupProvenancePanel.recordedAt')}</dt>
+          <dd className="text-muted-foreground">{formatTimestamp(t, backup.newest_timestamp)}</dd>
         </div>
         <div>
-          <dt className="font-semibold">Integrity</dt>
+          <dt className="font-semibold">{t('workspace.backupProvenancePanel.integrity')}</dt>
           <dd className="text-muted-foreground">
-            {backup.integrity === 'verified' ? 'Integrity verified' : 'Integrity not verified'}
+            {backup.integrity === 'verified'
+              ? t('workspace.backupProvenancePanel.integrityVerified')
+              : t('workspace.backupProvenancePanel.integrityNotVerified')}
           </dd>
         </div>
         <div>
-          <dt className="font-semibold">Export files</dt>
+          <dt className="font-semibold">{t('workspace.backupProvenancePanel.exportFiles')}</dt>
           <dd className="text-muted-foreground">{backup.file_count}</dd>
         </div>
       </dl>
 
       <div className="border-t border-border/70 pt-3 text-sm">
-        <h3 className="font-semibold">External source provenance</h3>
+        <h3 className="font-semibold">{t('workspace.backupProvenancePanel.externalSourceProvenance')}</h3>
         <p className="mt-1 text-muted-foreground">
-          {provenanceMessage(provenance.state, provenance.external_read_only_count)}
+          {provenanceMessage(t, provenance.state, provenance.external_read_only_count)}
         </p>
         <p className="mt-1 text-muted-foreground">
           {provenance.source_fingerprint_state === 'available'
-            ? 'Source fingerprints recorded'
-            : 'Source fingerprint summary unavailable'}
-          . No source content, paths, or hashes are shown.
+            ? t('workspace.backupProvenancePanel.fingerprintsRecorded')
+            : t('workspace.backupProvenancePanel.fingerprintsUnavailable')}
         </p>
       </div>
     </section>

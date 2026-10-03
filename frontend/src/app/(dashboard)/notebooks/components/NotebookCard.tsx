@@ -82,7 +82,7 @@ export function NotebookCard({ notebook }: NotebookCardProps) {
                       variant="ghost"
                       size="sm"
                       className="relative z-10 h-8 w-8 p-0 rounded-md opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-[opacity,background-color] duration-200 hover:bg-muted/80"
-                      aria-label={`Actions for ${notebook.name}`}
+                      aria-label={t('notebooks.notebookCard.actionsFor', { name: notebook.name })}
                     >
                       <MoreHorizontal className="h-4 w-4" />
                     </Button>
@@ -130,7 +130,7 @@ export function NotebookCard({ notebook }: NotebookCardProps) {
               <TurnIntoPodcastAction
                 selection={{ kind: 'notebook', notebookId: notebook.id }}
                 destination="quick"
-                disabledReason={noReadableContent ? 'No readable content is available' : undefined}
+                disabledReason={noReadableContent ? t('notebooks.notebookCard.noReadableContent') : undefined}
                 onOpen={openPodcastReview}
               />
             </div>
@@ -144,7 +144,7 @@ export function NotebookCard({ notebook }: NotebookCardProps) {
                     ? 'text-foreground bg-muted/40 border-border/80 shadow-xs'
                     : 'text-muted-foreground/70 bg-transparent border-border/40'
                 }`}
-                title={`${notebook.source_count} sources`}
+                title={notebook.source_count === 1 ? t('notebooks.notebookCard.sourceTitleOne', { count: 1 }) : t('notebooks.notebookCard.sourcesTitle', { count: notebook.source_count })}
               >
                 <FileText className={`h-3 w-3 ${notebook.source_count > 0 ? 'text-primary' : 'text-muted-foreground/60'}`} />
                 {/* v0.8.130 — Phase 3a: labelled; the chips read as a bare "1" and "0". */}
@@ -157,7 +157,7 @@ export function NotebookCard({ notebook }: NotebookCardProps) {
                     ? 'text-foreground bg-muted/40 border-border/80 shadow-xs'
                     : 'text-muted-foreground/70 bg-transparent border-border/40'
                 }`}
-                title={`${notebook.note_count} notes`}
+                title={notebook.note_count === 1 ? t('notebooks.notebookCard.noteTitleOne', { count: 1 }) : t('notebooks.notebookCard.notesTitle', { count: notebook.note_count })}
               >
                 {/* v0.8.130 — status colours from theme tokens (UI audit Phase 1) */}
                 <StickyNote className={`h-3 w-3 ${notebook.note_count > 0 ? 'text-warning-ink' : 'text-muted-foreground/60'}`} />

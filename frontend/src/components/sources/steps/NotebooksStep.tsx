@@ -28,7 +28,7 @@ export function NotebooksStep({
   return (
     <div className="space-y-6">
       <FormSection
-        title={`${t('notebooks.title')} (${t('common.optional')})`}
+        title={t('sources.notebooksStep.titleOptional')}
         description={t('sources.addExistingDesc')}
       >
         <CheckboxList

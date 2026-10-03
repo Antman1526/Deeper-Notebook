@@ -9,13 +9,13 @@ describe('knowledge route folio mapping', () => {
   })
 
   it.each([
-    ['/sources', 'Sources'],
-    ['/capture', 'Capture'],
-    ['/notebooks', 'Notebooks'],
-    ['/search', 'Ask & Search'],
-    ['/study', 'Study'],
-  ] as const)('maps %s to the %s folio', (route, title) => {
-    expect(knowledgeRouteFolioMetadata[route]).toMatchObject({ title })
+    ['/sources', 'navigation.sources'],
+    ['/capture', 'knowledge.knowledgeRouteFrames.capture'],
+    ['/notebooks', 'navigation.notebooks'],
+    ['/search', 'knowledge.knowledgeRouteFrames.askAndSearch'],
+    ['/study', 'navigation.study'],
+  ] as const)('maps %s to the %s folio', (route, titleKey) => {
+    expect(knowledgeRouteFolioMetadata[route]).toMatchObject({ titleKey })
   })
 
   it('composes the shared folio landmark with the route metadata and actions', () => {
@@ -27,11 +27,11 @@ describe('knowledge route folio mapping', () => {
       </KnowledgeRouteFrame>,
     )
 
-    expect(screen.getByRole('main', { name: 'Capture' })).toHaveAttribute(
+    expect(screen.getByRole('main', { name: 'knowledge.knowledgeRouteFrames.capture' })).toHaveAttribute(
       'data-dn-folio-route-frame',
       'true',
     )
-    expect(screen.getByText('Collect')).toBeInTheDocument()
+    expect(screen.getByText('navigation.collect')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Add source' })).toBeInTheDocument()
     expect(screen.getByText('Capture inbox')).toBeInTheDocument()
   })
@@ -48,7 +48,7 @@ describe('knowledge route folio mapping', () => {
     )
 
     expect(screen.getAllByRole('main')).toHaveLength(1)
-    expect(screen.getByRole('main', { name: 'Capture' })).toHaveAttribute(
+    expect(screen.getByRole('main', { name: 'knowledge.knowledgeRouteFrames.capture' })).toHaveAttribute(
       'data-dn-folio-route-frame',
       'true',
     )

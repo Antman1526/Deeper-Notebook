@@ -9,6 +9,8 @@ import { enUS } from './en-US'
 
 // Words (or phrases) that keep their capitals anywhere in a string.
 const PROPER_NOUNS = [
+  // Multi-word names first: each name is removed in order, so 'Google' must not split them.
+  'Google Cloud Console', 'Google Cloud', 'Google Drive', 'OAuth', 'WebVTT', 'Canvas',
   'Deeper Notebook', 'Evidence Studio', 'Research Core', 'Study Workbench',
   'ExamLab', 'Cornell Notes', 'Course Pack', 'Episode Lab', 'Gemini-Forward', 'Luminous Folio',
   'Obsidian', 'Docker', 'Gmail', 'Google', 'GitHub', 'YouTube', 'Ollama', 'OpenAI', 'Anthropic',

@@ -12,7 +12,7 @@ test('Research Core retains the outer navigator while Focus is active at compact
   await page.goto('/knowledge')
 
   await expect(page.getByTestId('knowledge-workspace')).toBeVisible()
-  await page.getByRole('button', { name: 'Enter Focus mode' }).click()
+  await page.getByRole('button', { name: 'Enter focus mode' }).click()
 
   await expect(page.locator('html')).toHaveAttribute('data-dn-focus-mode', 'true')
   // v0.8.130 — Phase 3b: the rail replaces the notebook index; in Focus it folds to a

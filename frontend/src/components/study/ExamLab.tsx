@@ -28,12 +28,13 @@ import {
   useSubmitExam,
 } from '@/lib/hooks/use-study-exams'
 import { useNotebooks } from '@/lib/hooks/use-notebooks'
+import { useTranslation } from '@/lib/hooks/use-translation'
 
 const DURATIONS = [
-  { label: '10 min', sec: 600 },
-  { label: '20 min', sec: 1200 },
-  { label: '45 min', sec: 2700 },
-  { label: '90 min', sec: 5400 },
+  { minutes: 10, sec: 600 },
+  { minutes: 20, sec: 1200 },
+  { minutes: 45, sec: 2700 },
+  { minutes: 90, sec: 5400 },
 ] as const
 
 function formatRemaining(deadlineIso: string, now: number): string {
@@ -44,6 +45,7 @@ function formatRemaining(deadlineIso: string, now: number): string {
 }
 
 export function ExamLab() {
+  const { t } = useTranslation()
   const [activeAttemptId, setActiveAttemptId] = useState<string | null>(null)
   const [notebookId, setNotebookId] = useState<string>('')
   const [artifactId, setArtifactId] = useState<string>('')
@@ -100,17 +102,17 @@ export function ExamLab() {
             <div>
               <CardTitle className="text-base">{current.title}</CardTitle>
               <CardDescription>
-                {answeredCount} of {current.question_count} answered
+                {t('study.examLab.answered', { answered: answeredCount, total: current.question_count })}
               </CardDescription>
             </div>
             <p
               className={`flex items-center gap-1.5 font-mono text-sm ${overtime ? 'text-destructive' : 'text-muted-foreground'}`}
               role="timer"
-              aria-label="Time remaining"
+              aria-label={t('study.examLab.timeRemaining')}
               data-testid="examlab-countdown"
             >
               <AlarmClock className="h-4 w-4" aria-hidden="true" />
-              {overtime ? 'Overtime — still gradable' : formatRemaining(current.deadline, now)}
+              {overtime ? t('study.examLab.overtime') : formatRemaining(current.deadline, now)}
             </p>
           </div>
         </CardHeader>
@@ -153,17 +155,17 @@ export function ExamLab() {
                 )
               }
             >
-              Submit exam
+              {t('study.examLab.submitExam')}
             </Button>
             {answeredCount < current.question_count ? (
               <p className="text-xs text-muted-foreground">
-                Unanswered questions are graded as incorrect.
+                {t('study.examLab.unansweredNote')}
               </p>
             ) : null}
           </div>
           {submitExam.isError ? (
             <p role="alert" className="text-sm text-destructive">
-              Submission failed — your answers are still here. Try again.
+              {t('study.examLab.submitFailed')}
             </p>
           ) : null}
         </CardContent>
@@ -176,11 +178,12 @@ export function ExamLab() {
       <Card data-testid="examlab-results">
         <CardHeader>
           <CardTitle className="text-base">
-            {current.title} — {current.score_percent}%
+            {t('study.examLab.resultTitle', { title: current.title, score: current.score_percent })}
           </CardTitle>
           <CardDescription>
-            {current.correct_count} of {current.question_count} correct
-            {current.late ? ' · submitted after time' : ''}
+            {current.late
+              ? t('study.examLab.resultSummaryLate', { correct: current.correct_count, total: current.question_count })
+              : t('study.examLab.resultSummary', { correct: current.correct_count, total: current.question_count })}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -195,8 +198,8 @@ export function ExamLab() {
                 onClick={() => seedMisses.mutate(current.id)}
               >
                 {unseededMisses === 0
-                  ? 'Missed questions added to review deck'
-                  : `Add ${unseededMisses} missed to review deck`}
+                  ? t('study.examLab.missedSeeded')
+                  : t('study.examLab.addMissed', { count: unseededMisses })}
               </Button>
             ) : null}
             <Button
@@ -205,7 +208,7 @@ export function ExamLab() {
               size="sm"
               onClick={() => setActiveAttemptId(null)}
             >
-              Back to ExamLab
+              {t('study.examLab.backToExamLab')}
             </Button>
           </div>
           <ol className="space-y-3">
@@ -223,12 +226,12 @@ export function ExamLab() {
                   {!result.correct ? (
                     <p>
                       {result.answered
-                        ? `Your answer: ${result.options.find((o) => o.id === result.selected_option_id)?.text ?? '—'}`
-                        : 'Not answered'}
+                        ? t('study.examLab.yourAnswer', { answer: result.options.find((o) => o.id === result.selected_option_id)?.text ?? '—' })
+                        : t('study.examLab.notAnswered')}
                     </p>
                   ) : null}
                   <p>
-                    Correct: {result.options.find((o) => o.id === result.correct_option_id)?.text}
+                    {t('study.examLab.correct', { answer: result.options.find((o) => o.id === result.correct_option_id)?.text })}
                   </p>
                   {result.explanation ? <p>{result.explanation}</p> : null}
                 </div>
@@ -251,7 +254,7 @@ export function ExamLab() {
       <CardContent className="space-y-4 pt-6">
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="space-y-1 text-sm">
-            <span className="text-muted-foreground">Notebook</span>
+            <span className="text-muted-foreground">{t('study.examLab.notebook')}</span>
             <select
               className="w-full rounded-md border bg-transparent p-2"
               value={notebookId}
@@ -261,7 +264,7 @@ export function ExamLab() {
                 setArtifactId('')
               }}
             >
-              <option value="">Choose a notebook…</option>
+              <option value="">{t('study.examLab.chooseNotebook')}</option>
               {(notebooks.data ?? []).map((notebook) => (
                 <option key={notebook.id} value={notebook.id}>
                   {notebook.name}
@@ -270,7 +273,7 @@ export function ExamLab() {
             </select>
           </label>
           <label className="space-y-1 text-sm">
-            <span className="text-muted-foreground">Quiz</span>
+            <span className="text-muted-foreground">{t('study.examLab.quiz')}</span>
             <select
               className="w-full rounded-md border bg-transparent p-2"
               value={artifactId}
@@ -280,12 +283,12 @@ export function ExamLab() {
             >
               <option value="">
                 {!notebookId
-                  ? 'Pick a notebook first'
+                  ? t('study.examLab.pickNotebookFirst')
                   : artifacts.isLoading
-                    ? 'Loading quizzes…'
+                    ? t('study.examLab.loadingQuizzes')
                     : quizzes.length === 0
-                      ? 'No completed quizzes — generate one in Studio'
-                      : 'Choose a quiz…'}
+                      ? t('study.examLab.noQuizzes')
+                      : t('study.examLab.chooseQuiz')}
               </option>
               {quizzes.map((quiz) => (
                 <option key={quiz.id} value={quiz.id}>
@@ -295,7 +298,7 @@ export function ExamLab() {
             </select>
           </label>
         </div>
-        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Exam duration">
+        <div className="flex flex-wrap items-center gap-2" role="group" aria-label={t('study.examLab.examDuration')}>
           {DURATIONS.map((duration) => (
             <Button
               key={duration.sec}
@@ -305,7 +308,7 @@ export function ExamLab() {
               aria-pressed={durationSec === duration.sec}
               onClick={() => setDurationSec(duration.sec)}
             >
-              {duration.label}
+              {t('study.examLab.durationMinutes', { count: duration.minutes })}
             </Button>
           ))}
         </div>
@@ -325,19 +328,18 @@ export function ExamLab() {
             )
           }
         >
-          Start timed exam
+          {t('study.examLab.startExam')}
         </Button>
         {startExam.isError ? (
           <p role="alert" className="text-sm text-destructive">
-            Could not start the exam. If this quiz predates structured documents,
-            regenerate it in Evidence Studio first.
+            {t('study.examLab.startFailed')}
           </p>
         ) : null}
 
         {(attempts.data ?? []).length > 0 ? (
           <div className="space-y-2 border-t pt-3">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Recent attempts
+              {t('study.examLab.recentAttempts')}
             </p>
             <ul className="space-y-1.5">
               {(attempts.data ?? []).slice(0, 5).map((summary) => (
@@ -351,8 +353,8 @@ export function ExamLab() {
                     <span className="text-muted-foreground">
                       {' — '}
                       {summary.submitted_at
-                        ? `${summary.score_percent}% (${summary.correct_count}/${summary.question_count})${summary.late ? ' · late' : ''}`
-                        : 'in progress'}
+                        ? t(summary.late ? 'study.examLab.attemptScoreLate' : 'study.examLab.attemptScore', { score: summary.score_percent, correct: summary.correct_count, total: summary.question_count })
+                        : t('study.examLab.inProgress')}
                     </span>
                   </button>
                 </li>

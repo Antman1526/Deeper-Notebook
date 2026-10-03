@@ -65,7 +65,7 @@ export const getNavigation = (t: TFunction) => [
     title: t('navigation.collect'),
     items: [
       { name: t('navigation.sources'), href: '/sources', icon: FileText },
-      { name: 'Capture', href: '/capture', icon: Inbox },
+      { name: t('navigation.appSidebar.capture'), href: '/capture', icon: Inbox },
     ],
   },
   {
@@ -82,7 +82,7 @@ export const getNavigation = (t: TFunction) => [
       // ONP v0.7.0 — Studio: one-shot upload + mode → output. Lives in
       // the Create group because that's its conceptual home (it produces
       // a new notebook or podcast from uploaded docs).
-      { name: 'Studio', href: '/studio', icon: Sparkles },
+      { name: t('navigation.appSidebar.studio'), href: '/studio', icon: Sparkles },
       { name: t('navigation.podcasts'), href: '/podcasts', icon: Mic },
       ...(isStudyWorkbenchEnabled()
         ? [{ name: t('navigation.study'), href: '/study', icon: GraduationCap }]
@@ -436,7 +436,7 @@ export function AppSidebar() {
                       <GmailSidebarButton iconOnly />
                     </div>
                   </TooltipTrigger>
-                  <TooltipContent side="right">Email Digests</TooltipContent>
+                  <TooltipContent side="right">{t('navigation.appSidebar.emailDigests')}</TooltipContent>
                 </Tooltip>
               </>
             ) : (

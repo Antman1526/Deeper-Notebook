@@ -6,6 +6,7 @@ import { ModelRoutePlanPanel } from './ModelRoutePlanPanel'
 describe('ModelRoutePlanPanel', () => {
   it('explains a blocked explicit override without exposing paths', () => {
     render(<ModelRoutePlanPanel
+      routeId="research-chat-route"
       title="Research Chat route"
       plan={{
         role: 'research_chat', outcome: 'blocked', selected_model_id: null,
@@ -16,13 +17,14 @@ describe('ModelRoutePlanPanel', () => {
       }}
     />)
 
-    expect(screen.getByText('Blocked')).toBeInTheDocument()
+    expect(screen.getByText('settings.modelRoutePlanPanel.outcomeBlocked')).toBeInTheDocument()
     expect(screen.getByText(/Override model is not ready_verified/)).toBeInTheDocument()
     expect(screen.queryByText(/\/[Uu]sers\//)).not.toBeInTheDocument()
   })
 
   it('labels a degraded route without treating it as ready', () => {
     render(<ModelRoutePlanPanel
+      routeId="embedding-route"
       title="Embedding route"
       plan={{
         role: 'embedding_retrieval', outcome: 'approval_required', selected_model_id: null,
@@ -32,7 +34,7 @@ describe('ModelRoutePlanPanel', () => {
       }}
     />)
 
-    expect(screen.getByText('Approval required')).toBeInTheDocument()
+    expect(screen.getByText('settings.modelRoutePlanPanel.outcomeApprovalRequired')).toBeInTheDocument()
     expect(screen.getByText(/requires contextual approval/)).toBeInTheDocument()
   })
 })

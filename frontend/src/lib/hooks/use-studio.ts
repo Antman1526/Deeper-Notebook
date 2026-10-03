@@ -96,14 +96,14 @@ export function useStudioCoursePack() {
     }) => {
       const cleanLinks = links.map((link) => link.trim()).filter(Boolean)
       if (files.length === 0 && cleanLinks.length === 0) {
-        throw new Error('At least one file or link is required')
+        throw new Error(t('common.useStudio.atLeastOneSource'))
       }
 
       const firstSourceName = files[0]?.name ?? cleanLinks[0]
-      const notebookTitle = title?.trim() || `Course Pack - ${firstSourceName}`
+      const notebookTitle = title?.trim() || t('common.useStudio.defaultNotebookTitle', { name: firstSourceName })
       const notebook = await notebooksApi.create({
         name: notebookTitle,
-        description: 'Instructor-ready Course Pack queued from Studio sources.',
+        description: t('common.useStudio.notebookDescription'),
       })
 
       const sharedProvenance = {
@@ -151,13 +151,13 @@ export function useStudioCoursePack() {
       const artifact = await studioApi.createArtifact({
         notebook_id: notebook.id,
         artifact_type: 'course_pack',
-        title: `${notebookTitle} Course Pack`,
+        title: t('common.useStudio.artifactTitle', { title: notebookTitle }),
         source_ids: sources.map((source) => source.id),
       })
 
       const warnings = sources
         .filter((source) => source.status === 'failed')
-        .map((source) => `${source.title ?? source.id} failed to queue`)
+        .map((source) => t('common.useStudio.sourceFailedToQueue', { name: source.title ?? source.id }))
       let generationStatus: StudioCoursePackResponse['generationStatus'] = 'pending'
 
       if (autoGenerate && warnings.length === 0) {
@@ -169,25 +169,25 @@ export function useStudioCoursePack() {
           },
         )
         if (readiness.failed.length > 0) {
-          warnings.push(`${readiness.failed.length} source(s) failed during processing`)
+          warnings.push(t('common.useStudio.sourcesFailedProcessing', { count: readiness.failed.length }))
           generationStatus = 'failed'
         } else if (readiness.ready) {
           try {
             await studioApi.createWorkflowRun(artifact.id, {
-              title: `Generate ${artifact.title}`,
+              title: t('common.useStudio.workflowRunTitle', { title: artifact.title }),
               source_ids: sources.map((source) => source.id),
               approval_required: false,
             })
             generationStatus = 'queued'
           } catch (error) {
             if (isSourcesNotReadyError(error)) {
-              warnings.push('Sources are queued. Course Pack generation will be ready from the notebook once extraction finishes.')
+              warnings.push(t('common.useStudio.warningQueued'))
             } else {
               throw error
             }
           }
         } else {
-          warnings.push('Sources are still processing. Open the notebook to generate the Course Pack when extraction finishes.')
+          warnings.push(t('common.useStudio.warningStillProcessing'))
         }
       }
 

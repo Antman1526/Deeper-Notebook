@@ -38,11 +38,11 @@ describe('SyncedTranscript', () => {
       />,
     )
 
-    const toggleBtn = screen.getByRole('button', { name: /Auto-scroll: On/i })
+    const toggleBtn = screen.getByRole('button', { name: 'podcasts.syncedTranscript.autoScrollOn' })
     fireEvent.click(toggleBtn)
-    expect(screen.getByRole('button', { name: /Auto-scroll: Off/i })).toBeDefined()
+    expect(screen.getByRole('button', { name: 'podcasts.syncedTranscript.autoScrollOff' })).toBeDefined()
 
-    const copyBtn = screen.getByRole('button', { name: /Copy/i })
+    const copyBtn = screen.getByRole('button', { name: 'podcasts.syncedTranscript.copy' })
     fireEvent.click(copyBtn)
     expect(writeText).toHaveBeenCalledWith('**[0:03] Alex:** Grounded finding.')
   })
