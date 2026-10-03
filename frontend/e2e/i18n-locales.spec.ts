@@ -58,3 +58,33 @@ test('the browser tab title speaks the selected language, and follows navigation
   await page.getByRole('navigation', { name: 'Hauptnavigation' }).getByRole('link', { name: 'Fragen und Suchen' }).click()
   await expect(page).toHaveTitle('Fragen und Suchen · Deeper Notebook')
 })
+
+// Each page shipped all 14 locales (a 2.8 MB chunk). Only English is bundled now;
+// the active language loads on demand.
+async function scriptBodies(page: Page, run: () => Promise<void>): Promise<string> {
+  const bodies: Promise<string>[] = []
+  page.on('response', (response) => {
+    if (response.request().resourceType() === 'script') bodies.push(response.text().catch(() => ''))
+  })
+  await run()
+  return (await Promise.all(bodies)).join('\n')
+}
+
+test('an English page does not download the other languages', async ({ page }) => {
+  const scripts = await scriptBodies(page, async () => {
+    await open(page, 'en-US', '/notebooks')
+    await expect(page.getByTestId('focus-mode-control')).toHaveAccessibleName('Enter focus mode')
+  })
+  for (const foreign of ['Fokusmodus aktivieren', '集中モードを開始', 'Notizbücher']) {
+    expect(scripts.includes(foreign), `downloaded "${foreign}"`).toBe(false)
+  }
+})
+
+test('a German page loads German, and only German', async ({ page }) => {
+  const scripts = await scriptBodies(page, async () => {
+    await open(page, 'de-DE', '/notebooks')
+    await expect(page.getByTestId('focus-mode-control')).toHaveAccessibleName('Fokusmodus aktivieren')
+  })
+  expect(scripts.includes('Fokusmodus aktivieren'), 'German strings downloaded').toBe(true)
+  expect(scripts.includes('集中モードを開始'), 'Japanese strings downloaded').toBe(false)
+})
