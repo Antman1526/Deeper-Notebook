@@ -47,17 +47,19 @@ jobs:
       # v0.8.130 — two tests need the runner set up like a desktop: the Study
       # Workbench verifier generates its media fixture with ffmpeg, and the vault Git
       # tests commit (macOS git derives an identity from the host; a Linux runner
-      # refuses without one). Both failed on main for this reason alone.
+      # refuses without one, see the env on Run tests). Both failed on main.
       - name: Install ffmpeg
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
 
-      - name: Set a Git identity for vault Git tests
-        run: |
-          git config --global user.name "Deeper Notebook CI"
-          git config --global user.email "ci@deeper-notebook.invalid"
-
       - name: Run tests
         run: uv run pytest tests/ -v --ignore=tests/integration
+        # tests/conftest.py points HOME at a temp dir, which hides any global git
+        # config; git reads these variables regardless.
+        env:
+          GIT_AUTHOR_NAME: Deeper Notebook CI
+          GIT_AUTHOR_EMAIL: ci@deeper-notebook.invalid
+          GIT_COMMITTER_NAME: Deeper Notebook CI
+          GIT_COMMITTER_EMAIL: ci@deeper-notebook.invalid
 
   # v0.8.108 — the security scan was a MANUAL make target and ran in no
   # workflow. That is not theoretical: Bandit's B608 count was burned down to 0
