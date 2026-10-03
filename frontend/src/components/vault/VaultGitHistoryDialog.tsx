@@ -17,6 +17,7 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { toast } from 'sonner'
 import type { TFunction } from 'i18next'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatDate } from '@/lib/utils/date-locale'
 import apiClient, { markErrorReported } from '@/lib/api/client'
 
 interface GitCommitItem {
@@ -38,7 +39,7 @@ interface VaultGitHistoryDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-function formatCommitDate(dateStr: string, t: TFunction): string {
+function formatCommitDate(dateStr: string, t: TFunction, language: string): string {
   if (!dateStr) return '—'
   const parsed = new Date(dateStr)
   if (isNaN(parsed.getTime())) return dateStr
@@ -47,7 +48,7 @@ function formatCommitDate(dateStr: string, t: TFunction): string {
   if (diff < 3_600_000) return t('knowledge.vaultGitHistoryDialog.minutesAgo', { count: Math.floor(diff / 60_000) })
   if (diff < 86_400_000) return t('knowledge.vaultGitHistoryDialog.hoursAgo', { count: Math.floor(diff / 3_600_000) })
   if (diff < 7 * 86_400_000) return t('knowledge.vaultGitHistoryDialog.daysAgo', { count: Math.floor(diff / 86_400_000) })
-  return parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+  return formatDate(parsed, language, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 export function VaultGitHistoryDialog({
@@ -56,7 +57,7 @@ export function VaultGitHistoryDialog({
   open,
   onOpenChange,
 }: VaultGitHistoryDialogProps) {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const vaultName = vaultNameProp ?? t('knowledge.vaultGitHistoryDialog.vaultFallback')
   // fetchHistory is an effect dependency, so it reads the latest `t` through a ref
   // instead of re-creating itself (and refetching) whenever the translator changes.
@@ -366,7 +367,7 @@ export function VaultGitHistoryDialog({
                       </span>
                       <span className="flex items-center gap-1" title={commit.date}>
                         <Clock className="h-3 w-3 opacity-70" />
-                        {formatCommitDate(commit.date, t)}
+                        {formatCommitDate(commit.date, t, language)}
                       </span>
                     </div>
                   </div>

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import type { BenchmarkJob, BenchmarkResult, RoleRoute } from '@/lib/api/local-models'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatDecimal } from '@/lib/utils/format'
 
 const ROLES = [
   ['chat', 'settings.roleBenchmarkPanel.roleChat'],
@@ -36,12 +37,12 @@ function Metric({ label, value }: { label: string; value: string }) {
 
 // v0.8.130 — status colours from theme tokens (UI audit Phase 1)
 function ResultRow({ result }: { result: BenchmarkResult }) {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const qualityMeasured = hasQualityMeasurement(result)
   const metrics = result.normalized_metrics ?? {}
   return <div className="rounded-md border px-3 py-3" data-testid={`benchmark-${result.role}`}>
     <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-sm font-medium">{result.label}</p><p className="font-mono text-xs text-muted-foreground">{result.model_name ?? result.error ?? result.status}</p></div><Badge variant={result.status === 'completed' ? 'secondary' : 'outline'}>{result.status}</Badge></div>
-    {result.status === 'completed' && <><dl className="mt-3 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4"><Metric label={t('settings.roleBenchmarkPanel.qualityScore')} value={qualityMeasured ? t('settings.roleBenchmarkPanel.scoreOutOf100', { score: result.score.toFixed(1) }) : t('settings.roleBenchmarkPanel.notMeasured')} /><Metric label={t('settings.roleBenchmarkPanel.speed')} value={result.tokens_per_second ? t('settings.roleBenchmarkPanel.tokensPerSecond', { value: result.tokens_per_second.toFixed(0) }) : t('common.unknown')} /><Metric label={t('settings.roleBenchmarkPanel.latency')} value={result.latency_ms ? t('settings.roleBenchmarkPanel.latencyMs', { value: result.latency_ms }) : t('common.unknown')} /><Metric label={t('settings.roleBenchmarkPanel.rawChecks')} value={qualityMeasured ? t('settings.roleBenchmarkPanel.checksMeasured', { count: Object.keys(metrics).filter(key => !['latency', 'throughput'].includes(key)).length }) : t('settings.roleBenchmarkPanel.speedOnly')} /></dl>{qualityMeasured ? <p className="mt-2 text-xs text-muted-foreground">{t('settings.roleBenchmarkPanel.qualityCombines', { signals: Object.entries(metrics).map(([key, value]) => `${key} ${Math.round(value)}`).join(', ') || t('settings.roleBenchmarkPanel.notReturned') })}</p> : <p className="mt-2 text-xs text-warning-ink">{t('settings.roleBenchmarkPanel.speedOnlyLegacy')}</p>}</>}
+    {result.status === 'completed' && <><dl className="mt-3 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4"><Metric label={t('settings.roleBenchmarkPanel.qualityScore')} value={qualityMeasured ? t('settings.roleBenchmarkPanel.scoreOutOf100', { score: formatDecimal(result.score, language, 1) }) : t('settings.roleBenchmarkPanel.notMeasured')} /><Metric label={t('settings.roleBenchmarkPanel.speed')} value={result.tokens_per_second ? t('settings.roleBenchmarkPanel.tokensPerSecond', { value: formatDecimal(result.tokens_per_second, language, 0) }) : t('common.unknown')} /><Metric label={t('settings.roleBenchmarkPanel.latency')} value={result.latency_ms ? t('settings.roleBenchmarkPanel.latencyMs', { value: result.latency_ms }) : t('common.unknown')} /><Metric label={t('settings.roleBenchmarkPanel.rawChecks')} value={qualityMeasured ? t('settings.roleBenchmarkPanel.checksMeasured', { count: Object.keys(metrics).filter(key => !['latency', 'throughput'].includes(key)).length }) : t('settings.roleBenchmarkPanel.speedOnly')} /></dl>{qualityMeasured ? <p className="mt-2 text-xs text-muted-foreground">{t('settings.roleBenchmarkPanel.qualityCombines', { signals: Object.entries(metrics).map(([key, value]) => `${key} ${Math.round(value)}`).join(', ') || t('settings.roleBenchmarkPanel.notReturned') })}</p> : <p className="mt-2 text-xs text-warning-ink">{t('settings.roleBenchmarkPanel.speedOnlyLegacy')}</p>}</>}
   </div>
 }
 

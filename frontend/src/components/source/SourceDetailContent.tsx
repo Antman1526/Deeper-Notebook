@@ -72,6 +72,7 @@ import { formatDistanceToNow } from 'date-fns'
 import { formatDateTime, getDateLocale } from '@/lib/utils/date-locale'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatNumber } from '@/lib/utils/format'
 import { SourceInsightDialog } from '@/components/source/SourceInsightDialog'
 import { NotebookAssociations } from '@/components/source/NotebookAssociations'
 import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
@@ -91,7 +92,7 @@ interface SourceDetailContentProps {
   notebookId?: string | null
 }
 
-function formatProvenanceEntries(provenance: Record<string, unknown> | undefined) {
+function formatProvenanceEntries(provenance: Record<string, unknown> | undefined, language: string) {
   if (!provenance) return []
 
   const values: Array<[string, string]> = []
@@ -99,7 +100,7 @@ function formatProvenanceEntries(provenance: Record<string, unknown> | undefined
     if (typeof value === 'string' && value.trim()) {
       values.push([label, value.trim()])
     } else if (typeof value === 'number' && Number.isFinite(value)) {
-      values.push([label, value.toLocaleString()])
+      values.push([label, formatNumber(value, language)])
     }
   }
 
@@ -284,7 +285,7 @@ export function SourceDetailContent({
   const [isEmbedding, setIsEmbedding] = useState(false)
   const [isRetryingSource, setIsRetryingSource] = useState(false)
   const [isDownloadingFile, setIsDownloadingFile] = useState(false)
-  const provenanceEntries = formatProvenanceEntries(source?.provenance)
+  const provenanceEntries = formatProvenanceEntries(source?.provenance, language)
   const [fileAvailable, setFileAvailable] = useState<boolean | null>(null)
   const [selectedInsight, setSelectedInsight] = useState<SourceInsightResponse | null>(null)
   const [insightToDelete, setInsightToDelete] = useState<string | null>(null)

@@ -18,10 +18,12 @@ import {
 } from '@/components/ui/card'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatDecimal } from '@/lib/utils/format'
+import { formatDateTime } from '@/lib/utils/date-locale'
 import { useRetentionDryRun, useRetentionStatus } from '@/lib/hooks/use-studio'
 import type { StudioRetentionDryRunResponse } from '@/lib/api/studio'
 
-function formatBytes(bytes: number): string {
+function formatBytes(bytes: number, language: string): string {
   if (bytes <= 0) return '0 B'
   const units = ['B', 'KB', 'MB', 'GB']
   const exponent = Math.min(
@@ -29,11 +31,11 @@ function formatBytes(bytes: number): string {
     Math.floor(Math.log(bytes) / Math.log(1024)),
   )
   const value = bytes / 1024 ** exponent
-  return `${exponent === 0 ? value : value.toFixed(1)} ${units[exponent]}`
+  return `${exponent === 0 ? value : formatDecimal(value, language, 1)} ${units[exponent]}`
 }
 
 export function RetentionCard() {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const { data, isLoading, isError } = useRetentionStatus()
   const dryRun = useRetentionDryRun()
   const [lastDryRunResult, setLastDryRunResult] =
@@ -89,7 +91,7 @@ export function RetentionCard() {
               {data.last_run_at
                 ? t('settings.retention.lastRun').replace(
                     '{when}',
-                    new Date(data.last_run_at).toLocaleString(),
+                    formatDateTime(data.last_run_at, language),
                   )
                 : t('settings.retention.neverRun')}
             </p>
@@ -126,7 +128,7 @@ export function RetentionCard() {
               <p>
                 {t('settings.retention.wouldRemoveExports')
                   .replace('{count}', String(lastDryRunResult.exports_removed))
-                  .replace('{bytes}', formatBytes(lastDryRunResult.bytes_reclaimed))}
+                  .replace('{bytes}', formatBytes(lastDryRunResult.bytes_reclaimed, language))}
               </p>
             </div>
           ) : null}

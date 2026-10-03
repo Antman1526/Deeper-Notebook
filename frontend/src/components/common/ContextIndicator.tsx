@@ -6,6 +6,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatDecimal, formatNumber } from '@/lib/utils/format'
 
 interface ContextIndicatorProps {
   sourcesInsights: number
@@ -23,14 +24,14 @@ interface ContextIndicatorProps {
 }
 
 // Helper function to format large numbers with K/M suffixes
-function formatNumber(num: number): string {
+function formatCompactCount(num: number, language: string): string {
   if (num >= 1000000) {
-    return `${(num / 1000000).toFixed(1)}M`
+    return `${formatDecimal(num / 1000000, language, 1)}M`
   }
   if (num >= 1000) {
-    return `${(num / 1000).toFixed(1)}K`
+    return `${formatDecimal(num / 1000, language, 1)}K`
   }
-  return num.toString()
+  return formatNumber(num, language)
 }
 
 export function ContextIndicator({
@@ -43,7 +44,7 @@ export function ContextIndicator({
   contextSourceTitles,
   className
 }: ContextIndicatorProps) {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const hasContext = (sourcesInsights + sourcesFull) > 0 || notesCount > 0
   // v0.8.89 — when we know the total, always render the "Using X of Y" summary
   // (even at 0) so the filtering is discoverable. Legacy callers (no total)
@@ -149,13 +150,13 @@ export function ContextIndicator({
       {(tokenCount !== undefined || charCount !== undefined) && (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           {tokenCount !== undefined && tokenCount > 0 && (
-            <span>{t('common.contextIndicator.tokens', { value: formatNumber(tokenCount) })}</span>
+            <span>{t('common.contextIndicator.tokens', { value: formatCompactCount(tokenCount, language) })}</span>
           )}
           {tokenCount !== undefined && charCount !== undefined && tokenCount > 0 && charCount > 0 && (
             <span>/</span>
           )}
           {charCount !== undefined && charCount > 0 && (
-            <span>{t('common.contextIndicator.chars', { value: formatNumber(charCount) })}</span>
+            <span>{t('common.contextIndicator.chars', { value: formatCompactCount(charCount, language) })}</span>
           )}
         </div>
       )}

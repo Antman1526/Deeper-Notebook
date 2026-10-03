@@ -19,6 +19,7 @@ import {
 
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatNumber } from '@/lib/utils/format'
 import { cn } from '@/lib/utils'
 import type { McpToolCall, NotebookChatMessage } from '@/lib/types/api'
 
@@ -62,7 +63,7 @@ function formatCount(t: TranslateFn, count: number, oneKey: string, otherKey: st
   return t(count === 1 ? oneKey : otherKey, { count })
 }
 
-function contextSummary(t: TranslateFn, stats?: RunTimelineContextStats) {
+function contextSummary(t: TranslateFn, language: string, stats?: RunTimelineContextStats) {
   if (!stats) return t('workspace.runTimeline.noContextProfile')
   const parts = [
     formatCount(t, stats.sourcesInsights, 'workspace.runTimeline.insightSourceOne', 'workspace.runTimeline.insightSourceOther'),
@@ -70,7 +71,7 @@ function contextSummary(t: TranslateFn, stats?: RunTimelineContextStats) {
     formatCount(t, stats.notesCount, 'workspace.runTimeline.noteOne', 'workspace.runTimeline.noteOther'),
   ]
   if (typeof stats.tokenCount === 'number' && stats.tokenCount > 0) {
-    parts.push(t('workspace.runTimeline.tokens', { tokens: stats.tokenCount.toLocaleString() }))
+    parts.push(t('workspace.runTimeline.tokens', { tokens: formatNumber(stats.tokenCount, language) }))
   }
   return parts.join(' / ')
 }
@@ -109,7 +110,7 @@ export function RunTimeline({
   currentModel,
   disabledMcpServers = [],
 }: RunTimelineProps) {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const queryClient = useQueryClient()
   const detailsId = useId()
   const [open, setOpen] = useState(false)
@@ -156,7 +157,7 @@ export function RunTimeline({
   }
 
   const steps = [
-    { label: t('workspace.runTimeline.contextBuilt'), value: contextSummary(t, contextStats), Icon: Database },
+    { label: t('workspace.runTimeline.contextBuilt'), value: contextSummary(t, language, contextStats), Icon: Database },
     {
       label: t('workspace.runTimeline.modelRoute'),
       value: routeSummary(t, runSelection, currentModel),

@@ -13,6 +13,7 @@ import type { InventoryResponse, LocalModel } from '@/lib/api/local-models'
 import type { LocalModelHealth } from '@/lib/hooks/use-local-models'
 import { MODEL_HEALTH_STATUS_KEYS, MODEL_READINESS_KEYS, MODEL_RESOURCE_TIER_KEYS, enumLabel, spacedEnum } from '@/lib/enum-labels'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatDecimal } from '@/lib/utils/format'
 
 type InventoryFilter = 'all' | 'ready' | 'needs-setup'
 type InventorySort = 'name' | 'quality-ready' | 'size' | 'context'
@@ -31,10 +32,10 @@ export type ModelInventoryProps = {
 
 type TranslateFn = (key: string, options?: Record<string, unknown>) => string
 
-const formatBytes = (value: number, t: TranslateFn) => {
+const formatBytes = (value: number, t: TranslateFn, language: string) => {
   if (!value) return t('common.unknown')
   const gigabytes = value / 1024 ** 3
-  return gigabytes >= 1 ? `${gigabytes.toFixed(1)} GB` : `${Math.round(value / 1024 ** 2)} MB`
+  return gigabytes >= 1 ? `${formatDecimal(gigabytes, language, 1)} GB` : `${Math.round(value / 1024 ** 2)} MB`
 }
 
 const formatContext = (value: number | null, t: TranslateFn) => value && value >= 1024
@@ -57,7 +58,7 @@ function ModelRow({
   activatingPath,
   settingLaunchDefaultRef,
 }: Omit<ModelInventoryProps, 'inventory' | 'isLoading' | 'isError' | 'onRefresh'> & { model: LocalModel }) {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const runtimeHealth = matchingHealth(model, health)
   const copyPath = async () => {
     try {
@@ -98,7 +99,7 @@ function ModelRow({
       <CardContent className="space-y-3 pt-0">
         <dl className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-5">
           <Metric label={t('settings.modelInventory.runtime')} value={model.runtime?.toUpperCase() ?? t('settings.modelInventory.runtimeLocal')} />
-          <Metric label={t('settings.modelInventory.size')} value={formatBytes(model.file_size_bytes, t)} />
+          <Metric label={t('settings.modelInventory.size')} value={formatBytes(model.file_size_bytes, t, language)} />
           <Metric label={t('settings.modelInventory.context')} value={formatContext(model.context_length, t)} />
           <Metric label={t('settings.modelInventory.parameters')} value={model.parameter_count_b ? `${model.parameter_count_b}B` : t('common.unknown')} />
           <Metric label={t('settings.modelInventory.capability')} value={runnerReady ? t('settings.modelInventory.runnable') : t('settings.modelInventory.inventoryOnly')} />

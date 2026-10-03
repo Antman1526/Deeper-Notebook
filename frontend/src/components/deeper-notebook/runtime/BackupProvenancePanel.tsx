@@ -3,6 +3,7 @@
 import * as React from 'react'
 
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatDecimal } from '@/lib/utils/format'
 import {
   normalizeRuntimeSnapshot,
   type RuntimeBackupFreshness,
@@ -21,7 +22,7 @@ const FRESHNESS_RECEIPT_KEYS: Record<RuntimeBackupFreshness, string> = {
   unknown: 'workspace.backupProvenancePanel.receiptUnknown',
 }
 
-function formatBytes(t: TranslateFn, value: number | null | undefined): string {
+function formatBytes(t: TranslateFn, language: string, value: number | null | undefined): string {
   if (value === null || value === undefined) return t('workspace.backupProvenancePanel.unknownSize')
   if (value < 1024) return t('workspace.backupProvenancePanel.sizeBytes', { value })
   if (value < 1024 * 1024) {
@@ -31,7 +32,7 @@ function formatBytes(t: TranslateFn, value: number | null | undefined): string {
     return t('workspace.backupProvenancePanel.sizeMb', { value: Math.round(value / (1024 * 1024)) })
   }
   return t('workspace.backupProvenancePanel.sizeGb', {
-    value: (value / (1024 * 1024 * 1024)).toFixed(1),
+    value: formatDecimal(value / (1024 * 1024 * 1024), language, 1),
   })
 }
 
@@ -70,7 +71,7 @@ function provenanceMessage(t: TranslateFn, state: string, count: number): string
 }
 
 export function BackupProvenancePanel({ snapshot }: BackupProvenancePanelProps) {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const normalized = normalizeRuntimeSnapshot(snapshot)
   const backup = normalized.backup
   const freshness = backup.freshness ?? 'unknown'
@@ -103,7 +104,7 @@ export function BackupProvenancePanel({ snapshot }: BackupProvenancePanelProps) 
         </div>
         <div>
           <dt className="font-semibold">{t('workspace.backupProvenancePanel.size')}</dt>
-          <dd className="text-muted-foreground">{formatBytes(t, backup.newest_size_bytes)}</dd>
+          <dd className="text-muted-foreground">{formatBytes(t, language, backup.newest_size_bytes)}</dd>
         </div>
         <div>
           <dt className="font-semibold">{t('workspace.backupProvenancePanel.recordedAt')}</dt>

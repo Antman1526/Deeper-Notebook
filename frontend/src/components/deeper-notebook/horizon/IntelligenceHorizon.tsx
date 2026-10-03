@@ -11,6 +11,7 @@ import {
 import * as React from 'react'
 
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatDate } from '@/lib/utils/date-locale'
 import { RuntimeStatusPanel } from '../runtime/RuntimeStatusPanel'
 import { CommandPaletteKey } from '../shell/CommandPaletteKey'
 import { FolioPage } from '../folio/FolioPage'
@@ -59,7 +60,7 @@ export interface IntelligenceHorizonProps {
 
 type TranslateFn = ReturnType<typeof useTranslation>['t']
 
-function relativeTime(t: TranslateFn, iso?: string): string {
+function relativeTime(t: TranslateFn, language: string, iso?: string): string {
   if (!iso) return '—'
   const then = new Date(iso).getTime()
   if (Number.isNaN(then)) return iso
@@ -74,7 +75,7 @@ function relativeTime(t: TranslateFn, iso?: string): string {
   if (diff < 7 * 86_400_000) {
     return t('workspace.intelligenceHorizon.relativeDays', { count: Math.floor(diff / 86_400_000) })
   }
-  return new Date(iso).toLocaleDateString()
+  return formatDate(iso, language)
 }
 
 function actionLinkHandler(callback: () => void) {
@@ -202,7 +203,7 @@ export function IntelligenceHorizon({
   runtimeSnapshotLoading = false,
   onRefreshRuntime,
 }: IntelligenceHorizonProps) {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const hasRecentNotebooks = recentNotebooks.length > 0
 
   return (
@@ -326,7 +327,7 @@ export function IntelligenceHorizon({
                   <span className="truncate text-sm font-medium">{notebook.name}</span>
                 </span>
                 <span className="shrink-0 text-xs text-muted-foreground">
-                  {relativeTime(t, notebook.updated ?? notebook.created)}
+                  {relativeTime(t, language, notebook.updated ?? notebook.created)}
                 </span>
               </Link>
             ))}

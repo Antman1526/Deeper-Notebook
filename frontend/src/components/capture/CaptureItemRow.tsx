@@ -12,6 +12,7 @@ import {
 } from '@/lib/api/capture'
 import type { SourceListResponse } from '@/lib/types/api'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatDecimal } from '@/lib/utils/format'
 
 const stateVariant = (state: CaptureItem['state']) =>
   state === 'failed' ? 'destructive' : state === 'imported' ? 'secondary' : 'outline'
@@ -46,7 +47,7 @@ function sourceFromLinkedItem(item: CaptureItem): SourceListResponse | null {
 }
 
 export function CaptureItemRow({ item, showVisualCover = false }: { item: CaptureItem; showVisualCover?: boolean }) {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const [preview, setPreview] = useState<CaptureRoutePreview | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isRouting, setIsRouting] = useState(false)
@@ -81,7 +82,7 @@ export function CaptureItemRow({ item, showVisualCover = false }: { item: Captur
           <p className="truncate text-sm font-medium">{item.filename}</p>
           <p className="truncate text-xs text-muted-foreground">
             {item.relative_path} · {item.extension || t('capture.captureItemRow.unknownType')}
-            {item.byte_size ? ` · ${t('capture.captureItemRow.sizeKb', { size: (item.byte_size / 1024).toFixed(1) })}` : ''}
+            {item.byte_size ? ` · ${t('capture.captureItemRow.sizeKb', { size: formatDecimal(item.byte_size / 1024, language, 1) })}` : ''}
           </p>
           {item.reason ? (
             <p className="mt-1 text-xs text-destructive">{item.reason}</p>

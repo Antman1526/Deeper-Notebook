@@ -24,6 +24,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatNumber } from '@/lib/utils/format'
 import {
   useLauncherPrefs,
   useUpdateLauncherPrefs,
@@ -62,7 +63,7 @@ const readPref = (
 ): string => prefs[key] ?? ''
 
 export default function LauncherPrefsPage() {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const { data, isLoading } = useLauncherPrefs()
   const { data: hardware } = useHardwareProfile()
   const update = useUpdateLauncherPrefs()
@@ -208,7 +209,7 @@ export default function LauncherPrefsPage() {
                   <div className="rounded-lg bg-muted/40 p-2.5 space-y-1">
                     <span className="text-muted-foreground font-medium">{t('settings.launcherPrefsPage.contextWindow')}</span>
                     <p className="text-sm font-semibold text-foreground">
-                      {t('settings.launcherPrefsPage.tokensCount', { value: hardware.recommended_context.toLocaleString() })}
+                      {t('settings.launcherPrefsPage.tokensCount', { value: formatNumber(hardware.recommended_context, language) })}
                     </p>
                   </div>
                   <div className="rounded-lg bg-muted/40 p-2.5 space-y-1">

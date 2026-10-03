@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { AlertCircle, ChevronRight, Eye, EyeOff } from 'lucide-react'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatDateTime } from '@/lib/utils/date-locale'
 
 type LoginFormProps = {
   /** Inside the V2 auth frame, which owns the brand, the heading and the description. */
@@ -143,7 +144,7 @@ export function LoginForm({ embedded = false }: LoginFormProps) {
                   <div className="font-medium">{t('common.diagnosticInfo')}:</div>
                   <div className="space-y-1 font-mono">
                     <div>{t('common.version')}: {configInfo.version}</div>
-                    <div>{t('common.built')}: {new Date(configInfo.buildTime).toLocaleString(language === 'zh-CN' ? 'zh-CN' : language === 'zh-TW' ? 'zh-TW' : 'en-US')}</div>
+                    <div>{t('common.built')}: {formatDateTime(configInfo.buildTime, language)}</div>
                     <div className="break-all">{t('common.apiUrl')}: {configInfo.apiUrl}</div>
                     <div className="break-all">{t('common.frontendUrl')}: {typeof window !== 'undefined' ? window.location.href : 'N/A'}</div>
                   </div>

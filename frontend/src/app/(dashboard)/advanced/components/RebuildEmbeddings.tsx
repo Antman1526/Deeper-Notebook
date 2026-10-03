@@ -19,6 +19,7 @@ import {
 import { embeddingApi } from '@/lib/api/embedding'
 import type { RebuildEmbeddingsRequest, RebuildStatusResponse } from '@/lib/api/embedding'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatDecimal } from '@/lib/utils/format'
 import { formatDateTime } from '@/lib/utils/date-locale'  // v0.7.189 — locale-aware date format
 
 export function RebuildEmbeddings() {
@@ -289,7 +290,7 @@ export function RebuildEmbeddings() {
                     {t('advanced.rebuild.itemsProcessed')
                       .replace('{processed}', processedItems.toString())
                       .replace('{total}', totalItems.toString())
-                      .replace('{percent}', progressPercent.toFixed(1))}
+                      .replace('{percent}', formatDecimal(progressPercent, language, 1))}
                   </span>
                 </div>
                 <Progress value={progressPercent} className="h-2" />
@@ -332,7 +333,7 @@ export function RebuildEmbeddings() {
                 <div className="space-y-1">
                   <p className="text-sm text-muted-foreground">{t('advanced.rebuild.time')}</p>
                   <p className="text-xl font-semibold">
-                    {processingTimeSeconds !== undefined ? `${processingTimeSeconds.toFixed(1)}s` : '—'}
+                    {processingTimeSeconds !== undefined ? `${formatDecimal(processingTimeSeconds, language, 1)}s` : '—'}
                   </p>
                 </div>
               </div>

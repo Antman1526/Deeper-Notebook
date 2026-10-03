@@ -3,6 +3,7 @@
 import { Badge } from '@/components/ui/badge'
 import type { ResearchEvidence } from '@/lib/api/research'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatDateTime } from '@/lib/utils/date-locale'
 
 const FINGERPRINT_EDGE_LENGTH = 8
 
@@ -12,15 +13,15 @@ function shortenFingerprint(value: string) {
   return `${value.slice(0, edgeLength)}…${value.slice(-edgeLength)}`
 }
 
-function formatRetrievedAt(value: string) {
+function formatRetrievedAt(value: string, language: string) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
 
-  return `${new Intl.DateTimeFormat(undefined, {
+  return `${formatDateTime(date, language, {
     dateStyle: 'medium',
     timeStyle: 'short',
     timeZone: 'UTC',
-  }).format(date)} UTC`
+  })} UTC`
 }
 
 const freshnessLabelKeys: Record<ResearchEvidence['freshness'], string> = {
@@ -41,7 +42,7 @@ const freshnessTones: Partial<Record<ResearchEvidence['freshness'], string>> = {
 }
 
 export function EvidenceReceipt({ evidence }: { evidence?: ResearchEvidence | null }) {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   if (!evidence) return null
 
   const freshnessLabel = t(freshnessLabelKeys[evidence.freshness])
@@ -72,7 +73,7 @@ export function EvidenceReceipt({ evidence }: { evidence?: ResearchEvidence | nu
 
         <dt className="font-medium text-muted-foreground">{t('research.evidenceReceipt.retrieved')}</dt>
         <dd>
-          <time dateTime={evidence.retrieved_at}>{formatRetrievedAt(evidence.retrieved_at)}</time>
+          <time dateTime={evidence.retrieved_at}>{formatRetrievedAt(evidence.retrieved_at, language)}</time>
         </dd>
 
         <dt className="font-medium text-muted-foreground">{t('research.evidenceReceipt.sourceFingerprint')}</dt>

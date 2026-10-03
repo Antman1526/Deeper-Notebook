@@ -5,6 +5,7 @@ import { Control, FieldErrors, UseFormRegister, UseFormSetValue, useWatch } from
 import type { TFunction } from 'i18next'
 import { FileIcon, LinkIcon, FileTextIcon } from "lucide-react"
 import { useTranslation } from "@/lib/hooks/use-translation"
+import { formatDecimal } from "@/lib/utils/format"
 import { FormSection } from "@/components/ui/form-section"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
@@ -84,9 +85,9 @@ export function getOversizedFiles(
   return filesFromInput(input).filter(file => file.size > maxBytes)
 }
 
-export function formatBytes(bytes: number): string {
+export function formatBytes(bytes: number, language = 'en-US'): string {
   if (bytes >= 1024 * 1024 * 1024) {
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
+    return `${formatDecimal(bytes / (1024 * 1024 * 1024), language, 1)} GB`
   }
   if (bytes >= 1024 * 1024) {
     return `${Math.round(bytes / (1024 * 1024))} MB`
@@ -136,7 +137,7 @@ export function SourceTypeStep({
   onClearUrlErrors,
   sourceUploadMaxBytes,
 }: SourceTypeStepProps) {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   // Watch the selected type and inputs to detect batch mode
   const selectedType = useWatch({ control, name: 'type' })
   const urlInput = useWatch({ control, name: 'url' })
@@ -301,7 +302,7 @@ export function SourceTypeStep({
                                 <FileIcon className="h-3 w-3" />
                                 <span className="truncate">{file.name}</span>
                                 <span className="text-muted-foreground/50">
-                                  ({formatBytes(file.size)})
+                                  ({formatBytes(file.size, language)})
                                 </span>
                               </li>
                             ))}
@@ -319,14 +320,14 @@ export function SourceTypeStep({
                       {oversizedFiles.length > 0 && sourceUploadMaxBytes && (
                         <div className="mt-2 p-3 bg-destructive/10 rounded-md border border-destructive/20">
                           <p className="text-sm font-medium text-destructive">
-                            {t('sources.filesTooLarge').replace('{limit}', formatBytes(sourceUploadMaxBytes))}
+                            {t('sources.filesTooLarge').replace('{limit}', formatBytes(sourceUploadMaxBytes, language))}
                           </p>
                           <ul className="mt-2 space-y-1">
                             {oversizedFiles.map((file, idx) => (
                               <li key={idx} className="text-xs text-destructive flex items-center gap-2">
                                 <FileIcon className="h-3 w-3" />
                                 <span className="truncate">{file.name}</span>
-                                <span>({formatBytes(file.size)})</span>
+                                <span>({formatBytes(file.size, language)})</span>
                               </li>
                             ))}
                           </ul>

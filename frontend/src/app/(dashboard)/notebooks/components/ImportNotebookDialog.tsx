@@ -46,6 +46,7 @@ import {
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { AlertTriangle, ClipboardList, FolderOpen } from 'lucide-react'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatDecimal } from '@/lib/utils/format'
 import { useFsHome } from '@/lib/hooks/use-fs'
 import {
   useImportPreview,
@@ -65,13 +66,14 @@ interface ImportNotebookDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-function formatBytes(bytes: number): string {
+function formatBytes(bytes: number, language: string): string {
   if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  if (bytes < 1024 * 1024) return `${formatDecimal(bytes / 1024, language, 1)} KB`
+  return `${formatDecimal(bytes / (1024 * 1024), language, 1)} MB`
 }
 
 function ItemRow({ item }: { item: NotebookImportPreviewItem }) {
+  const { language } = useTranslation()
   return (
     <div className="flex items-center justify-between gap-2 py-1 px-2 text-sm rounded hover:bg-accent/40">
       <div className="flex items-center gap-2 min-w-0">
@@ -82,7 +84,7 @@ function ItemRow({ item }: { item: NotebookImportPreviewItem }) {
         <span className="truncate">{item.title}</span>
       </div>
       <span className="text-xs text-muted-foreground shrink-0">
-        {formatBytes(item.bytes)}
+        {formatBytes(item.bytes, language)}
       </span>
     </div>
   )

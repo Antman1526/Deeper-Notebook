@@ -1,6 +1,7 @@
 'use client'
 
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatNumber } from '@/lib/utils/format'
 import type { PodcastSelection } from '@/lib/podcasts/selection'
 import type { PodcastSelectionPreview, PodcastSelectionPreviewEntry, PodcastSelectionState } from '@/lib/types/podcasts'
 import { isAbsoluteFilesystemPath, redactAbsolutePaths } from '@/lib/podcasts/safe-text'
@@ -59,7 +60,7 @@ function EntryList({ entries, label }: { entries: PodcastSelectionPreviewEntry[]
 }
 
 export function ResearchSetPanel({ selections, preview, onPrepare, isPreparing = false }: ResearchSetPanelProps) {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const entries = entriesFor(preview)
   const included = entries.filter((entry) => entry.state === 'included')
   const duplicates = entries.filter((entry) => entry.state === 'duplicate')
@@ -95,7 +96,7 @@ export function ResearchSetPanel({ selections, preview, onPrepare, isPreparing =
 
       {preview ? (
         <div className="space-y-1 text-xs text-muted-foreground" aria-live="polite">
-          <p>{t('podcasts.researchSetPanel.charactersIncluded', { characters: preview.includedCharacters.toLocaleString() })}</p>
+          <p>{t('podcasts.researchSetPanel.charactersIncluded', { characters: formatNumber(preview.includedCharacters, language) })}</p>
           {preview.requiresBatchEngine ? <p>{t('podcasts.researchSetPanel.requiresBatchEngine')}</p> : null}
           {!preview.currentWorkerEligible && !preview.requiresBatchEngine ? <p>{t('podcasts.researchSetPanel.notEligible')}</p> : null}
           {preview.blockedReasons.length > 0 ? <p>{preview.blockedReasons.map(safeReason).join(', ')}</p> : null}

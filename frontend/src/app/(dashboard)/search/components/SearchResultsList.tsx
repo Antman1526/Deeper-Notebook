@@ -15,6 +15,8 @@ import { ChevronDown, Layers, Sparkles } from 'lucide-react'
 import { EvidencePeek } from '@/components/deeper-notebook/source-gallery/EvidencePeek'
 import { SourceCover } from '@/components/deeper-notebook/source-gallery/SourceCover'
 import { VirtualizedListAuto } from '@/components/ui/virtualized-list'
+import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatDecimal } from '@/lib/utils/format'
 import type { SourceListResponse } from '@/lib/types/api'
 import type { SearchResponse, SearchResult } from '@/lib/types/search'
 import type { ModalType } from '@/lib/hooks/use-modal-manager'
@@ -77,11 +79,13 @@ function renderSearchResultCard(
     openModal,
     onViewEvidence,
     t,
+    language,
   }: {
     visualGalleryEnabled: boolean
     openModal: (type: ModalType, id: string) => void
     onViewEvidence: (result: SearchResult) => void
     t: (key: string, options?: Record<string, unknown>) => string
+    language: string
   }
 ): React.ReactNode {
   // A result's own record ID defines its route and kind.
@@ -119,11 +123,11 @@ function renderSearchResultCard(
                   {result.title}
                 </button>
                 <Badge variant="secondary" className="ml-2 rounded-full text-xs font-mono">
-                  {result.final_score.toFixed(2)}
+                  {formatDecimal(result.final_score, language, 2)}
                 </Badge>
                 {result.rerank_score !== undefined && (
                   <Badge variant="outline" className="ml-2 rounded-full border-primary/30 text-primary text-xs font-mono bg-primary/[0.04]">
-                    {t('searchPage.searchResultsList.rerankScore', { score: result.rerank_score.toFixed(3) })}
+                    {t('searchPage.searchResultsList.rerankScore', { score: formatDecimal(result.rerank_score, language, 3) })}
                   </Badge>
                 )}
                 {result.vault_provenance && (
@@ -196,6 +200,8 @@ export function SearchResultsList({
   onCloseEvidence,
   t,
 }: SearchResultsListProps) {
+  // v0.8.130 — `t` arrives as a prop; the app language is read here so scores use its number format.
+  const { language } = useTranslation()
   if (!searchData) return null
 
   return (
@@ -240,6 +246,7 @@ export function SearchResultsList({
                 openModal,
                 onViewEvidence,
                 t,
+                language,
               })}
             </div>
           )}
@@ -252,6 +259,7 @@ export function SearchResultsList({
               openModal,
               onViewEvidence,
               t,
+              language,
             })
           )}
         </div>

@@ -54,6 +54,7 @@ import { QUERY_KEYS } from '@/lib/api/query-client'
 // Alert below the form. The Studio page's English-only static
 // strings remain — full i18n extraction is deferred (see CHANGELOG).
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatDecimal } from '@/lib/utils/format'
 import { getApiErrorMessage } from '@/lib/utils/error-handler'
 import { EvidenceStudioFolio } from '@/components/deeper-notebook/studios/EvidenceStudioFolio'
 
@@ -125,7 +126,7 @@ function isAllowed(file: File, noExtensionLabel: string): { ok: boolean; reason?
 export default function StudioPage() {
   const router = useRouter()
   const { toast } = useToast()
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const mutation = useStudioGenerate()
   const coursePackMutation = useStudioCoursePack()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -427,7 +428,7 @@ export default function StudioPage() {
                   <FileText className="h-4 w-4 shrink-0 text-primary" />
                   <span className="flex-1 truncate font-medium">{f.name}</span>
                   <span className="text-xs font-mono text-muted-foreground shrink-0">
-                    {t('common.studioPage.fileSizeKb', { size: (f.size / 1024).toFixed(0) })}
+                    {t('common.studioPage.fileSizeKb', { size: formatDecimal(f.size / 1024, language, 0) })}
                   </span>
                   <button
                     type="button"

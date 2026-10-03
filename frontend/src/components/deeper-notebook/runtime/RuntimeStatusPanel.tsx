@@ -6,6 +6,7 @@ import * as React from 'react'
 import { Button } from '@/components/ui/button'
 import { RUNTIME_STARTUP_STAGE_KEYS, enumLabel, spacedEnum } from '@/lib/enum-labels'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatDecimal } from '@/lib/utils/format'
 import {
   normalizeRuntimeSnapshot,
   type RuntimeReasonCode,
@@ -81,7 +82,7 @@ function RefreshButton({ onRefresh }: { onRefresh: () => void }) {
 }
 
 export function RuntimeStatusPanel({ snapshot, isLoading, onRefresh, compact = false }: RuntimeStatusPanelProps) {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const loading = isLoading ?? false
   const normalized = normalizeRuntimeSnapshot(snapshot)
   const refresh = onRefresh ?? (() => {})
@@ -187,7 +188,7 @@ export function RuntimeStatusPanel({ snapshot, isLoading, onRefresh, compact = f
                   <div key={stage.stage} className="flex justify-between gap-3 pl-3">
                     <dt className="truncate">{enumLabel(t, RUNTIME_STARTUP_STAGE_KEYS, stage.stage, spacedEnum(stage.stage))}</dt>
                     <dd>{stage.elapsed_ms >= 1000
-                      ? t('workspace.runtimeStatusPanel.stageSeconds', { value: (stage.elapsed_ms / 1000).toFixed(1) })
+                      ? t('workspace.runtimeStatusPanel.stageSeconds', { value: formatDecimal(stage.elapsed_ms / 1000, language, 1) })
                       : t('workspace.runtimeStatusPanel.stageMilliseconds', { value: stage.elapsed_ms })}</dd>
                   </div>
                 ))}

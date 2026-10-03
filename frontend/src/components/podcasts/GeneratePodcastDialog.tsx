@@ -17,6 +17,7 @@ import { PodcastGenerationRequest, PodcastOverviewMode } from '@/lib/types/podca
 import { QUERY_KEYS } from '@/lib/api/query-client'
 import { useToast } from '@/lib/hooks/use-toast'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatDecimal, formatNumber } from '@/lib/utils/format'
 // v0.7.196 —
 //  - getApiErrorMessage: sanitize the raw `error.message` previously
 //    shown as the toast description on podcast-generation failure.
@@ -52,14 +53,14 @@ interface NotebookSelection {
 }
 
 // Helper function to format large numbers with K/M suffixes
-function formatNumber(num: number): string {
+function formatCompactCount(num: number, language: string): string {
   if (num >= 1000000) {
-    return `${(num / 1000000).toFixed(1)}M`
+    return `${formatDecimal(num / 1000000, language, 1)}M`
   }
   if (num >= 1000) {
-    return `${(num / 1000).toFixed(1)}K`
+    return `${formatDecimal(num / 1000, language, 1)}K`
   }
-  return num.toString()
+  return formatNumber(num, language)
 }
 
 function hasSelections(selection?: NotebookSelection): boolean {
@@ -181,9 +182,9 @@ function ContentSelectionPanel({
           </Badge>
           {(tokenCount > 0 || charCount > 0) && (
             <span className="text-xs text-muted-foreground">
-              {tokenCount > 0 && tr.tokens.replace('{count}', formatNumber(tokenCount))}
+              {tokenCount > 0 && tr.tokens.replace('{count}', formatCompactCount(tokenCount, language))}
               {tokenCount > 0 && charCount > 0 && ' / '}
-              {charCount > 0 && tr.chars.replace('{count}', formatNumber(charCount))}
+              {charCount > 0 && tr.chars.replace('{count}', formatCompactCount(charCount, language))}
             </span>
           )}
         </div>
