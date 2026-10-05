@@ -7,10 +7,17 @@ import { LocalModelHealthBadges } from './LocalModelHealthBadges'
 // (the global setup mock returns the bare key).
 vi.mock('@/lib/hooks/use-translation', () => ({
   useTranslation: () => ({
-    t: (key: string, options?: { name?: string; status?: string }) =>
-      key === 'chat.localModelHealthBadges.statusAria' ? `${options?.name}: ${options?.status}` : key,
+    t: (key: string, options?: { name?: string; status?: string }) => {
+      if (key === 'chat.localModelHealthBadges.statusAria') return `${options?.name}: ${options?.status}`
+      // v0.8.130 — a non-English template, to prove auto-registered names are translated for display.
+      if (key === 'models.localCredential.named') return `${options?.name} (lokal)`
+      return key
+    },
   }),
 }))
+
+// v0.8.130 — extra rows a single test can add; empty for every other test.
+const extraModels = vi.hoisted(() => [] as Array<{ name: string; status: string; detail: string | null; latency_ms: number | null }>)
 
 vi.mock('@/lib/hooks/use-local-models', () => ({
   useLocalModelsHealth: () => ({
@@ -20,6 +27,7 @@ vi.mock('@/lib/hooks/use-local-models', () => ({
         { name: 'Local GGUF', status: 'healthy', detail: 'Hermes-3', latency_ms: 12 },
         { name: 'Local Embeddings', status: 'unhealthy', detail: 'connection failed', latency_ms: null },
         { name: 'Not Configured', status: 'not_configured', detail: null, latency_ms: null },
+        ...extraModels,
       ],
     },
     isLoading: false,
@@ -63,5 +71,22 @@ describe('LocalModelHealthBadges', () => {
     // Note: t() is mocked above to return the key string (with the aria template filled in)
     expect(screen.getByLabelText(/Local GGUF: models\.status\.healthy/)).toBeInTheDocument()
     expect(screen.getByLabelText(/Local Embeddings: models\.status\.unhealthy/)).toBeInTheDocument()
+  })
+
+  // v0.8.130 — the stored name stays English ("Whisper (local)"); only the label is translated.
+  it('translates an auto-registered local credential name in the text and the aria-label', () => {
+    extraModels.push({ name: 'Whisper (local)', status: 'healthy', detail: null, latency_ms: 5 })
+    try {
+      render(
+        <QueryClientProvider client={qc}>
+          <LocalModelHealthBadges />
+        </QueryClientProvider>
+      )
+      expect(screen.getByText('Whisper (lokal)')).toBeInTheDocument()
+      expect(screen.queryByText('Whisper (local)')).not.toBeInTheDocument()
+      expect(screen.getByLabelText('Whisper (lokal): models.status.healthy')).toBeInTheDocument()
+    } finally {
+      extraModels.length = 0
+    }
   })
 })

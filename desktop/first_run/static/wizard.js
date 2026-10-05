@@ -1,10 +1,31 @@
 (() => {
   const THEMES = window.DN_THEME_CATALOG;
+  const dnWizardT = window.dnWizardT;
 
   // v0.8.130 — indigo is the one brand; the wizard used to preselect teal Research Core Dark.
   let chosenTheme = 'gemini-forward-light';
   let openchronicleChoice = 'skip';
   const html = document.documentElement;
+
+  // v0.8.130 — translate the static markup once at startup. English stays in
+  // index.html as the no-JS fallback; en-US re-applies the same text.
+  // data-i18n-html values are authored by us (never user input), so innerHTML is safe.
+  const applyI18n = () => {
+    html.lang = window.dnWizardLocale();
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      el.textContent = dnWizardT(el.dataset.i18n);
+    });
+    document.querySelectorAll('[data-i18n-html]').forEach(el => {
+      el.innerHTML = dnWizardT(el.dataset.i18nHtml);
+    });
+    document.querySelectorAll('[data-i18n-attr]').forEach(el => {
+      el.dataset.i18nAttr.split(',').forEach(pair => {
+        const [attr, key] = pair.split(':').map(part => part.trim());
+        if (attr && key) el.setAttribute(attr, dnWizardT(key));
+      });
+    });
+  };
+  applyI18n();
 
   const screens = document.querySelectorAll('[data-screen]');
   const show = (name) => screens.forEach(s =>
@@ -20,15 +41,22 @@
 
   // Build theme grid
   const grid = document.getElementById('theme_grid');
-  THEMES.forEach(t => {
+  THEMES.forEach(theme => {
     const card = document.createElement('div');
     card.className = 'theme-card';
-    card.dataset.theme = t.id;
+    card.dataset.theme = theme.id;
     card.innerHTML = `
-      <div class="theme-swatch" style="--swatch-bg:${t.bg};--swatch-fg:${t.fg}"></div>
-      <div class="theme-name">${t.name}</div>
+      <div class="theme-swatch" style="--swatch-bg:${theme.bg};--swatch-fg:${theme.fg}"></div>
+      <div class="theme-name"></div>
     `;
-    card.addEventListener('click', () => setTheme(t.id));
+    // v0.8.130 — only the six generic names (Dark, Paper, System…) are
+    // translated; proper-noun themes keep their catalog name. dnWizardT
+    // returns the key itself when it has no entry, which is the "no key" test.
+    const themeKey = 'theme.' + theme.id;
+    const translated = dnWizardT(themeKey);
+    card.querySelector('.theme-name').textContent =
+      translated !== themeKey ? translated : theme.name;
+    card.addEventListener('click', () => setTheme(theme.id));
     grid.appendChild(card);
   });
   setTheme(chosenTheme);
@@ -84,8 +112,9 @@
         const latest = document.getElementById('progress-latest');
         const elapsed = document.getElementById('progress-elapsed');
         const startTs = Date.now();
+        elapsed.textContent = dnWizardT('progress.seconds', {n: 0});
         setInterval(() => {
-          elapsed.textContent = Math.round((Date.now() - startTs) / 1000) + 's';
+          elapsed.textContent = dnWizardT('progress.seconds', {n: Math.round((Date.now() - startTs) / 1000)});
         }, 500);
 
         // Save config first
@@ -113,20 +142,20 @@
         try {
           await attemptSave();
         } catch (err) {
-          latest.textContent = `Failed to save config: ${err.message}`;
+          latest.textContent = dnWizardT('progress.saveFailed', {message: err.message});
           const retryBtn = document.createElement('button');
-          retryBtn.textContent = 'Retry';
+          retryBtn.textContent = dnWizardT('common.retry');
           retryBtn.className = 'primary';
           retryBtn.style.marginTop = '12px';
           retryBtn.addEventListener('click', async () => {
-            latest.textContent = 'Retrying…';
+            latest.textContent = dnWizardT('progress.retrying');
             retryBtn.remove();
             try {
               await attemptSave();
-              latest.textContent = 'starting…';
+              latest.textContent = dnWizardT('progress.starting');
               // Continue with the progress stream below
             } catch (err2) {
-              latest.textContent = `Failed again: ${err2.message}`;
+              latest.textContent = dnWizardT('progress.retryFailed', {message: err2.message});
               latest.parentElement.appendChild(retryBtn);
             }
           });
@@ -147,13 +176,22 @@
             items[evt.step] = li;
           }
           li.dataset.status = evt.status;
-          if (evt.message) latest.textContent = evt.message;
+          // v0.8.130 — the two fixed, code-keyed messages the launcher sends are
+          // mapped client-side; every other message is free-form backend text
+          // (paths, exception strings) and is shown as received.
+          if (evt.step === 'startup' && evt.status === 'running') {
+            latest.textContent = dnWizardT('progress.launcherStarting');
+          } else if (evt.step === 'ready' && evt.status === 'done') {
+            latest.textContent = dnWizardT('progress.windowOpening');
+          } else if (evt.message) {
+            latest.textContent = evt.message;
+          }
           if (evt.step === 'ready' && evt.status === 'done') {
             es.close();
           }
         };
         es.onerror = () => {
-          latest.textContent = '(progress stream disconnected)';
+          latest.textContent = dnWizardT('progress.disconnected');
         };
       } else {
         show(target);

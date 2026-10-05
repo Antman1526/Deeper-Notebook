@@ -57,6 +57,13 @@ export const KNOWLEDGE_TARGET_STATE_KEYS: EnumLabelKeys = {
   missing: 'knowledge.targetStates.missing',
 }
 
+// v0.8.130 — overall local-model health from /local-models/health.
+export const MODEL_OVERALL_HEALTH_KEYS: EnumLabelKeys = {
+  healthy: 'models.overallHealth.healthy',
+  degraded: 'models.overallHealth.degraded',
+  down: 'models.overallHealth.down',
+}
+
 export const MODEL_READINESS_KEYS: EnumLabelKeys = {
   ready_verified: 'settings.modelReadiness.readyVerified',
   ready_unverified: 'settings.modelReadiness.readyUnverified',

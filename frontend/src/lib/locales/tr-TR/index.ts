@@ -4070,3 +4070,18 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome
   data: "Tüm veriler <path/> konumunda tutulur.",
   tip: "İpucu: Herhangi bir yerden bir not defterine, kaynağa veya eyleme atlamak için <key/> tuşuna basın.",
 });
+// v0.8.130 — stationery: an empty shelf says so (it read "No results").
+Object.assign(ensureSection(rootNode, 'notebooks'), {
+  emptyShelfTitle: "Rafınız boş",
+});
+// v0.8.130 — auto-registered local credentials are named in English in the database; translated at display time.
+Object.assign(ensureSection(ensureSection(rootNode, 'models'), 'localCredential'), {
+  named: "{{name}} (yerel)",
+  memory: "Bellek",
+});
+// v0.8.130 — overall local-model health (healthy / degraded / down) was shown as the raw API value.
+Object.assign(ensureSection(ensureSection(rootNode, 'models'), 'overallHealth'), {
+  healthy: "Sağlıklı",
+  degraded: "Bozulmuş",
+  down: "Kapalı",
+});

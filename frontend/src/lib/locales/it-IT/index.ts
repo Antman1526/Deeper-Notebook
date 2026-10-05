@@ -4070,3 +4070,18 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'workspaceHome
   data: "Tutti i dati risiedono in <path/>.",
   tip: "Suggerimento: premi <key/> da qualsiasi punto per passare a un notebook, una fonte o un'azione.",
 });
+// v0.8.130 — stationery: an empty shelf says so (it read "No results").
+Object.assign(ensureSection(rootNode, 'notebooks'), {
+  emptyShelfTitle: "Il tuo scaffale è vuoto",
+});
+// v0.8.130 — auto-registered local credentials are named in English in the database; translated at display time.
+Object.assign(ensureSection(ensureSection(rootNode, 'models'), 'localCredential'), {
+  named: "{{name}} (locale)",
+  memory: "Memoria",
+});
+// v0.8.130 — overall local-model health (healthy / degraded / down) was shown as the raw API value.
+Object.assign(ensureSection(ensureSection(rootNode, 'models'), 'overallHealth'), {
+  healthy: "Sano",
+  degraded: "Degradato",
+  down: "Non attivo",
+});

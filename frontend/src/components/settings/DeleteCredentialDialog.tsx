@@ -41,6 +41,7 @@ import {
 } from '@/components/ui/select'
 import { useDeleteCredential } from '@/lib/hooks/use-credentials'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { localCredentialLabel } from '@/lib/local-credential-label'
 import { Credential } from '@/lib/api/credentials'
 
 interface DeleteCredentialDialogProps {
@@ -92,7 +93,7 @@ export function DeleteCredentialDialog({
         <DialogHeader>
           <DialogTitle>{t('apiKeys.deleteConfig')}</DialogTitle>
           <DialogDescription>
-            {t('apiKeys.deleteConfigConfirm').replace('{name}', credential.name)}
+            {t('apiKeys.deleteConfigConfirm').replace('{name}', localCredentialLabel(credential.name, t))}
           </DialogDescription>
         </DialogHeader>
 

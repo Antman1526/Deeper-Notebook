@@ -1,8 +1,9 @@
 'use client'
 
 import { benchmarkActionError } from './benchmark-errors'
-import { MODEL_READINESS_KEYS, enumLabel, spacedEnum } from '@/lib/enum-labels'
+import { MODEL_OVERALL_HEALTH_KEYS, MODEL_READINESS_KEYS, enumLabel, spacedEnum } from '@/lib/enum-labels'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { localCredentialLabel } from '@/lib/local-credential-label'
 import { getApiErrorMessage } from '@/lib/utils/error-handler'
 import React from 'react'
 import { AlertCircle, Cpu, Loader2 } from 'lucide-react'
@@ -56,10 +57,10 @@ function ConnectionChecks() {
         <CardDescription>{t('settings.localModelsPage.connectionChecksDescription')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-2">
-        <Badge variant={health.data?.overall === 'healthy' ? 'secondary' : 'outline'}>{health.data?.overall ?? t('settings.localModelsPage.checking')}</Badge>
+        <Badge variant={health.data?.overall === 'healthy' ? 'secondary' : 'outline'}>{health.data?.overall ? enumLabel(t, MODEL_OVERALL_HEALTH_KEYS, health.data.overall, spacedEnum(health.data.overall)) : t('settings.localModelsPage.checking')}</Badge>
         {checks.map(check => <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-2 text-xs" key={`${check.runtime}-${check.name}`}>
-          <div><span className="font-medium">{check.name}</span>{check.runtime && <span className="ml-2 text-muted-foreground">{check.runtime}</span>}<div className="mt-1 break-all text-muted-foreground">{check.endpoint} {check.probe_path}</div>{check.detail && <div className="mt-1 text-muted-foreground">{check.detail}</div>}</div>
-          {check.status !== 'healthy' && sidecarKindFromName(check.name) && <SidecarLogPopover kind={sidecarKindFromName(check.name)!}><Button aria-label={t('settings.localModelsPage.viewLogRestartAria', { name: check.name })} size="sm" variant="outline">{t('settings.localModelsPage.viewLogRestart')}</Button></SidecarLogPopover>}
+          <div><span className="font-medium">{localCredentialLabel(check.name, t)}</span>{check.runtime && <span className="ml-2 text-muted-foreground">{check.runtime}</span>}<div className="mt-1 break-all text-muted-foreground">{check.endpoint} {check.probe_path}</div>{check.detail && <div className="mt-1 text-muted-foreground">{check.detail}</div>}</div>
+          {check.status !== 'healthy' && sidecarKindFromName(check.name) && <SidecarLogPopover kind={sidecarKindFromName(check.name)!}><Button aria-label={t('settings.localModelsPage.viewLogRestartAria', { name: localCredentialLabel(check.name, t) })} size="sm" variant="outline">{t('settings.localModelsPage.viewLogRestart')}</Button></SidecarLogPopover>}
         </div>)}
       </CardContent>
     </Card>

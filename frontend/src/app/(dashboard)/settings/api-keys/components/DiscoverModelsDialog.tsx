@@ -46,6 +46,7 @@ import {
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { useDiscoverModels, useRegisterModels } from '@/lib/hooks/use-credentials'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { localCredentialLabel } from '@/lib/local-credential-label'
 // v0.7.196 — discoveryError previously stored raw `error.message`
 // (axios "Network Error", FastAPI 500 default body, etc.). Route
 // through ERROR_MAP first; fall back to the backend's user-friendly
@@ -202,7 +203,7 @@ export function DiscoverModelsDialog({
             -{' '}
             {PROVIDER_DISPLAY_NAMES[credential.provider] || credential.provider}
           </DialogTitle>
-          <DialogDescription>{credential.name}</DialogDescription>
+          <DialogDescription>{localCredentialLabel(credential.name, t)}</DialogDescription>
         </DialogHeader>
 
         {discoverModels.isPending ? (

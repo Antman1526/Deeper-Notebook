@@ -2,6 +2,7 @@
 
 import { useLocalModelsHealth } from '@/lib/hooks/use-local-models'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { localCredentialLabel } from '@/lib/local-credential-label'
 // v0.8.38 — click a red badge → log popover with classified failure hint
 import { SidecarLogPopover, sidecarKindFromName } from './SidecarLogPopover'
 
@@ -36,11 +37,13 @@ export function LocalModelHealthBadges() {
         // not_configured + unknown dots stay static; popping a log on
         // "everything's fine" would just confuse the user.
         const kind = m.status === 'unhealthy' ? sidecarKindFromName(m.name) : null
+        // v0.8.130 — display only: the stored name stays English (kind lookup above uses it).
+        const label = localCredentialLabel(m.name, t)
         const dot = (
           <span
             className={`h-2 w-2 rounded-full ${STATUS_DOT[m.status] ?? STATUS_DOT.unknown} ${kind ? 'cursor-pointer ring-offset-1 hover:ring-2 hover:ring-destructive/40' : ''}`}
             title={t('chat.localModelHealthBadges.statusTitle', { status: t(`models.status.${m.status}`), detail: m.detail ?? t('models.status.noDetail') })}
-            aria-label={t('chat.localModelHealthBadges.statusAria', { name: m.name, status: t(`models.status.${m.status}`) })}
+            aria-label={t('chat.localModelHealthBadges.statusAria', { name: label, status: t(`models.status.${m.status}`) })}
             role={kind ? 'button' : undefined}
             tabIndex={kind ? 0 : undefined}
           />
@@ -54,7 +57,7 @@ export function LocalModelHealthBadges() {
             ) : (
               dot
             )}
-            <span className="truncate text-muted-foreground">{m.name}</span>
+            <span className="truncate text-muted-foreground">{label}</span>
           </div>
         )
       })}

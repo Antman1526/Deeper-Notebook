@@ -33,6 +33,7 @@ import {
   Search,
 } from 'lucide-react'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { localCredentialLabel } from '@/lib/local-credential-label'
 import { formatModelProviderLabel } from '@/lib/types/models'
 import { useModels, useDeleteModel, useModelDefaults, useUpdateModelDefaults, useAutoAssignDefaults, useAutoAssignCapability, useTestModel } from '@/lib/hooks/use-models'
 import {
@@ -366,7 +367,7 @@ function CredentialItem({
       <div className="rounded-xl border border-border/70 bg-card/40 p-3.5 space-y-2.5 shadow-sm transition-colors hover:border-border/90 hover:bg-card">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 min-w-0">
-            <span className="font-medium truncate">{credential.name}</span>
+            <span className="font-medium truncate">{localCredentialLabel(credential.name, t)}</span>
             <div className="flex gap-1">
               {credential.modalities.map(mod => (
                 <Badge
