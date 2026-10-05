@@ -20,6 +20,7 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import { getDateLocale } from '@/lib/utils/date-locale'
 import { TurnIntoPodcastAction } from '@/components/podcasts/TurnIntoPodcastAction'
 import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
+import { notebookCoverTone } from '@/lib/notebook-cover'
 
 interface NotebookRowProps {
   notebook: NotebookResponse
@@ -51,10 +52,14 @@ export function NotebookRow({ notebook }: NotebookRowProps) {
           the accessible primary action (a real link) for keyboard/screen-reader
           users — avoiding nested interactive (button-in-button) semantics. */}
       <div
+        // v0.8.130 — the list shows each notebook's spine, in the cloth it wears on the shelf.
+        data-dn-notebook-row=""
+        data-dn-cover={notebookCoverTone(notebook.id)}
         className="group flex items-center gap-4 rounded-lg border bg-card px-4 py-3 card-hover"
         onClick={handleRowClick}
         style={{ cursor: 'pointer' }}
       >
+        <span data-dn-row-spine="" aria-hidden="true" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <Link

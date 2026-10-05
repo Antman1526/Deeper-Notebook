@@ -8,6 +8,7 @@ import "@/components/deeper-notebook/tokens.css";
 import "@/components/deeper-notebook/folio/folio.css";
 import "@/components/deeper-notebook/shell/shell.css";
 import "@/components/deeper-notebook/workspace/workspace.css";
+import "@/components/deeper-notebook/stationery/stationery.css";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryProvider } from "@/components/providers/QueryProvider";

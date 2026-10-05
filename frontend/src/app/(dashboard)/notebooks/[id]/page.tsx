@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import type { ImperativePanelHandle } from 'react-resizable-panels'
 import { useParams } from 'next/navigation'
 import { NotebookHeader } from '../components/NotebookHeader'
+import { notebookCoverTone } from '@/lib/notebook-cover'
 import { SourcesColumn } from '../components/SourcesColumn'
 import { NotesColumn } from '../components/NotesColumn'
 import { ChatColumn } from '../components/ChatColumn'
@@ -255,6 +256,8 @@ export default function NotebookPage() {
       <main
         aria-labelledby="notebook-title"
         data-dn-notebook-workspace=""
+        // v0.8.130 — the open notebook keeps the cloth it wears on the shelf.
+        data-dn-cover={notebookCoverTone(notebook.id)}
         className="flex h-full min-h-0 min-w-0 flex-col gap-3"
       >
         <NotebookHeader notebook={notebook} />

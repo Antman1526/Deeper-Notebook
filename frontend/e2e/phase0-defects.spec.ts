@@ -184,8 +184,11 @@ test.describe('notebook list (T0-6)', () => {
     await expect(page).toHaveURL(/\/notebooks$/)
   })
 
-  test('a long notebook name still truncates with an ellipsis', async ({ page }) => {
-    const longName = 'An unusually long notebook title that keeps going well past the width of a single card'
+  // v0.8.130 — stationery (user decision 2026-10-04): the cover's label carries the
+  // name over up to three lines instead of one, so a name is cut mid-word far less
+  // often. Past three lines it still ends in an ellipsis and never grows the label.
+  test('a long notebook name wraps to three lines, then truncates with an ellipsis', async ({ page }) => {
+    const longName = Array.from({ length: 12 }, () => 'An unusually long notebook title that keeps going').join(' ')
     await page.route('**/api/notebooks**', async (route) => {
       if (route.request().method() !== 'GET') return route.fallback()
       await route.fulfill({ json: [{ ...notebook, name: longName }] })
@@ -195,11 +198,16 @@ test.describe('notebook list (T0-6)', () => {
 
     const title = page.locator('[data-slot="card-title"]').first()
     await expect(title).toContainText('An unusually long')
-    const metrics = await title.evaluate((element) => ({
-      overflow: getComputedStyle(element).textOverflow,
-      truncated: element.scrollWidth > element.clientWidth,
-    }))
-    expect(metrics).toEqual({ overflow: 'ellipsis', truncated: true })
+    const metrics = await title.evaluate((element) => {
+      const style = getComputedStyle(element)
+      return {
+        clamp: style.webkitLineClamp,
+        lines: Math.round(element.clientHeight / parseFloat(style.lineHeight)),
+        truncated: element.scrollHeight > element.clientHeight,
+        wide: element.scrollWidth > element.clientWidth,
+      }
+    })
+    expect(metrics).toEqual({ clamp: '3', lines: 3, truncated: true, wide: false })
   })
 })
 

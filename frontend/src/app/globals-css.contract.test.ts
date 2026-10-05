@@ -178,15 +178,23 @@ const stylesheets = (dir: string): string[] =>
 
 describe('brand and heading decisions', () => {
   // v0.8.130 — notebook layer (user decision 2026-10-01): reading text (answers and
-  // note previews) is also set in the book serif; headings and UI stay sans.
-  it('sets no serif face on anything but the writing and reading surfaces', () => {
+  // note previews) is also set in the book serif.
+  // v0.8.130 — stationery (user decision 2026-10-04, replacing "headings are sans"
+  // of 2026-09-30): titles are set in the book serif too, but only by the
+  // stationery layer and only in the new visual system, so the rollback shell
+  // keeps its sans headings. Controls and body UI stay sans everywhere.
+  it('sets the serif face only on writing and reading surfaces and on stationery titles', () => {
     const offenders: string[] = []
     for (const file of stylesheets(path.resolve(__dirname, '..'))) {
       const source = fs.readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
       for (const match of source.matchAll(/([^{}]+)\{[^{}]*font-family:\s*var\(--font-(?:serif|dn-editorial)\)/g)) {
         const selectors = match[1].trim()
-        const allowed = selectors.split(',').every((selector) => (
-          /\.cm-scroller/.test(selector) || /^\s*\[data-dn-message='ai'\]\s*$|^\s*\[data-dn-reading\]\s*$/.test(selector)
+        const stationery = path.basename(file) === 'stationery.css'
+        // Top-level commas only: `:is(a, b)` is one selector.
+        const allowed = selectors.split(/,(?![^()]*\))/).every((selector) => (
+          stationery
+            ? /^\s*\[data-dn-visual-system='v2'\]\s/.test(selector)
+            : /\.cm-scroller/.test(selector) || /^\s*\[data-dn-message='ai'\]\s*$|^\s*\[data-dn-reading\]\s*$/.test(selector)
         ))
         if (!allowed) offenders.push(`${path.basename(file)}: ${selectors.replace(/\s+/g, ' ')}`)
       }

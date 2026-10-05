@@ -158,8 +158,9 @@ test.describe('theme colour contract', () => {
     expect(focused?.boxShadow, 'no second, box-shadow focus ring').not.toMatch(/0px 0px 0px 3px/)
   })
 
-  // Decision of 2026-09-30: headings are sans, in the body face.
-  test('page headings use the sans body face, not the serif', async ({ page }) => {
+  // Decision of 2026-10-04 (replacing "headings are sans" of 2026-09-30): page
+  // titles are set in the book serif; the body and its controls stay sans.
+  test('page headings use the book serif; the body stays sans', async ({ page }) => {
     await installLuminousFolioFixture(page, { theme: 'gemini-forward-light' })
     await page.goto('/notebooks')
     const heading = page.getByRole('heading', { name: 'Notebooks', level: 1 })
@@ -168,8 +169,8 @@ test.describe('theme colour contract', () => {
       heading: getComputedStyle(el).fontFamily,
       body: getComputedStyle(document.body).fontFamily,
     }))
-    expect(fonts.heading).not.toMatch(/Newsreader|Georgia|Palatino|Iowan/)
-    expect(fonts.heading).toBe(fonts.body)
+    expect(fonts.heading).toMatch(/Newsreader|Georgia|Iowan/)
+    expect(fonts.body).not.toMatch(/Newsreader|Georgia|Palatino|Iowan/)
   })
 
   test('chart colours follow the theme', async ({ page }) => {

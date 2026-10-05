@@ -4,9 +4,14 @@ import { expect, test } from '@playwright/test'
 import { installVisualSystemFixture } from './fixtures/visual-system'
 
 // v0.8.130 — the premium pass and notebook layer (user decisions, 2026-10-01): no
-// glass, glow, gradient or inset shine (the dotted desk and ruled Notes are the only
-// textures); a paper-and-ink flagship palette; tighter corners; rectangular buttons;
-// quiet grey sentence-case eyebrows. Pinned on the main V2 pages.
+// glass, glow, gradient or inset shine on the interface; a paper-and-ink flagship
+// palette; tighter corners; rectangular buttons; quiet grey sentence-case eyebrows.
+// Pinned on the main V2 pages.
+//
+// Revised 2026-10-04 (user: "more modern… premium… spectacular… change whatever design
+// needs"): stationery is drawn. Bound books, the open-page hero and index cards carry
+// weave, ruling, light and soft shadow (components/deeper-notebook/stationery). The
+// ban still holds everywhere else, and glass blur stays banned on stationery too.
 
 const ROUTES = ['/', '/notebooks', '/sources', '/studio', '/settings'] as const
 
@@ -19,10 +24,13 @@ async function open(page: Page, route: string) {
 }
 
 for (const route of ROUTES) {
-  test.describe(`premium ${route}`, () => {
+  /** Surfaces drawn as stationery: weave, ruling, light and soft shadow are allowed here. */
+const STATIONERY = '[data-dn-notebook-card][data-dn-cover], [data-dn-home-shelf], [data-dn-header-book], .dn-workspace-home .dn-workspace-hero, .dn-workspace-home .dn-visual-card'
+
+test.describe(`premium ${route}`, () => {
     test('no glass, glow, gradient or inset shine', async ({ page }) => {
       await open(page, route)
-      const offenders = await page.evaluate(() => {
+      const offenders = await page.evaluate((STATIONERY) => {
         const out: string[] = []
         const describe = (el: Element) => {
           const name = el.getAttribute('aria-label') || el.textContent?.trim().slice(0, 30) || ''
@@ -32,14 +40,16 @@ for (const route of ROUTES) {
           const style = getComputedStyle(el)
           if (style.display === 'none' || style.visibility === 'hidden') continue
           if (el.closest('[data-dn-source-cover], img, svg, video, canvas')) continue
+          if (style.backdropFilter && style.backdropFilter !== 'none') out.push(`blur ${describe(el)}`)
           // The notebook textures: the dotted desk and the ruled Notes column.
           if (el.matches('.dn-workspace-canvas, [data-dn-ruled]')) continue
-          if (style.backdropFilter && style.backdropFilter !== 'none') out.push(`blur ${describe(el)}`)
+          // Stationery is drawn: cloth, paper and index cards (2026-10-04).
+          if (el.closest(STATIONERY)) continue
           if (/gradient\(/.test(style.backgroundImage)) out.push(`gradient ${describe(el)}`)
           if (/inset/.test(style.boxShadow) && /rgba?\(255, 255, 255/.test(style.boxShadow)) out.push(`shine ${describe(el)}`)
         }
         return out
-      })
+      }, STATIONERY)
       expect(offenders).toEqual([])
     })
 

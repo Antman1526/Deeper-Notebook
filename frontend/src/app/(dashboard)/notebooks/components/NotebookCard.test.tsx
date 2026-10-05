@@ -47,26 +47,33 @@ describe('NotebookCard keyboard access', () => {
     expect(link).toHaveAttribute('href', '/notebooks/notebook%3Aabc')
   })
 
-  it('lays the link over the whole card as a direct child of the card root', () => {
+  it('lays the link over the whole cover, outside the label', () => {
     const { container } = render(<NotebookCard notebook={notebook} />)
 
     const link = screen.getByRole('link', { name: 'Deterministic Research Notebook' })
     const root = container.firstElementChild as HTMLElement
-    // A direct child of the positioned root, so `inset-0` spans the WHOLE card.
-    // Inside CardHeader it would be sized by that header (a size container).
-    expect(link.parentElement).toBe(root)
+    // v0.8.130 — the book's cover is the whole clickable face: the link is a direct
+    // child of the cover (itself a direct child of the positioned root), so `inset-0`
+    // spans the WHOLE book. Inside CardHeader it would be sized by that header (a
+    // size container).
+    const cover = root.querySelector('[data-dn-book-cover]') as HTMLElement
+    expect(cover.parentElement).toBe(root)
+    expect(link.parentElement).toBe(cover)
+    expect(link.closest('[data-slot="card"]')).toBeNull()
     expect(root.className).toContain('relative')
     expect(link.className).toContain('absolute')
     expect(link.className).toContain('inset-0')
   })
 
-  it('keeps the title as plain text so a long name can still truncate', () => {
+  it('keeps the title as plain text so a long name is clamped, not cut mid-line', () => {
     render(<NotebookCard notebook={notebook} />)
 
     const title = document.querySelector('[data-slot="card-title"]')
     expect(title).toHaveTextContent('Deterministic Research Notebook')
     expect(title?.querySelector('a')).toBeNull()
-    expect(title?.className).toContain('truncate')
+    // v0.8.130 — the label carries the whole name on up to three lines (it used to
+    // truncate to one); a link inside the title would stop the clamp working.
+    expect(title?.className).toContain('line-clamp-3')
   })
 
   it('keeps the actions menu and podcast action above the overlay link', () => {
@@ -76,7 +83,23 @@ describe('NotebookCard keyboard access', () => {
     expect(link.className).toMatch(/z-\[1\]/)
     expect(screen.getByRole('button', { name: 'notebooks.notebookCard.actionsFor' }).className)
       .toContain('z-10')
-    expect(screen.getByRole('button', { name: 'Turn into podcast' }).parentElement?.className)
+    // The podcast action sits in the cover's footer, which is raised above the link.
+    expect(screen.getByRole('button', { name: 'Turn into podcast' }).closest('[data-dn-cover-footer]')?.className)
       .toContain('z-10')
+  })
+
+  // v0.8.130 — the stationery layer.
+  it('binds the notebook in a cloth chosen from its id, with its initial stamped on the cover', () => {
+    const { container } = render(<NotebookCard notebook={notebook} />)
+    const root = container.firstElementChild as HTMLElement
+    expect(['ink', 'forest', 'oxblood', 'ochre', 'slate', 'plum']).toContain(root.getAttribute('data-dn-cover'))
+    const monogram = root.querySelector('[data-dn-book-monogram]')
+    // Drawn by CSS from the attribute: ornament, with no text in the document.
+    expect(monogram).toHaveAttribute('data-dn-book-monogram', 'D')
+    expect(monogram).toBeEmptyDOMElement()
+    // Decoration stays out of the accessibility tree.
+    expect(monogram).toHaveAttribute('aria-hidden', 'true')
+    expect(root.querySelector('[data-dn-book-pages]')).toHaveAttribute('aria-hidden', 'true')
+    expect(root.querySelector('[data-dn-book-ribbon]')).toHaveAttribute('aria-hidden', 'true')
   })
 })

@@ -71,7 +71,9 @@ export function NotebookHeader({ notebook }: NotebookHeaderProps) {
   // primary actions). Synthesis and Mind map stay one click away.
   return (
     <>
-      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-1">
+      <header data-dn-notebook-header="" className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-1">
+        {/* v0.8.130 — the book itself, closed, beside its name (drawn in stationery.css). */}
+        <span data-dn-header-book="" aria-hidden="true" />
         <h1 id="notebook-title" className="min-w-0 flex-1 text-xl font-semibold tracking-tight">
           <InlineEdit
             id="notebook-name"

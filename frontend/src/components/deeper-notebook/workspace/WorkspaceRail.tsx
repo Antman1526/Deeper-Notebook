@@ -29,6 +29,8 @@ import { GmailSidebarButton } from '@/components/deeper-notebook/GmailSidebarBut
 import { ThemeSwitcher } from '@/components/deeper-notebook/ThemeSwitcher'
 import { useDesktopVersion } from '@/components/deeper-notebook/shell/use-desktop-version'
 import { CREATE_TARGETS, getNavigation, type CreateTarget } from '@/components/layout/AppSidebar'
+import { motion, useReducedMotion } from 'framer-motion'
+
 import { useAuth } from '@/lib/hooks/use-auth'
 import { useCreateDialogs } from '@/lib/hooks/use-create-dialogs'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -60,6 +62,9 @@ export function WorkspaceRail({ open, onClose }: WorkspaceRailProps) {
   const { logout } = useAuth()
   const { openSourceDialog, openNotebookDialog, openPodcastDialog } = useCreateDialogs()
   const version = useDesktopVersion()
+  // Motion is decoration: the marker jumps, not glides, under either reduced-motion setting.
+  const prefersReducedMotion = useReducedMotion()
+  const stillMarker = prefersReducedMotion || (typeof document !== 'undefined' && document.documentElement.dataset.dnMotion === 'reduced')
 
   const items = getNavigation(t).flatMap((section) => section.items)
   const byHref = new Map<string, (typeof items)[number]>(items.map((item) => [item.href, item]))
@@ -107,6 +112,16 @@ export function WorkspaceRail({ open, onClose }: WorkspaceRailProps) {
           aria-current={active ? 'page' : undefined}
           className={cn('dn-rail-link', nested && 'dn-rail-link--nested', active && 'is-active')}
         >
+          {/* v0.8.130 — one marker for the whole rail: it glides from the page you were
+              on to the page you are on (a shared layout), instead of blinking between rows. */}
+          {active ? (
+            <motion.span
+              layoutId="dn-rail-marker"
+              className="dn-rail-marker"
+              aria-hidden="true"
+              transition={stillMarker ? { duration: 0 } : { type: 'spring', stiffness: 520, damping: 38, mass: 0.7 }}
+            />
+          ) : null}
           {nested ? null : <Icon className="h-4 w-4" aria-hidden="true" />}
           <span className="truncate">{item.name}</span>
         </Link>

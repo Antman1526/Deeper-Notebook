@@ -1017,7 +1017,8 @@ html[data-theme^='high-contrast'] [data-dn-ruled] {
 
 /* V2 presentation raises reachable controls without changing legacy or disabled behavior. */
 /* v0.8.130 — Phase 3b: rail links fill their row like navigator links did. */
-[data-dn-visual-system='v2'] a[href]:not([aria-disabled='true']):not(.dn-navigator-link):not(.dn-rail-link):not(.dn-rail-brand):not(.dn-command-health) {
+/* v0.8.130 — stationery: the home shelf's bound books lay themselves out (stationery.css). */
+[data-dn-visual-system='v2'] a[href]:not([aria-disabled='true']):not(.dn-navigator-link):not(.dn-rail-link):not(.dn-rail-brand):not(.dn-command-health):not([data-dn-cover]) {
   display: inline-flex;
   max-inline-size: 100%;
   align-items: center;

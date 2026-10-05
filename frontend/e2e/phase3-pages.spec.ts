@@ -44,18 +44,22 @@ test.describe('3a — page titles', () => {
 })
 
 test.describe('3a — home', () => {
-  test('the hero, runtime status and Today sections are spaced apart', async ({ page }) => {
+  // v0.8.130 — stationery layer: your books come first (the recent shelf sits under the
+  // hero), then the ways to start, and the runtime readout closes the page.
+  test('the hero, recent shelf, Today and runtime status follow in that order, spaced apart', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.goto('/')
     const hero = page.locator('.dn-workspace-hero')
-    const status = page.locator('section[aria-label^="Runtime status"]')
+    const recent = page.locator('section[aria-labelledby="workspace-recent-title"]')
     const today = page.locator('section[aria-labelledby="workspace-actions-title"]')
-    await expect(today).toBeVisible()
+    const status = page.locator('section[aria-label^="Runtime status"]')
+    await expect(status).toBeVisible()
 
-    const [heroBox, statusBox, todayBox] = await Promise.all([hero.boundingBox(), status.boundingBox(), today.boundingBox()])
-    // They touched: hero bottom 461 / status top 462; status bottom 687 / Today 696.
-    expect(statusBox!.y - (heroBox!.y + heroBox!.height)).toBeGreaterThanOrEqual(16)
-    expect(todayBox!.y - (statusBox!.y + statusBox!.height)).toBeGreaterThanOrEqual(16)
+    const boxes = await Promise.all([hero, recent, today, status].map((part) => part.boundingBox()))
+    for (let index = 1; index < boxes.length; index += 1) {
+      const above = boxes[index - 1]!
+      expect(boxes[index]!.y - (above.y + above.height), `section ${index} sits below section ${index - 1}`).toBeGreaterThanOrEqual(16)
+    }
   })
 
   test('the runtime status panel is a neutral surface, not a selected-looking tint', async ({ page }) => {

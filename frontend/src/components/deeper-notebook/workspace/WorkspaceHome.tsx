@@ -13,6 +13,7 @@ import { VisualCardGrid } from './VisualCardGrid'
 import { WorkspaceHero } from './WorkspaceHero'
 import { WorkspacePage } from './WorkspacePage'
 import { RichText } from '@/components/common/RichText'
+import { notebookCoverTone } from '@/lib/notebook-cover'
 
 /** The V2 home consumes the exact presentation contract of IntelligenceHorizon. */
 export type WorkspaceHomeProps = IntelligenceHorizonProps
@@ -125,12 +126,63 @@ export function WorkspaceHome({
         description={t('workspace.workspaceHome.heroDescription')}
       />
 
-      <RuntimeStatusPanel
-        snapshot={runtimeSnapshot}
-        isLoading={runtimeSnapshotLoading}
-        onRefresh={onRefreshRuntime}
-        compact
-      />
+      {/* v0.8.130 — your books first: the recent notebooks are a shelf under the hero, the
+          ways to start follow, and the runtime readout (an instrument, not a greeting)
+          closes the page. */}
+      <section aria-labelledby="workspace-recent-title" className="dn-workspace-section">
+        <div className="dn-workspace-section-heading">
+          <div>
+            <p className="dn-workspace-page-eyebrow">{t('workspace.workspaceHome.libraryIndex')}</p>
+            <h2 id="workspace-recent-title" className="dn-workspace-section-title">
+              {t('workspace.workspaceHome.recentFolios')}
+            </h2>
+            <p className="dn-workspace-section-description">{t('workspace.workspaceHome.recentFoliosHint')}</p>
+          </div>
+          <Link href="/notebooks" className="dn-workspace-secondary-link">
+            {t('workspace.workspaceHome.allNotebooks')}
+          </Link>
+        </div>
+
+        {notebooksLoading ? (
+          <StatePanel
+            kind="loading"
+            title={t('workspace.workspaceHome.loadingTitle')}
+            description={t('workspace.workspaceHome.loadingDescription')}
+          />
+        ) : !hasRecentNotebooks ? (
+          <StatePanel
+            kind="empty"
+            title={t('workspace.workspaceHome.emptyTitle')}
+            description={t('workspace.workspaceHome.emptyDescription')}
+            action={
+              <button
+                type="button"
+                onClick={onOpenStudio}
+                className="dn-visual-card-action"
+              >
+                {t('workspace.workspaceHome.openStudio')}
+              </button>
+            }
+          />
+        ) : (
+          <div className="dn-workspace-notebook-list" data-dn-home-shelf="">
+            {recentNotebooks.map((notebook) => (
+              <Link
+                key={notebook.id}
+                href={notebook.href ?? `/notebooks/${encodeURIComponent(notebook.id)}`}
+                aria-label={notebook.name}
+                className="dn-workspace-notebook-link"
+                data-dn-cover={notebookCoverTone(notebook.id)}
+              >
+                <span className="dn-workspace-notebook-name">{notebook.name}</span>
+                <span className="dn-workspace-notebook-time">
+                  {relativeTime(t, language, notebook.updated ?? notebook.created)}
+                </span>
+              </Link>
+            ))}
+          </div>
+        )}
+      </section>
 
       <section aria-labelledby="workspace-actions-title" className="dn-workspace-section">
         <div className="dn-workspace-section-heading">
@@ -187,59 +239,12 @@ export function WorkspaceHome({
         </VisualCardGrid>
       </section>
 
-      <section aria-labelledby="workspace-recent-title" className="dn-workspace-section">
-        <div className="dn-workspace-section-heading">
-          <div>
-            <p className="dn-workspace-page-eyebrow">{t('workspace.workspaceHome.libraryIndex')}</p>
-            <h2 id="workspace-recent-title" className="dn-workspace-section-title">
-              {t('workspace.workspaceHome.recentFolios')}
-            </h2>
-            <p className="dn-workspace-section-description">{t('workspace.workspaceHome.recentFoliosHint')}</p>
-          </div>
-          <Link href="/notebooks" className="dn-workspace-secondary-link">
-            {t('workspace.workspaceHome.allNotebooks')}
-          </Link>
-        </div>
-
-        {notebooksLoading ? (
-          <StatePanel
-            kind="loading"
-            title={t('workspace.workspaceHome.loadingTitle')}
-            description={t('workspace.workspaceHome.loadingDescription')}
-          />
-        ) : !hasRecentNotebooks ? (
-          <StatePanel
-            kind="empty"
-            title={t('workspace.workspaceHome.emptyTitle')}
-            description={t('workspace.workspaceHome.emptyDescription')}
-            action={
-              <button
-                type="button"
-                onClick={onOpenStudio}
-                className="dn-visual-card-action"
-              >
-                {t('workspace.workspaceHome.openStudio')}
-              </button>
-            }
-          />
-        ) : (
-          <div className="dn-workspace-notebook-list">
-            {recentNotebooks.map((notebook) => (
-              <Link
-                key={notebook.id}
-                href={notebook.href ?? `/notebooks/${encodeURIComponent(notebook.id)}`}
-                aria-label={notebook.name}
-                className="dn-workspace-notebook-link"
-              >
-                <span className="dn-workspace-notebook-name">{notebook.name}</span>
-                <span className="dn-workspace-notebook-time">
-                  {relativeTime(t, language, notebook.updated ?? notebook.created)}
-                </span>
-              </Link>
-            ))}
-          </div>
-        )}
-      </section>
+      <RuntimeStatusPanel
+        snapshot={runtimeSnapshot}
+        isLoading={runtimeSnapshotLoading}
+        onRefresh={onRefreshRuntime}
+        compact
+      />
 
       <aside aria-label={t('workspace.workspaceHome.shortcutsAriaLabel')} className="dn-workspace-note">
         <span>
