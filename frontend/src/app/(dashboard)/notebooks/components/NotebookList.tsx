@@ -64,7 +64,9 @@ export function NotebookList({
     return (
       <EmptyState
         icon={Book}
-        title={emptyTitle ?? t('common.noResults')}
+        // v0.8.130 — an empty shelf is not a search with no results.
+        title={emptyTitle ?? t('notebooks.emptyShelfTitle')}
+        blankBook={!emptyTitle}
         description={emptyDescription ?? t('chat.startByCreating')}
         action={(onAction && actionLabel) || extraAction ? (
           <div className="mt-4 flex flex-col items-center gap-2">

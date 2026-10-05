@@ -209,3 +209,86 @@ test('high-contrast themes keep plain cards', async ({ page }) => {
   expect(plain.image).toBe('none')
   expect(plain).toMatchObject({ pages: true, ribbon: true, monogram: true })
 })
+
+// v0.8.130 — found by looking at every theme, width and state of the shelf (2026-10-05).
+async function openShelf(page: Page, opts: { names?: string[]; width?: number; height?: number; empty?: boolean } = {}) {
+  await installVisualSystemFixture(page, { theme: 'gemini-forward-light' })
+  if (opts.names) {
+    const names = opts.names
+    await page.route((url) => url.pathname === '/api/notebooks', async (route) => {
+      if (route.request().method() !== 'GET') return route.fallback()
+      const archived = new URL(route.request().url()).searchParams.get('archived') === 'true'
+      await route.fulfill({
+        json: archived ? [] : names.map((name, index) => ({
+          id: `notebook:shelf-${index}`, name, description: 'Notes and sources.', archived: false,
+          created: '2026-09-01T10:00:00Z', updated: '2026-09-20T10:00:00Z',
+          source_count: opts.empty ? 0 : 2, note_count: opts.empty ? 0 : 3,
+        })),
+      })
+    })
+  }
+  await page.setViewportSize({ width: opts.width ?? 1440, height: opts.height ?? 900 })
+  await page.goto('/notebooks')
+  await expect(page.getByRole('heading', { name: 'Notebooks', level: 1 })).toBeVisible()
+}
+
+test('on a phone the book and the search field use the full width of the page', async ({ page }) => {
+  await openShelf(page, { names: ['Field notes'], width: 390, height: 844 })
+  const book = page.locator('[data-dn-notebook-card]').first()
+  await expect(book).toBeVisible()
+  const widths = await page.evaluate(() => {
+    const width = (selector: string) => document.querySelector(selector)!.getBoundingClientRect().width
+    return { shelf: width('[data-dn-notebook-shelf]'), book: width('[data-dn-notebook-card]'), search: width('#notebook-search') }
+  })
+  expect(widths.shelf).toBeGreaterThan(300)
+  expect(widths.book).toBeGreaterThanOrEqual(widths.shelf - 1)
+  expect(widths.search).toBeGreaterThanOrEqual(widths.shelf - 1)
+})
+
+test('a long name in the list view ends in an ellipsis instead of being cut mid-letter', async ({ page }) => {
+  const longName = 'Reading: The Making of the Atomic Bomb and everything that followed from it in the decades after the war'
+  await openShelf(page, { names: [longName] })
+  await page.getByRole('button', { name: 'List view' }).click()
+  const name = page.locator('[data-dn-notebook-row]').getByRole('link', { name: longName })
+  await expect(name).toBeVisible()
+  // The ellipsis is only drawn by a block box: a flex box (as links are here) clips without one.
+  const metrics = await name.locator('span').evaluate((el) => ({
+    overflow: getComputedStyle(el).textOverflow,
+    hidden: getComputedStyle(el).overflowX,
+    display: getComputedStyle(el).display,
+    truncated: el.scrollWidth > el.clientWidth,
+  }))
+  expect(metrics).toEqual({ overflow: 'ellipsis', hidden: 'hidden', display: 'block', truncated: true })
+})
+
+test('an empty shelf says it is empty and shows a blank book, not "No results"', async ({ page }) => {
+  await openShelf(page, { names: [] })
+  await expect(page.getByRole('heading', { name: 'Your shelf is empty' })).toBeVisible()
+  await expect(page.getByText('No results')).toHaveCount(0)
+  await expect(page.locator('[data-dn-empty-book]')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'New notebook' }).last()).toBeVisible()
+})
+
+// Seen in the packaged app on a new notebook: the reason sat faint and cut off at the foot of the book.
+test('on an empty notebook the reason the podcast button is off is readable and inside the cover', async ({ page }) => {
+  await openShelf(page, { names: ['A long enough name to wrap onto a second line'], empty: true })
+  const book = page.locator('[data-dn-notebook-card]').first()
+  const reason = book.getByText('No readable content', { exact: false })
+  await expect(reason).toBeVisible()
+  const fit = await book.evaluate((el) => {
+    const cover = el.querySelector('[data-dn-book-cover]')!.getBoundingClientRect()
+    const note = el.querySelector('[data-dn-cover-footer] p')!
+    const box = note.getBoundingClientRect()
+    // Any CSS colour syntax (color-mix resolves to `color(srgb …)`) painted to 8-bit RGB.
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = 1
+    const ink = canvas.getContext('2d', { willReadFrequently: true })!
+    ink.fillStyle = getComputedStyle(note).color
+    ink.fillRect(0, 0, 1, 1)
+    const [r, g, b] = ink.getImageData(0, 0, 1, 1).data
+    return { inside: box.bottom <= cover.bottom - 8 && box.right <= cover.right - 8, colour: `rgb(${r}, ${g}, ${b})` }
+  })
+  expect(fit.inside).toBe(true)
+  // Cream ink on the cloth, not the page's grey.
+  expect(luminance(fit.colour)).toBeGreaterThan(170)
+})

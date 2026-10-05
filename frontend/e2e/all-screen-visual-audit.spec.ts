@@ -770,7 +770,8 @@ test('representative states and keyboard contracts remain bounded at every audit
 
     notebookState = 'empty'
     await page.goto('/notebooks')
-    await expect(page.getByRole('heading', { name: /No results|No notebooks/i })).toBeVisible()
+    // v0.8.130 — the empty shelf says "Your shelf is empty" (it said "No results").
+    await expect(page.getByRole('heading', { name: /Your shelf is empty/i })).toBeVisible()
     await assertLayout('/notebooks (empty)', viewport)
 
     notebookState = 'populated'

@@ -61,13 +61,15 @@ export function NotebookRow({ notebook }: NotebookRowProps) {
       >
         <span data-dn-row-spine="" aria-hidden="true" />
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2">
             <Link
               href={`/notebooks/${encodeURIComponent(notebook.id)}`}
               onClick={(e) => e.stopPropagation()}
-              className="font-medium truncate rounded-sm outline-none group-hover:text-primary transition-colors focus-visible:ring-2 focus-visible:ring-ring"
+              className="min-w-0 font-medium rounded-sm outline-none group-hover:text-primary transition-colors focus-visible:ring-2 focus-visible:ring-ring"
             >
-              {notebook.name}
+              {/* v0.8.130 — the ellipsis lives on a block inside the link: links are flex
+                  boxes in the new visual system, and a flex box draws no ellipsis. */}
+              <span className="block truncate">{notebook.name}</span>
             </Link>
             {notebook.archived && (
               <Badge variant="secondary">

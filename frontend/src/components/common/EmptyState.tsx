@@ -6,14 +6,19 @@ interface EmptyStateProps {
   description: string
   action?: React.ReactNode
   className?: string
+  /** v0.8.130 — stationery: draw the icon tile as a blank bound book (stationery.css). */
+  blankBook?: boolean
 }
 
-export function EmptyState({ icon: Icon, title, description, action, className }: EmptyStateProps) {
+export function EmptyState({ icon: Icon, title, description, action, className, blankBook }: EmptyStateProps) {
   return (
-    <div className={`relative flex flex-col items-center justify-center text-center py-12 px-4 ${className || ''}`}>
+    <div data-dn-empty-state="" className={`relative flex flex-col items-center justify-center text-center py-12 px-4 ${className || ''}`}>
       {/* Ambient aura glow */}
       <div className="relative mb-4 flex items-center justify-center">
-        <div className="relative flex h-14 w-14 items-center justify-center rounded-xl border bg-muted/30">
+        <div
+          data-dn-empty-book={blankBook ? '' : undefined}
+          className="relative flex h-14 w-14 items-center justify-center rounded-xl border bg-muted/30"
+        >
           {/* v0.8.130 — no hover/press scale (UI audit Phase 1) */}
           <Icon className="h-7 w-7 text-primary/80" />
         </div>

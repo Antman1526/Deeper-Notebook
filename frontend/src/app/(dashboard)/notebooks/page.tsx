@@ -75,17 +75,20 @@ export default function NotebooksPage() {
       <KnowledgeRouteFrame
         route="/notebooks"
         actions={
-          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-4">
-            <Button
-              variant="outline"
-              size="sm"
-              aria-label={t('notebooks.notebooksPage.refresh')}
-              onClick={() => refetch()}
-            >
-              <RefreshCw className="h-4 w-4" />
-            </Button>
-            {/* v0.8.130 — the list layout existed but had no control to reach it. */}
-            <NotebookViewToggle />
+          <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-4">
+            {/* v0.8.130 — one row on a phone: refresh was a full-width bar of its own. */}
+            <div className="flex items-center gap-3 sm:contents">
+              <Button
+                variant="outline"
+                size="sm"
+                aria-label={t('notebooks.notebooksPage.refresh')}
+                onClick={() => refetch()}
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+              {/* v0.8.130 — the list layout existed but had no control to reach it. */}
+              <NotebookViewToggle />
+            </div>
             {/* v0.8.130 — Phase 3a: a search icon, as in the theme gallery's search. */}
             <div className="relative w-full sm:w-64">
               <Search

@@ -281,7 +281,9 @@
     flex-direction: column;
   }
 
+  /* v0.8.130 — stretched: stacked, the actions shrank to their widest control. */
   [data-dn-folio-page-actions] {
+    align-self: stretch;
     justify-content: flex-start;
   }
 

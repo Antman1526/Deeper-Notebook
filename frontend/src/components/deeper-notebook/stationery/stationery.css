@@ -30,6 +30,7 @@
 
 [data-dn-visual-system='v2'] :is(.dn-workspace-page-title, .dn-workspace-hero-title, .dn-workspace-section-title, .dn-folio-title),
 [data-dn-visual-system='v2'] main :is(h1, h2),
+[data-dn-visual-system='v2'] [data-dn-empty-state] h3,
 [data-dn-visual-system='v2'] [data-dn-notebook-card] [data-slot='card-title'] {
   font-family: var(--font-dn-editorial), 'Iowan Old Style', Georgia, serif;
   font-weight: 500;
@@ -246,6 +247,17 @@
 [data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] [data-dn-book-cover] > [data-slot='card'] { order: 1; }
 [data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] [data-dn-book-cover] > [data-dn-book-monogram] { order: 2; }
 
+/* Why the podcast button is off (an empty notebook): in the cover's ink, on its own line. */
+[data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] [data-dn-cover-footer] p {
+  flex-basis: 100%;
+  color: var(--dn-cover-ink-quiet);
+  line-height: 1.3;
+}
+
+html[data-theme^='high-contrast'] [data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] [data-dn-cover-footer] p {
+  color: var(--muted-foreground);
+}
+
 [data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] [data-dn-cover-updated] {
   color: var(--dn-cover-ink-quiet);
 }
@@ -396,6 +408,54 @@ html[data-theme^='high-contrast'] [data-dn-visual-system='v2'] [data-dn-notebook
   border-color: var(--border);
   background-color: var(--card);
   color: var(--foreground);
+}
+
+[data-dn-visual-system='v2'] [data-dn-empty-state] h3 {
+  font-size: 1.25rem;
+}
+
+/* On a phone one book fills the shelf's width, keeping its proportions. */
+@media (max-width: 639px) {
+  [data-dn-visual-system='v2'] [data-dn-notebook-shelf] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] {
+    aspect-ratio: 17 / 22;
+  }
+}
+
+/* An empty shelf: one blank book, waiting for a name. */
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] [data-dn-empty-book] {
+  --dn-cover: color-mix(in oklab, var(--muted-foreground) 62%, var(--background));
+  position: relative;
+  inline-size: 5.5rem;
+  block-size: 7.25rem;
+  border: 0;
+  border-radius: 2px 7px 7px 2px;
+  background:
+    linear-gradient(to right, rgb(0 0 0 / 0.3), rgb(0 0 0 / 0.06) 9%, rgb(255 255 255 / 0.1) 11%, transparent 15%),
+    linear-gradient(to right, transparent 84%, rgb(0 0 0 / 0.38) 84% 88%, transparent 88%),
+    var(--dn-cover);
+  box-shadow: var(--dn-book-shadow);
+}
+
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] [data-dn-empty-book]::before {
+  position: absolute;
+  inset: 0.875rem 1.25rem auto 1rem;
+  block-size: 1.75rem;
+  border-radius: 1px;
+  background: var(--card);
+  box-shadow: 0 1px 1px rgb(0 0 0 / 0.2);
+  content: '';
+}
+
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] [data-dn-empty-book] > svg {
+  display: none;
+}
+
+[data-dn-visual-system='v2'] [data-dn-empty-book] {
+  margin-block-end: 0.5rem;
 }
 
 /* The rollback shell (no new visual system) has no books: there the same markup is
@@ -809,4 +869,116 @@ html[data-theme^='high-contrast'] [data-dn-visual-system='v2'] [data-dn-home-she
 
 html[data-theme^='high-contrast'] [data-dn-visual-system='v2'] [data-dn-notebook-row][data-dn-cover] > [data-dn-row-spine] {
   display: none;
+}
+
+/* ---------- Beyond the shelf: every page is a desk of paper (2026-10-05) ----------
+   Panels are sheets resting on the desk, the page title sits on a letterhead rule,
+   and tabs are index tabs. Flat colour and soft outer shadow only: no gradient, glass
+   or shine, so the flat rules in e2e/premium-pass.spec.ts hold on these pages.
+   `:where()` keeps these at the specificity of one attribute, so a surface with its
+   own design (the open notebook's columns, the shelf, Home) keeps it. */
+
+:root {
+  --dn-sheet-shadow:
+    0 1px 1px rgb(0 0 0 / 0.05),
+    0 10px 24px -18px rgb(0 0 0 / 0.28);
+  --dn-sheet-shadow-lifted:
+    0 1px 2px rgb(0 0 0 / 0.06),
+    0 18px 32px -20px rgb(0 0 0 / 0.36);
+}
+
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] :where(main) :where([data-slot='card'], .rounded-xl.border.bg-card):where(:not([data-dn-notebook-card] *, [data-dn-notebook-workspace] *, .dn-workspace-home *)) {
+  box-shadow: var(--dn-sheet-shadow);
+  transition:
+    box-shadow 280ms var(--dn-ease-glide),
+    transform 280ms var(--dn-ease-settle),
+    border-color 0.15s ease;
+}
+
+/* A sheet you can pick up lifts toward the hand. */
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  html:not([data-theme^='high-contrast'], [data-dn-motion='reduced']) [data-dn-visual-system='v2'] :where(main) :where(a, button, [role='button'], .card-hover):where([data-slot='card'], .rounded-xl.border.bg-card):where(:not([data-dn-notebook-card] *, [data-dn-notebook-workspace] *, .dn-workspace-home *)):hover {
+    box-shadow: var(--dn-sheet-shadow-lifted);
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes dn-sheet-settle {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html:not([data-theme^='high-contrast'], [data-dn-motion='reduced']) [data-dn-visual-system='v2'] :where(main) :where([data-slot='card'], .rounded-xl.border.bg-card):where(:not([data-dn-notebook-card] *, [data-dn-notebook-workspace] *, .dn-workspace-home *)) {
+    animation: dn-sheet-settle 420ms var(--dn-ease-glide) backwards;
+  }
+
+  html:not([data-theme^='high-contrast'], [data-dn-motion='reduced']) [data-dn-visual-system='v2'] :where(main) :where([data-slot='card'], .rounded-xl.border.bg-card):where(:nth-child(2)) { animation-delay: 60ms; }
+  html:not([data-theme^='high-contrast'], [data-dn-motion='reduced']) [data-dn-visual-system='v2'] :where(main) :where([data-slot='card'], .rounded-xl.border.bg-card):where(:nth-child(3)) { animation-delay: 120ms; }
+  html:not([data-theme^='high-contrast'], [data-dn-motion='reduced']) [data-dn-visual-system='v2'] :where(main) :where([data-slot='card'], .rounded-xl.border.bg-card):where(:nth-child(n + 4)) { animation-delay: 180ms; }
+}
+
+/* The letterhead: a hairline under the page title, begun by a short stroke of brand ink. */
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] [data-dn-folio-page-header] {
+  position: relative;
+  /* Room for the rule, and air between it and the page. */
+  padding-block-end: 1.125rem;
+  margin-block-end: 0.875rem;
+}
+
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] [data-dn-folio-page-header]::before,
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] [data-dn-folio-page-header]::after {
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline-start: 0;
+  content: '';
+  pointer-events: none;
+}
+
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] [data-dn-folio-page-header]::before {
+  inset-inline-end: 0;
+  block-size: 1px;
+  background: var(--border);
+}
+
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] [data-dn-folio-page-header]::after {
+  inline-size: 2.5rem;
+  block-size: 2px;
+  margin-block-end: -0.5px;
+  border-radius: 1px;
+  background: var(--primary);
+}
+
+/* Index tabs: a tray of dividers; the open one is a raised paper tab with an ink edge. */
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] main [role='tablist'] {
+  border-radius: 8px;
+}
+
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] main [role='tab'] {
+  position: relative;
+  border-radius: 6px;
+  transition:
+    background-color 200ms var(--dn-ease-glide),
+    box-shadow 240ms var(--dn-ease-glide),
+    color 0.15s ease;
+}
+
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] main [role='tab'][data-state='active'] {
+  background-color: var(--card);
+  box-shadow: var(--dn-sheet-shadow);
+}
+
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] main [role='tab'][data-state='inactive'] {
+  box-shadow: none;
+}
+
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] main [role='tab'][data-state='active']::after {
+  position: absolute;
+  inset: 0 0.75rem auto;
+  block-size: 2px;
+  border-radius: 0 0 2px 2px;
+  background: var(--primary);
+  content: '';
 }
