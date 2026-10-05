@@ -207,10 +207,50 @@ def build_app(
     return app
 
 
+class WizardServer:
+    """v0.8.130 — the wizard's server, kept running after its window closes.
+
+    Its /api/progress stream is what the first-launch progress window reads
+    (desktop/setup_progress_window.py); the launcher stops it once the main
+    window opens.
+    """
+
+    def __init__(self, port: int, loop, runner) -> None:
+        self.port = port
+        self._loop = loop
+        self._runner = runner
+        self._stopped = False
+
+    def stop(self) -> None:
+        if self._stopped:
+            return
+        self._stopped = True
+        loop, runner = self._loop, self._runner
+        if loop is None:
+            return
+
+        async def _shut_down() -> None:
+            try:
+                if runner is not None:
+                    await runner.cleanup()
+            finally:
+                loop.stop()
+
+        try:
+            import asyncio
+
+            asyncio.run_coroutine_threadsafe(_shut_down(), loop)
+        except RuntimeError:
+            pass  # the loop is already gone
+
+
 def run_wizard_blocking(
     config_path: Path, progress_bus: "ProgressBus | None" = None
-) -> None:
-    """Open the wizard in PyWebView; return once the user clicks Done."""
+) -> WizardServer:
+    """Open the wizard in PyWebView; return once the user clicks Done.
+
+    The returned server is still running: the caller stops it.
+    """
     import threading
 
     import webview
@@ -240,5 +280,6 @@ def run_wizard_blocking(
     threading.Thread(target=_watch_done, daemon=True).start()
     webview.start()
 
-    if runner_loop is not None:
-        runner_loop.call_soon_threadsafe(runner_loop.stop)
+    # v0.8.130 — not stopped here any more: startup has not begun yet, and the
+    # progress window needs this server's stream while it runs.
+    return WizardServer(site_port, runner_loop, runner)

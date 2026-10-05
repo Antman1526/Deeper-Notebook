@@ -138,6 +138,61 @@
     ? '%USERPROFILE%\\Desktop\\AI_Models'
     : '~/Desktop/AI_Models';
 
+  // v0.8.130 — the setting-up screen is reached two ways: after saving, and
+  // directly, by the launcher's progress window (?screen=setting-up), which shows
+  // it for the whole of first-launch setup. Both use these.
+  const startSetupClock = () => {
+    const elapsed = document.getElementById('progress-elapsed');
+    const startTs = Date.now();
+    elapsed.textContent = dnWizardT('progress.seconds', {n: 0});
+    setInterval(() => {
+      elapsed.textContent = dnWizardT('progress.seconds', {n: Math.round((Date.now() - startTs) / 1000)});
+    }, 500);
+  };
+  const followProgress = () => {
+    const list = document.getElementById('progress-list');
+    const latest = document.getElementById('progress-latest');
+    const es = new EventSource('/api/progress');
+    let sawFailure = false;
+    const items = {};
+    es.onmessage = (ev) => {
+      const evt = JSON.parse(ev.data);
+      let li = items[evt.step];
+      if (!li) {
+        li = document.createElement('li');
+        li.textContent = stepLabel(evt.step);
+        list.appendChild(li);
+        items[evt.step] = li;
+        // v0.8.130 — the list outgrows the window: keep the newest step in view.
+        if (li.scrollIntoView) li.scrollIntoView({block: 'nearest'});
+        // The launcher never reports "startup" as finished; the next step starting
+        // is what finishes it, so it does not sit there looking busy to the end.
+        if (evt.step !== 'startup' && items.startup) items.startup.dataset.status = 'done';
+      }
+      li.dataset.status = evt.status;
+      if (evt.status === 'error') sawFailure = true;
+      // v0.8.130 — fixed sentences by exact match, value-bearing ones by
+      // pattern; everything else is free-form backend text, shown as received.
+      if (evt.message) {
+        const shown = translateMessage(evt.message);
+        // v0.8.130 — failure text that matched nothing is the launcher's own
+        // exception text. It cannot be translated, so it is framed by a
+        // translated sentence naming the step, and kept verbatim for support.
+        latest.textContent = (evt.status === 'error' && shown === evt.message)
+          ? dnWizardT('msg.stepError', {step: stepLabel(evt.step), detail: evt.message})
+          : shown;
+      }
+      if (evt.step === 'ready' && evt.status === 'done') {
+        es.close();
+      }
+    };
+    es.onerror = () => {
+      // v0.8.130 — a failed launch ends the stream too; the reason it gave is
+      // worth more on screen than "disconnected".
+      if (!sawFailure) latest.textContent = dnWizardT('progress.disconnected');
+    };
+  };
+
   document.querySelectorAll('button[data-next], button[data-back]').forEach(btn => {
     btn.addEventListener('click', async () => {
       // Screen-5.5 OpenChronicle choices: capture before navigating away.
@@ -171,14 +226,8 @@
           openchronicle_choice: openchronicleChoice,
         };
         show('setting-up');
-        const list = document.getElementById('progress-list');
         const latest = document.getElementById('progress-latest');
-        const elapsed = document.getElementById('progress-elapsed');
-        const startTs = Date.now();
-        elapsed.textContent = dnWizardT('progress.seconds', {n: 0});
-        setInterval(() => {
-          elapsed.textContent = dnWizardT('progress.seconds', {n: Math.round((Date.now() - startTs) / 1000)});
-        }, 500);
+        startSetupClock();
 
         // Save config first
         // v0.5.10 — retry-aware save. Previously a 500 here showed
@@ -191,7 +240,8 @@
             body: JSON.stringify(payload),
           });
           if (!resp.ok) {
-            let detail = `HTTP ${resp.status}`;
+            // v0.8.130 — a sentence, not a bare status code.
+            let detail = dnWizardT('error.http', {status: resp.status});
             try {
               const body = await resp.json();
               if (body.error) detail = fromTable(SAVE_ERROR_KEYS, body.error);
@@ -226,29 +276,7 @@
           return;
         }
 
-        // Then subscribe to progress
-        const es = new EventSource('/api/progress');
-        const items = {};
-        es.onmessage = (ev) => {
-          const evt = JSON.parse(ev.data);
-          let li = items[evt.step];
-          if (!li) {
-            li = document.createElement('li');
-            li.textContent = stepLabel(evt.step);
-            list.appendChild(li);
-            items[evt.step] = li;
-          }
-          li.dataset.status = evt.status;
-          // v0.8.130 — fixed sentences by exact match, value-bearing ones by
-          // pattern; everything else is free-form backend text, shown as received.
-          if (evt.message) latest.textContent = translateMessage(evt.message);
-          if (evt.step === 'ready' && evt.status === 'done') {
-            es.close();
-          }
-        };
-        es.onerror = () => {
-          latest.textContent = dnWizardT('progress.disconnected');
-        };
+        followProgress();
       } else {
         show(target);
       }
@@ -256,4 +284,9 @@
   });
 
   show('welcome');
+  if (new URLSearchParams(location.search).get('screen') === 'setting-up') {
+    show('setting-up');
+    startSetupClock();
+    followProgress();
+  }
 })();

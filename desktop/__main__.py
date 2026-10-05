@@ -50,6 +50,14 @@ def _emergency_log(exc: BaseException) -> None:
 
 
 if __name__ == "__main__":
+    # v0.8.130 — the first-launch progress window is this same program started
+    # with a flag (desktop/setup_progress_window.py). It must hand over before
+    # the launcher is imported: it is a display, not a second launcher.
+    from desktop import setup_progress_window as _setup_progress_window
+
+    if _setup_progress_window.parse_args(sys.argv[1:]) is not None:
+        sys.exit(_setup_progress_window.main(sys.argv[1:]))
+
     try:
         from desktop.app import run
 

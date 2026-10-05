@@ -434,3 +434,21 @@ def test_italian_speech_labels_use_the_apps_own_terms(dictionary):
     assert it["step.supervisor.piper"] == "Sintesi vocale"
     assert "Da voce a testo" not in json.dumps(it, ensure_ascii=False)
     assert "Da testo a voce" not in json.dumps(it, ensure_ascii=False)
+
+
+# v0.8.130 — free-form failure text cannot be translated, but it no longer stands
+# alone: it is framed by a translated sentence naming the step that failed.
+def test_untranslatable_failure_text_is_framed_in_the_users_language(dictionary):
+    wizard = (STATIC / "wizard.js").read_text(encoding="utf-8")
+    progress = (STATIC.parents[1] / "progress.py").read_text(encoding="utf-8")
+    # The launcher's failure status, as the wizard tests for it.
+    assert '"error"' in progress
+    assert "evt.status === 'error'" in wizard
+    assert "dnWizardT('msg.stepError'" in wizard
+    assert "dnWizardT('error.http'" in wizard
+    assert "`HTTP ${resp.status}`" not in wizard, "a bare HTTP status is not a sentence"
+    for locale in LOCALES:
+        frame = dictionary[locale]["msg.stepError"]
+        assert set(_PLACEHOLDER.findall(frame)) == {"step", "detail"}, locale
+        assert set(_PLACEHOLDER.findall(dictionary[locale]["error.http"])) == {"status"}, locale
+    assert dictionary["de-DE"]["msg.stepError"] != dictionary["en-US"]["msg.stepError"]
