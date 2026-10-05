@@ -51,3 +51,88 @@ def test_microphone_button_uses_the_app_theme_tokens():
     assert "var(--primary-foreground" in code
     assert "var(--destructive" in code, "recording is shown in the theme's destructive colour"
     assert "borderRadius: '50%'" not in code, "controls are rounded rectangles in this design"
+
+
+# --- v0.8.130 round 3: voice control strings are translated --------------------
+
+VOICE_KEYS_EN = {
+    "mic.title": "Hold to record · Release to send",
+    "speaker.play": "Play this response",
+    "speaker.stop": "Stop playback",
+    "toast.transcribed": "Transcribed: “{text}”",
+    "toast.networkError": "Network error",
+    "toast.sttFailed": "STT failed: {error}",
+    "toast.micDenied": "Microphone permission denied",
+    "toast.ttsFailed": "TTS failed: {error}",
+    "toast.voiceReady": "Voice ready",
+    "toast.close": "Close notification",
+}
+
+
+def _voice_strings() -> dict:
+    marker = "var VOICE_STRINGS = "
+    start = VOICE.index(marker) + len(marker)
+    value, _end = json.JSONDecoder().raw_decode(VOICE[start:])
+    return value, start, _end
+
+
+def test_voice_strings_is_strict_json_with_all_app_languages():
+    table, _s, _e = _voice_strings()
+    assert set(table) == LOCALES
+    assert table["en"] == VOICE_KEYS_EN
+    for lang, strings in table.items():
+        assert set(strings) == set(VOICE_KEYS_EN), lang
+        assert all(isinstance(v, str) and v.strip() for v in strings.values()), lang
+
+
+def test_voice_strings_placeholders_match_english():
+    table, _s, _e = _voice_strings()
+    placeholder = re.compile(r"\{(\w+)\}")
+    for lang, strings in table.items():
+        for key, value in strings.items():
+            assert sorted(placeholder.findall(value)) == sorted(
+                placeholder.findall(table["en"][key])
+            ), f"{lang}:{key}"
+
+
+def test_voice_strings_are_translated_not_copied():
+    table, _s, _e = _voice_strings()
+    for lang, strings in table.items():
+        if lang == "en":
+            continue
+        assert strings["mic.title"] != table["en"]["mic.title"], lang
+        assert strings["speaker.play"] != table["en"]["speaker.play"], lang
+
+
+def test_voice_italian_uses_the_apps_speech_terms():
+    table, _s, _e = _voice_strings()
+    assert "Riconoscimento vocale" in table["it"]["toast.sttFailed"]
+    assert "Sintesi vocale" in table["it"]["toast.ttsFailed"]
+
+
+def test_voice_injection_has_no_hardcoded_english_outside_the_table():
+    _table, start, end = _voice_strings()
+    code = _no_comments(VOICE[: start] + VOICE[start + end :])
+    for english in (
+        "Hold to record",
+        "Play this response",
+        "Stop playback",
+        "Transcribed:",
+        "Network error",
+        "STT failed",
+        "Microphone permission denied",
+        "TTS failed",
+        "Voice ready",
+        "Close notification",
+    ):
+        assert english not in code, english
+
+
+def test_voice_helper_resolves_language_at_call_time_and_labels_buttons():
+    code = _no_comments(VOICE)
+    assert "function vt(" in code
+    assert "document.documentElement.lang" in code
+    # Both buttons get an accessible name, not just a tooltip.
+    assert "el.setAttribute('aria-label', text)" in code  # setLabel: mic + speaker
+    assert "closeBtn.setAttribute('aria-label', vt(" in code
+    assert "setLabel(fab" in code and "setLabel(btn" in code

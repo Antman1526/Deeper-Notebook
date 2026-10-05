@@ -301,3 +301,136 @@ def test_every_save_handler_error_string_is_mapped(wizard_js):
 def test_wizard_js_uses_the_lookup_tables(wizard_js):
     assert "'step.' + " in wizard_js
     assert "FIXED_MESSAGE_KEYS" in wizard_js and "SAVE_ERROR_KEYS" in wizard_js
+
+
+# --- v0.8.130 round 3: launcher messages that carry live values (matched by pattern) ---
+#
+# Approach: wizard.js holds an ordered MESSAGE_PATTERNS table of
+# { re: '<JS regex source>', key: 'msg.*' } with NAMED capture groups. The test
+# parses that table, converts each regex to Python, renders the backend's real
+# f-strings from the AST of app.py / launcher.py with sample values, and asserts
+# every pattern still matches at least one of them. A reworded backend sentence
+# therefore fails here instead of silently falling back to English.
+
+import ast
+import itertools
+
+_SAMPLES: dict[str, list[str]] = {
+    "gguf_dir": ["/Users/me/AI Models/gguf"],
+    "nomic_path": ["/Users/me/AI_Models/nomic-embed-text-v1.5.f16.gguf"],
+    "host": ["127.0.0.1"],
+    "port": ["8123"],
+    "url": ["http://127.0.0.1:8000/readyz"],
+    "proc.returncode": ["1", "-9"],
+    "timeout": ["30", "180.0"],
+    "ctx.openchronicle_available": ["True", "False"],
+}
+# Backend messages that are not a string literal / f-string (a str(path) call):
+# assert the source fragment is still there and the regex handles sample values.
+_FRAGMENT_BACKED = {
+    "msg.memoryCommandsRegistered": (
+        'str(commands_dst / "memory_commands.py")',
+        "app.py",
+        ["/Users/me/commands/memory_commands.py", "C:\\Users\\me\\commands\\memory_commands.py"],
+    ),
+}
+# Keys whose English template intentionally differs from the raw backend text
+# (the raw text was developer-speak: "available=True", a bare path).
+_ENGLISH_REPHRASED = {
+    "msg.openchronicleFound",
+    "msg.openchronicleNotFound",
+    "msg.memoryCommandsRegistered",
+}
+
+
+def _js_unescape(raw: str) -> str:
+    return re.sub(r"\\(.)", r"\1", raw)
+
+
+def _message_patterns(wizard_js: str) -> list[tuple[str, str]]:
+    block = re.search(r"const MESSAGE_PATTERNS = \[(.*?)\n  \];", wizard_js, re.DOTALL)
+    assert block, "MESSAGE_PATTERNS table not found in wizard.js"
+    entries = re.findall(
+        r"\{\s*re:\s*'((?:[^'\\]|\\.)*)',\s*key:\s*'([\w.]+)'\s*\}", block.group(1)
+    )
+    assert entries, "MESSAGE_PATTERNS table is empty"
+    return [(_js_unescape(raw), key) for raw, key in entries]
+
+
+def _py_regex(js_source: str) -> re.Pattern[str]:
+    return re.compile(js_source.replace("(?<", "(?P<").replace("(?P<=", "(?<=").replace("(?P<!", "(?<!"))
+
+
+def _rendered_backend_strings() -> list[str]:
+    out: list[str] = []
+    for name in ("app.py", "launcher.py"):
+        tree = ast.parse((DESKTOP / name).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                out.append(node.value)
+            elif isinstance(node, ast.JoinedStr):
+                slots: list[list[str]] = []
+                for part in node.values:
+                    if isinstance(part, ast.Constant):
+                        slots.append([str(part.value)])
+                    else:
+                        expr = ast.unparse(part.value) if isinstance(part, ast.FormattedValue) else "?"
+                        slots.append(_SAMPLES.get(expr, ["SAMPLE"]))
+                for combo in itertools.product(*slots):
+                    out.append("".join(combo))
+    return out
+
+
+def test_message_patterns_match_the_real_backend_sentences(dictionary, wizard_js):
+    backend = _rendered_backend_strings()
+    sample_values = {v for vals in _SAMPLES.values() for v in vals}
+    for js_source, key in _message_patterns(wizard_js):
+        assert key.startswith("msg.") and key in dictionary["en-US"], key
+        pattern = _py_regex(js_source)
+        if key in _FRAGMENT_BACKED:
+            fragment, filename, samples = _FRAGMENT_BACKED[key]
+            assert fragment in (DESKTOP / filename).read_text(encoding="utf-8"), key
+            for sample in samples:
+                match = pattern.search(sample)
+                assert match, f"{key}: {js_source!r} does not match {sample!r}"
+                assert match.group("path") == sample
+            continue
+        hits = [(s, pattern.search(s)) for s in backend]
+        hits = [(s, m) for s, m in hits if m]
+        assert hits, f"{key}: no backend sentence matches {js_source!r} (backend reworded?)"
+        for s, m in hits:
+            assert set(m.groupdict().values()) <= sample_values, (key, s, m.groupdict())
+            if key not in _ENGLISH_REPHRASED:
+                # English users must see exactly what the backend sent.
+                rendered = _PLACEHOLDER.sub(
+                    lambda p: m.group(p.group(1)), dictionary["en-US"][key]
+                )
+                assert rendered == s, (key, rendered, s)
+
+
+def test_message_pattern_placeholders_equal_capture_groups(dictionary, wizard_js):
+    for js_source, key in _message_patterns(wizard_js):
+        groups = set(_py_regex(js_source).groupindex)
+        for locale in LOCALES:
+            assert set(_PLACEHOLDER.findall(dictionary[locale][key])) == groups, f"{locale}:{key}"
+
+
+def test_message_pattern_table_is_ordered_and_specific(wizard_js):
+    # First match wins, so no pattern may be a bare catch-all.
+    for js_source, _key in _message_patterns(wizard_js):
+        assert js_source.startswith("^") and js_source.endswith("$"), js_source
+        assert js_source not in {"^.*$", "^.+$"}
+
+
+def test_wizard_js_uses_message_patterns(wizard_js):
+    assert "MESSAGE_PATTERNS" in wizard_js and "new RegExp" in wizard_js
+
+
+# --- Italian speech terms follow the app's own wording (frontend it-IT) ---
+
+def test_italian_speech_labels_use_the_apps_own_terms(dictionary):
+    it = dictionary["it-IT"]
+    assert it["step.supervisor.whisper"] == "Riconoscimento vocale"
+    assert it["step.supervisor.piper"] == "Sintesi vocale"
+    assert "Da voce a testo" not in json.dumps(it, ensure_ascii=False)
+    assert "Da testo a voce" not in json.dumps(it, ensure_ascii=False)

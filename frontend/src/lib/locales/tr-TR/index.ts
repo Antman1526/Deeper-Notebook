@@ -3775,7 +3775,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'runTimeline')
 });
 Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'runtimeStatusPanel'), {
   api: "API",
-  ariaLabelDegraded: "Çalışma zamanı durumu bozulmuş",
+  ariaLabelDegraded: "Çalışma zamanı durumu düşük performanslı",
   ariaLabelReady: "Çalışma zamanı durumu hazır",
   ariaLabelUnknown: "Çalışma zamanı durumu bilinmiyor",
   backupFiles: "Yedek dosyaları",
@@ -3797,7 +3797,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'workspace'), 'runtimeStatus
   stageMilliseconds: "{{value}}ms",
   stageSeconds: "{{value}}s",
   startupReceipt: "Başlangıç makbuzu",
-  stateDegraded: "Bozulmuş",
+  stateDegraded: "Düşük performanslı",
   stateReady: "Hazır",
   stateUnknown: "Bilinmiyor",
   title: "Çalışma zamanı durumu",
@@ -3807,7 +3807,7 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'workspace'), 
   autoExportUnknown: "Yerel yedek durumu kullanılamıyor",
   databaseCheckFailed: "Veritabanı durumu kullanılamıyor",
   databaseOffline: "Veritabanı çevrimdışı",
-  knowledgeDegraded: "Bilgi yansıtması bozulmuş",
+  knowledgeDegraded: "Bilgi yansıtmasında sorun var",
   knowledgeUnknown: "Bilgi durumu kullanılamıyor",
   migrationsCheckFailed: "Geçiş durumu kullanılamıyor",
   migrationsPending: "Geçişler bekliyor",
@@ -3819,7 +3819,7 @@ Object.assign(ensureSection(ensureSection(ensureSection(rootNode, 'workspace'), 
   startupReceiptUnavailable: "Başlangıç makbuzu kullanılamıyor",
   updatesDisabled: "Güncelleme denetimi kapalı",
   updatesUnknown: "Güncelleme durumu kullanılamıyor",
-  vaultDegraded: "Bir yerel kaynak bozulmuş",
+  vaultDegraded: "Bir yerel kaynakta sorun var",
   vaultUnavailable: "Bir yerel kaynak kullanılamıyor",
   vaultUnknown: "Yerel kaynak durumu kullanılamıyor",
 });
@@ -4083,5 +4083,5 @@ Object.assign(ensureSection(ensureSection(rootNode, 'models'), 'localCredential'
 Object.assign(ensureSection(ensureSection(rootNode, 'models'), 'overallHealth'), {
   healthy: "Sağlıklı",
   degraded: "Düşük performanslı",
-  down: "Çalışmıyor",
+  down: "Kullanılamıyor",
 });

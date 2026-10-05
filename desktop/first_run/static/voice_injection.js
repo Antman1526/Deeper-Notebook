@@ -17,6 +17,58 @@
     window.DEEPER_NOTEBOOK_TTS_URL || window.ONP_TTS_URL || '/api/audio/speech'
   );
 
+  // v0.8.130 — every user-visible string this script produces, in the app's 14
+  // languages (same keys as MEMORY_LABELS in memory_injection.js). Strict JSON so
+  // desktop/tests/test_desktop_injections.py can parse it. {name} marks a value
+  // inserted at call time. Italian follows the app's own terms ("riconoscimento
+  // vocale", "sintesi vocale").
+  var VOICE_STRINGS = {
+    "en": {"mic.title": "Hold to record · Release to send", "speaker.play": "Play this response", "speaker.stop": "Stop playback", "toast.transcribed": "Transcribed: “{text}”", "toast.networkError": "Network error", "toast.sttFailed": "STT failed: {error}", "toast.micDenied": "Microphone permission denied", "toast.ttsFailed": "TTS failed: {error}", "toast.voiceReady": "Voice ready", "toast.close": "Close notification"},
+    "de": {"mic.title": "Zum Aufnehmen halten · Zum Senden loslassen", "speaker.play": "Diese Antwort vorlesen", "speaker.stop": "Wiedergabe stoppen", "toast.transcribed": "Transkribiert: „{text}“", "toast.networkError": "Netzwerkfehler", "toast.sttFailed": "Spracherkennung fehlgeschlagen: {error}", "toast.micDenied": "Mikrofonzugriff verweigert", "toast.ttsFailed": "Sprachausgabe fehlgeschlagen: {error}", "toast.voiceReady": "Sprachausgabe bereit", "toast.close": "Benachrichtigung schließen"},
+    "es": {"mic.title": "Mantén pulsado para grabar · Suelta para enviar", "speaker.play": "Reproducir esta respuesta", "speaker.stop": "Detener la reproducción", "toast.transcribed": "Transcrito: «{text}»", "toast.networkError": "Error de red", "toast.sttFailed": "Error en el reconocimiento de voz: {error}", "toast.micDenied": "Permiso de micrófono denegado", "toast.ttsFailed": "Error en la síntesis de voz: {error}", "toast.voiceReady": "Voz lista", "toast.close": "Cerrar notificación"},
+    "ca": {"mic.title": "Mantén premut per gravar · Deixa anar per enviar", "speaker.play": "Reprodueix aquesta resposta", "speaker.stop": "Atura la reproducció", "toast.transcribed": "Transcrit: «{text}»", "toast.networkError": "Error de xarxa", "toast.sttFailed": "Ha fallat el reconeixement de veu: {error}", "toast.micDenied": "Permís del micròfon denegat", "toast.ttsFailed": "Ha fallat la síntesi de veu: {error}", "toast.voiceReady": "Veu a punt", "toast.close": "Tanca la notificació"},
+    "fr": {"mic.title": "Maintenez pour enregistrer · Relâchez pour envoyer", "speaker.play": "Lire cette réponse", "speaker.stop": "Arrêter la lecture", "toast.transcribed": "Transcrit : « {text} »", "toast.networkError": "Erreur réseau", "toast.sttFailed": "Échec de la reconnaissance vocale : {error}", "toast.micDenied": "Autorisation du microphone refusée", "toast.ttsFailed": "Échec de la synthèse vocale : {error}", "toast.voiceReady": "Voix prête", "toast.close": "Fermer la notification"},
+    "it": {"mic.title": "Tieni premuto per registrare · Rilascia per inviare", "speaker.play": "Riproduci questa risposta", "speaker.stop": "Interrompi la riproduzione", "toast.transcribed": "Trascritto: «{text}»", "toast.networkError": "Errore di rete", "toast.sttFailed": "Riconoscimento vocale non riuscito: {error}", "toast.micDenied": "Autorizzazione al microfono negata", "toast.ttsFailed": "Sintesi vocale non riuscita: {error}", "toast.voiceReady": "Voce pronta", "toast.close": "Chiudi notifica"},
+    "pt": {"mic.title": "Segure para gravar · Solte para enviar", "speaker.play": "Reproduzir esta resposta", "speaker.stop": "Parar a reprodução", "toast.transcribed": "Transcrito: “{text}”", "toast.networkError": "Erro de rede", "toast.sttFailed": "Falha no reconhecimento de fala: {error}", "toast.micDenied": "Permissão de microfone negada", "toast.ttsFailed": "Falha na síntese de fala: {error}", "toast.voiceReady": "Voz pronta", "toast.close": "Fechar notificação"},
+    "pl": {"mic.title": "Przytrzymaj, aby nagrywać · Puść, aby wysłać", "speaker.play": "Odtwórz tę odpowiedź", "speaker.stop": "Zatrzymaj odtwarzanie", "toast.transcribed": "Transkrypcja: „{text}”", "toast.networkError": "Błąd sieci", "toast.sttFailed": "Rozpoznawanie mowy nie powiodło się: {error}", "toast.micDenied": "Odmowa dostępu do mikrofonu", "toast.ttsFailed": "Synteza mowy nie powiodła się: {error}", "toast.voiceReady": "Głos gotowy", "toast.close": "Zamknij powiadomienie"},
+    "ru": {"mic.title": "Удерживайте, чтобы записать · Отпустите, чтобы отправить", "speaker.play": "Воспроизвести этот ответ", "speaker.stop": "Остановить воспроизведение", "toast.transcribed": "Распознано: «{text}»", "toast.networkError": "Ошибка сети", "toast.sttFailed": "Не удалось распознать речь: {error}", "toast.micDenied": "Доступ к микрофону запрещён", "toast.ttsFailed": "Не удалось синтезировать речь: {error}", "toast.voiceReady": "Голос готов", "toast.close": "Закрыть уведомление"},
+    "tr": {"mic.title": "Kaydetmek için basılı tutun · Göndermek için bırakın", "speaker.play": "Bu yanıtı oynat", "speaker.stop": "Oynatmayı durdur", "toast.transcribed": "Metne dönüştürüldü: “{text}”", "toast.networkError": "Ağ hatası", "toast.sttFailed": "Konuşma tanıma başarısız: {error}", "toast.micDenied": "Mikrofon izni reddedildi", "toast.ttsFailed": "Konuşma sentezi başarısız: {error}", "toast.voiceReady": "Ses hazır", "toast.close": "Bildirimi kapat"},
+    "ja": {"mic.title": "押している間録音 · 離すと送信", "speaker.play": "この回答を再生", "speaker.stop": "再生を停止", "toast.transcribed": "文字起こししました: 「{text}」", "toast.networkError": "ネットワークエラー", "toast.sttFailed": "音声認識に失敗しました: {error}", "toast.micDenied": "マイクの使用が許可されませんでした", "toast.ttsFailed": "音声合成に失敗しました: {error}", "toast.voiceReady": "音声の準備ができました", "toast.close": "通知を閉じる"},
+    "zh-CN": {"mic.title": "按住录音 · 松开发送", "speaker.play": "播放此回复", "speaker.stop": "停止播放", "toast.transcribed": "已转写：“{text}”", "toast.networkError": "网络错误", "toast.sttFailed": "语音识别失败：{error}", "toast.micDenied": "麦克风权限被拒绝", "toast.ttsFailed": "语音合成失败：{error}", "toast.voiceReady": "语音已就绪", "toast.close": "关闭通知"},
+    "zh-TW": {"mic.title": "按住錄音 · 放開傳送", "speaker.play": "播放此回覆", "speaker.stop": "停止播放", "toast.transcribed": "已轉錄：「{text}」", "toast.networkError": "網路錯誤", "toast.sttFailed": "語音辨識失敗：{error}", "toast.micDenied": "麥克風權限遭拒", "toast.ttsFailed": "語音合成失敗：{error}", "toast.voiceReady": "語音已就緒", "toast.close": "關閉通知"},
+    "bn": {"mic.title": "রেকর্ড করতে চেপে ধরুন · পাঠাতে ছেড়ে দিন", "speaker.play": "এই উত্তরটি চালান", "speaker.stop": "প্লেব্যাক বন্ধ করুন", "toast.transcribed": "ট্রান্সক্রিপ্ট হয়েছে: “{text}”", "toast.networkError": "নেটওয়ার্ক ত্রুটি", "toast.sttFailed": "স্পিচ রিকগনিশন ব্যর্থ হয়েছে: {error}", "toast.micDenied": "মাইক্রোফোনের অনুমতি প্রত্যাখ্যাত হয়েছে", "toast.ttsFailed": "স্পিচ সিন্থেসিস ব্যর্থ হয়েছে: {error}", "toast.voiceReady": "ভয়েস প্রস্তুত", "toast.close": "বিজ্ঞপ্তি বন্ধ করুন"}
+  };
+
+  // Resolve at call time, not load time: the interface language can change while
+  // the app is open. Exact tag, then base language, then English.
+  function voiceTable() {
+    var lang = document.documentElement.lang || 'en';
+    if (VOICE_STRINGS[lang]) return VOICE_STRINGS[lang];
+    var base = lang.split('-')[0];
+    if (VOICE_STRINGS[base]) return VOICE_STRINGS[base];
+    if (base === 'zh') {
+      return /hant|-tw|-hk|-mo/i.test(lang) ? VOICE_STRINGS['zh-TW'] : VOICE_STRINGS['zh-CN'];
+    }
+    return VOICE_STRINGS.en;
+  }
+
+  function vt(key, vars) {
+    var text = voiceTable()[key];
+    if (text === undefined) text = VOICE_STRINGS.en[key];
+    if (text === undefined) text = key;
+    return text.replace(/\{(\w+)\}/g, function (m, name) {
+      return (vars && vars[name] !== undefined) ? String(vars[name]) : m;
+    });
+  }
+
+  // Tooltip and accessible name together: these buttons are icon-only, so
+  // without an aria-label a screen reader announces nothing useful.
+  function setLabel(el, key) {
+    var text = vt(key);
+    el.title = text;
+    el.setAttribute('aria-label', text);
+  }
+
   // ---------------------------------------------------------------------------
   // Inject global styles
   // ---------------------------------------------------------------------------
@@ -122,7 +174,7 @@
     msgSpan.textContent = msg;
     var closeBtn = document.createElement('button');
     closeBtn.className = 'onp-toast-close';
-    closeBtn.setAttribute('aria-label', 'Close notification');
+    closeBtn.setAttribute('aria-label', vt('toast.close'));
     closeBtn.textContent = '\u00D7';
     closeBtn.addEventListener('click', function () { dismissToast(toast); });
     toast.appendChild(msgSpan);
@@ -155,7 +207,7 @@
   var fab = document.createElement('button');
   fab.id = 'onp-mic-fab';
   fab.innerHTML = MIC_ICON;
-  fab.title = 'Hold to record · Release to send';
+  setLabel(fab, 'mic.title');
   Object.assign(fab.style, {
     position: 'fixed', bottom: '24px', right: '24px',
     width: '44px', height: '44px', borderRadius: '10px',
@@ -257,10 +309,10 @@
               }
             }
             var preview = text.length > 40 ? text.slice(0, 40) + '…' : text;
-            showToast('Transcribed: “' + preview + '”', 'success', 3000);
+            showToast(vt('toast.transcribed', { text: preview }), 'success', 3000);
           })
           .catch(function (e) {
-            var msg = (e instanceof TypeError) ? 'Network error' : ('STT failed: ' + e.message);
+            var msg = (e instanceof TypeError) ? vt('toast.networkError') : vt('toast.sttFailed', { error: e.message });
             showToast(msg, 'error');
           })
           .finally(function () {
@@ -273,7 +325,7 @@
       fab.innerHTML = RECORDING_ICON;
       startLevelMeter(stream);
     }).catch(function (e) {
-      showToast('Microphone permission denied', 'error');
+      showToast(vt('toast.micDenied'), 'error');
       console.error('mic permission denied or recording failed', e);
     });
   });
@@ -308,7 +360,7 @@
     }
     if (_currentSpeakerBtn) {
       _currentSpeakerBtn.innerHTML = SPEAKER_ICON;
-      _currentSpeakerBtn.title = 'Play this response';
+      setLabel(_currentSpeakerBtn, 'speaker.play');
       _currentSpeakerBtn.style.opacity = '0.6';
       _currentSpeakerBtn = null;
     }
@@ -324,7 +376,7 @@
       var btn = document.createElement('button');
       btn.className = 'onp-speaker-btn';
       btn.innerHTML = SPEAKER_ICON;
-      btn.title = 'Play this response';
+      setLabel(btn, 'speaker.play');
       Object.assign(btn.style, {
         marginLeft: '8px', background: 'transparent', border: 'none',
         cursor: 'pointer', fontSize: '14px', opacity: '0.6', color: 'inherit',
@@ -375,7 +427,7 @@
             barFill.style.width = '0%';
             barWrap.style.display = 'inline-flex';
             btn.innerHTML = STOP_ICON;
-            btn.title = 'Stop playback';
+            setLabel(btn, 'speaker.stop');
             btn.style.opacity = '1';
 
             audio.addEventListener('timeupdate', function () {
@@ -388,17 +440,17 @@
               barWrap.style.display = 'none';
             });
             audio.play().catch(function (e) {
-              showToast('TTS failed: ' + e.message, 'error');
+              showToast(vt('toast.ttsFailed', { error: e.message }), 'error');
               stopCurrentAudio();
               barWrap.style.display = 'none';
             });
-            showToast('Voice ready', 'success', 2000);
+            showToast(vt('toast.voiceReady'), 'success', 2000);
           })
           .catch(function (e) {
-            var msg = (e instanceof TypeError) ? 'Network error' : ('TTS failed: ' + e.message);
+            var msg = (e instanceof TypeError) ? vt('toast.networkError') : vt('toast.ttsFailed', { error: e.message });
             showToast(msg, 'error');
             btn.innerHTML = SPEAKER_ICON;
-            btn.title = 'Play this response';
+            setLabel(btn, 'speaker.play');
             barWrap.style.display = 'none';
           });
       });

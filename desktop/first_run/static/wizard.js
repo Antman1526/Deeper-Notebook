@@ -16,6 +16,40 @@
     'Local resource governor deferred spawn': 'msg.governorDeferred',
     'sidecar failed its post-spawn health check': 'msg.healthCheckFailed',
   };
+  // v0.8.130 — launcher sentences that embed live values (a path, a port, an exit
+  // code). Matched by regex over the exact English shape; the named groups are
+  // inserted verbatim into the translated template, never translated themselves.
+  // First match wins. Anything that matches no pattern is free-form exception text
+  // and is shown as received. test_wizard_i18n.py renders the real backend
+  // f-strings from desktop/app.py + launcher.py and asserts each regex still
+  // matches one, so a reworded sentence fails a test.
+  const MESSAGE_PATTERNS = [
+    // desktop/app.py: provider warnings
+    { re: '^No chat GGUF found in (?<path>.+)\\. Local chat will be disabled until you download a model \\(use the Models dialog in Settings, or drop a Hermes-3 / Qwen2\\.5 / Llama-3\\.2 \\*\\.gguf into the folder above\\)\\.$', key: 'msg.noChatGguf' },
+    { re: '^No embedding GGUF found at (?<path>.+)\\. Vector search will be disabled\\. Download nomic-embed-text-v1\\.5\\.f16\\.gguf to enable semantic search\\.$', key: 'msg.noEmbeddingGguf' },
+    // desktop/app.py: openchronicle.detect reports available=True|False
+    { re: '^available=True$', key: 'msg.openchronicleFound' },
+    { re: '^available=False$', key: 'msg.openchronicleNotFound' },
+    // desktop/app.py: memory.commands_registered reports the copied file's path
+    { re: '^(?<path>.*[\\\\/]memory_commands\\.py)$', key: 'msg.memoryCommandsRegistered' },
+    // desktop/launcher.py: _wait_tcp / _wait_http
+    { re: '^child for (?<host>[^\\s:]+):(?<port>\\d+) exited rc=(?<code>-?\\d+) before the port came up — check the per-child log in the debug-mode logs dir$', key: 'msg.childExitedTcp' },
+    { re: '^child for (?<url>\\S+) exited rc=(?<code>-?\\d+) before the endpoint became reachable — check the per-child log in the debug-mode logs dir$', key: 'msg.childExitedHttp' },
+    { re: '^tcp (?<host>[^\\s:]+):(?<port>\\d+) never came up within (?<seconds>[\\d.]+)s$', key: 'msg.tcpTimeout' },
+    { re: '^http (?<url>\\S+) never returned <500 within (?<seconds>[\\d.]+)s$', key: 'msg.httpTimeout' },
+  ];
+  const COMPILED_PATTERNS = MESSAGE_PATTERNS.map(({re, key}) => ({re: new RegExp(re), key}));
+  const translateMessage = (text) => {
+    if (Object.prototype.hasOwnProperty.call(FIXED_MESSAGE_KEYS, text)) {
+      return dnWizardT(FIXED_MESSAGE_KEYS[text]);
+    }
+    for (const {re, key} of COMPILED_PATTERNS) {
+      const m = re.exec(text);
+      if (m) return dnWizardT(key, m.groups);
+    }
+    return text;
+  };
+
   // desktop/first_run/server.py, /api/save handler
   const SAVE_ERROR_KEYS = {
     'invalid provider': 'error.invalidProvider',
@@ -205,9 +239,9 @@
             items[evt.step] = li;
           }
           li.dataset.status = evt.status;
-          // v0.8.130 — fixed launcher sentences are translated by exact match;
-          // every other message is free-form backend text and shown as received.
-          if (evt.message) latest.textContent = fromTable(FIXED_MESSAGE_KEYS, evt.message);
+          // v0.8.130 — fixed sentences by exact match, value-bearing ones by
+          // pattern; everything else is free-form backend text, shown as received.
+          if (evt.message) latest.textContent = translateMessage(evt.message);
           if (evt.step === 'ready' && evt.status === 'done') {
             es.close();
           }

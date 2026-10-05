@@ -71,7 +71,16 @@ window.DN_WIZARD_I18N = {
     "step.window.ready": "Main window",
     "msg.governorDeferred": "Local resource governor deferred spawn",
     "msg.healthCheckFailed": "sidecar failed its post-spawn health check",
-    "error.invalidProvider": "invalid provider"
+    "error.invalidProvider": "invalid provider",
+    "msg.noChatGguf": "No chat GGUF found in {path}. Local chat will be disabled until you download a model (use the Models dialog in Settings, or drop a Hermes-3 / Qwen2.5 / Llama-3.2 *.gguf into the folder above).",
+    "msg.noEmbeddingGguf": "No embedding GGUF found at {path}. Vector search will be disabled. Download nomic-embed-text-v1.5.f16.gguf to enable semantic search.",
+    "msg.openchronicleFound": "OpenChronicle found",
+    "msg.openchronicleNotFound": "OpenChronicle not found",
+    "msg.memoryCommandsRegistered": "Memory commands registered: {path}",
+    "msg.childExitedTcp": "child for {host}:{port} exited rc={code} before the port came up — check the per-child log in the debug-mode logs dir",
+    "msg.childExitedHttp": "child for {url} exited rc={code} before the endpoint became reachable — check the per-child log in the debug-mode logs dir",
+    "msg.tcpTimeout": "tcp {host}:{port} never came up within {seconds}s",
+    "msg.httpTimeout": "http {url} never returned <500 within {seconds}s"
   },
   "de-DE": {
     "meta.title": "Deeper Notebook — Einrichtung",
@@ -137,7 +146,16 @@ window.DN_WIZARD_I18N = {
     "step.window.ready": "Hauptfenster",
     "msg.governorDeferred": "Der lokale Ressourcenmanager hat den Start verschoben",
     "msg.healthCheckFailed": "Der Dienst hat die Zustandsprüfung nach dem Start nicht bestanden",
-    "error.invalidProvider": "Ungültiger Anbieter"
+    "error.invalidProvider": "Ungültiger Anbieter",
+    "msg.noChatGguf": "Kein Chat-GGUF in {path} gefunden. Der lokale Chat bleibt deaktiviert, bis Sie ein Modell herunterladen (über den Dialog „Modelle“ in den Einstellungen oder indem Sie eine *.gguf-Datei wie Hermes-3 / Qwen2.5 / Llama-3.2 in den oben genannten Ordner legen).",
+    "msg.noEmbeddingGguf": "Kein Embedding-GGUF unter {path} gefunden. Die Vektorsuche bleibt deaktiviert. Laden Sie nomic-embed-text-v1.5.f16.gguf herunter, um die semantische Suche zu aktivieren.",
+    "msg.openchronicleFound": "OpenChronicle gefunden",
+    "msg.openchronicleNotFound": "OpenChronicle nicht gefunden",
+    "msg.memoryCommandsRegistered": "Gedächtnisbefehle registriert: {path}",
+    "msg.childExitedTcp": "Der Prozess für {host}:{port} wurde mit Exit-Code {code} beendet, bevor der Port erreichbar war. Prüfen Sie das Protokoll des Prozesses im Debug-Protokollordner.",
+    "msg.childExitedHttp": "Der Prozess für {url} wurde mit Exit-Code {code} beendet, bevor der Endpunkt erreichbar war. Prüfen Sie das Protokoll des Prozesses im Debug-Protokollordner.",
+    "msg.tcpTimeout": "{host}:{port} (TCP) war nach {seconds} s nicht erreichbar",
+    "msg.httpTimeout": "{url} (HTTP) hat innerhalb von {seconds} s keinen Status unter 500 geliefert"
   },
   "es-ES": {
     "meta.title": "Deeper Notebook — Configuración",
@@ -203,7 +221,16 @@ window.DN_WIZARD_I18N = {
     "step.window.ready": "Ventana principal",
     "msg.governorDeferred": "El gestor de recursos local aplazó el inicio",
     "msg.healthCheckFailed": "El servicio no superó la comprobación de estado tras iniciarse",
-    "error.invalidProvider": "Proveedor no válido"
+    "error.invalidProvider": "Proveedor no válido",
+    "msg.noChatGguf": "No se encontró ningún GGUF de chat en {path}. El chat local estará desactivado hasta que descargues un modelo (usa el cuadro de diálogo Modelos en Configuración o copia un archivo *.gguf como Hermes-3 / Qwen2.5 / Llama-3.2 en la carpeta indicada).",
+    "msg.noEmbeddingGguf": "No se encontró ningún GGUF de embeddings en {path}. La búsqueda vectorial estará desactivada. Descarga nomic-embed-text-v1.5.f16.gguf para activar la búsqueda semántica.",
+    "msg.openchronicleFound": "OpenChronicle encontrado",
+    "msg.openchronicleNotFound": "OpenChronicle no encontrado",
+    "msg.memoryCommandsRegistered": "Comandos de memoria registrados: {path}",
+    "msg.childExitedTcp": "El proceso de {host}:{port} terminó con el código {code} antes de que el puerto estuviera disponible. Revisa el registro del proceso en la carpeta de registros de depuración.",
+    "msg.childExitedHttp": "El proceso de {url} terminó con el código {code} antes de que el endpoint estuviera accesible. Revisa el registro del proceso en la carpeta de registros de depuración.",
+    "msg.tcpTimeout": "{host}:{port} (TCP) no estuvo disponible en {seconds} s",
+    "msg.httpTimeout": "{url} (HTTP) no devolvió un estado inferior a 500 en {seconds} s"
   },
   "ca-ES": {
     "meta.title": "Deeper Notebook — Configuració",
@@ -269,7 +296,16 @@ window.DN_WIZARD_I18N = {
     "step.window.ready": "Finestra principal",
     "msg.governorDeferred": "El gestor de recursos local ha ajornat l'inici",
     "msg.healthCheckFailed": "El servei no ha superat la comprovació d'estat després d'iniciar-se",
-    "error.invalidProvider": "Proveïdor no vàlid"
+    "error.invalidProvider": "Proveïdor no vàlid",
+    "msg.noChatGguf": "No s'ha trobat cap GGUF de xat a {path}. El xat local quedarà desactivat fins que baixis un model (fes servir el diàleg Models a Configuració o copia un fitxer *.gguf com Hermes-3 / Qwen2.5 / Llama-3.2 a la carpeta indicada).",
+    "msg.noEmbeddingGguf": "No s'ha trobat cap GGUF d'embeddings a {path}. La cerca vectorial quedarà desactivada. Baixa nomic-embed-text-v1.5.f16.gguf per activar la cerca semàntica.",
+    "msg.openchronicleFound": "OpenChronicle trobat",
+    "msg.openchronicleNotFound": "OpenChronicle no trobat",
+    "msg.memoryCommandsRegistered": "Comandes de memòria registrades: {path}",
+    "msg.childExitedTcp": "El procés de {host}:{port} ha acabat amb el codi {code} abans que el port estigués disponible. Consulta el registre del procés a la carpeta de registres de depuració.",
+    "msg.childExitedHttp": "El procés de {url} ha acabat amb el codi {code} abans que el punt d'accés fos accessible. Consulta el registre del procés a la carpeta de registres de depuració.",
+    "msg.tcpTimeout": "{host}:{port} (TCP) no ha estat disponible en {seconds} s",
+    "msg.httpTimeout": "{url} (HTTP) no ha retornat cap estat inferior a 500 en {seconds} s"
   },
   "fr-FR": {
     "meta.title": "Deeper Notebook — Configuration",
@@ -335,7 +371,16 @@ window.DN_WIZARD_I18N = {
     "step.window.ready": "Fenêtre principale",
     "msg.governorDeferred": "Le gestionnaire de ressources local a différé le démarrage",
     "msg.healthCheckFailed": "Le service n'a pas réussi le contrôle d'état après son démarrage",
-    "error.invalidProvider": "Fournisseur non valide"
+    "error.invalidProvider": "Fournisseur non valide",
+    "msg.noChatGguf": "Aucun GGUF de chat trouvé dans {path}. Le chat local sera désactivé tant que vous n'aurez pas téléchargé de modèle (utilisez la boîte de dialogue Modèles dans les Paramètres, ou déposez un fichier *.gguf comme Hermes-3 / Qwen2.5 / Llama-3.2 dans le dossier ci-dessus).",
+    "msg.noEmbeddingGguf": "Aucun GGUF d'embedding trouvé à l'emplacement {path}. La recherche vectorielle sera désactivée. Téléchargez nomic-embed-text-v1.5.f16.gguf pour activer la recherche sémantique.",
+    "msg.openchronicleFound": "OpenChronicle détecté",
+    "msg.openchronicleNotFound": "OpenChronicle introuvable",
+    "msg.memoryCommandsRegistered": "Commandes de mémoire enregistrées : {path}",
+    "msg.childExitedTcp": "Le processus de {host}:{port} s'est terminé avec le code {code} avant que le port soit disponible. Consultez le journal du processus dans le dossier des journaux de débogage.",
+    "msg.childExitedHttp": "Le processus de {url} s'est terminé avec le code {code} avant que le point de terminaison soit accessible. Consultez le journal du processus dans le dossier des journaux de débogage.",
+    "msg.tcpTimeout": "{host}:{port} (TCP) est resté indisponible pendant {seconds} s",
+    "msg.httpTimeout": "{url} (HTTP) n'a renvoyé aucun statut inférieur à 500 en {seconds} s"
   },
   "it-IT": {
     "meta.title": "Deeper Notebook — Configurazione",
@@ -363,7 +408,7 @@ window.DN_WIZARD_I18N = {
     "memory.skip": "Salta: configura più tardi",
     "memory.install": "Apri la pagina di installazione",
     "setup.title": "Configurazione di Deeper Notebook",
-    "setup.explainer": "Il primo avvio richiede circa un minuto. Stiamo creando un ambiente Python isolato, installando le dipendenze IA, applicando le migrazioni del database e preparando i server dei modelli locali (embedding, trascrizione, voce, chat). Gli avvii successivi richiedono pochi secondi.",
+    "setup.explainer": "Il primo avvio richiede circa un minuto. Stiamo creando un ambiente Python isolato, installando le dipendenze IA, applicando le migrazioni del database e preparando i server dei modelli locali (embedding, trascrizione, sintesi vocale, chat). Gli avvii successivi richiedono pochi secondi.",
     "progress.latest": "Ultimo:",
     "progress.elapsed": "Tempo trascorso:",
     "progress.starting": "avvio…",
@@ -388,8 +433,8 @@ window.DN_WIZARD_I18N = {
     "step.supervisor.worker": "Processo in background",
     "step.supervisor.next": "Interfaccia web",
     "step.supervisor.llamacpp_embed": "Embedding",
-    "step.supervisor.whisper": "Da voce a testo",
-    "step.supervisor.piper": "Da testo a voce",
+    "step.supervisor.whisper": "Riconoscimento vocale",
+    "step.supervisor.piper": "Sintesi vocale",
     "step.supervisor.llamacpp_chat": "Server del modello di chat",
     "step.supervisor.memory": "Servizio di memoria",
     "step.supervisor.openchronicle": "Bridge OpenChronicle",
@@ -401,7 +446,16 @@ window.DN_WIZARD_I18N = {
     "step.window.ready": "Finestra principale",
     "msg.governorDeferred": "Il gestore delle risorse locali ha rinviato l'avvio",
     "msg.healthCheckFailed": "Il servizio non ha superato il controllo di integrità dopo l'avvio",
-    "error.invalidProvider": "Provider non valido"
+    "error.invalidProvider": "Provider non valido",
+    "msg.noChatGguf": "Nessun GGUF di chat trovato in {path}. La chat locale resterà disattivata finché non scarichi un modello (usa la finestra Modelli nelle Impostazioni oppure copia un file *.gguf come Hermes-3 / Qwen2.5 / Llama-3.2 nella cartella indicata sopra).",
+    "msg.noEmbeddingGguf": "Nessun GGUF di embedding trovato in {path}. La ricerca vettoriale resterà disattivata. Scarica nomic-embed-text-v1.5.f16.gguf per abilitare la ricerca semantica.",
+    "msg.openchronicleFound": "OpenChronicle trovato",
+    "msg.openchronicleNotFound": "OpenChronicle non trovato",
+    "msg.memoryCommandsRegistered": "Comandi di memoria registrati: {path}",
+    "msg.childExitedTcp": "Il processo per {host}:{port} è terminato con codice {code} prima che la porta fosse disponibile. Controlla il log del processo nella cartella dei log di debug.",
+    "msg.childExitedHttp": "Il processo per {url} è terminato con codice {code} prima che l'endpoint fosse raggiungibile. Controlla il log del processo nella cartella dei log di debug.",
+    "msg.tcpTimeout": "{host}:{port} (TCP) non è diventato disponibile entro {seconds} s",
+    "msg.httpTimeout": "{url} (HTTP) non ha restituito uno stato inferiore a 500 entro {seconds} s"
   },
   "pt-BR": {
     "meta.title": "Deeper Notebook — Configuração",
@@ -467,7 +521,16 @@ window.DN_WIZARD_I18N = {
     "step.window.ready": "Janela principal",
     "msg.governorDeferred": "O gerenciador de recursos local adiou a inicialização",
     "msg.healthCheckFailed": "O serviço falhou na verificação de integridade após iniciar",
-    "error.invalidProvider": "Provedor inválido"
+    "error.invalidProvider": "Provedor inválido",
+    "msg.noChatGguf": "Nenhum GGUF de chat encontrado em {path}. O chat local ficará desativado até você baixar um modelo (use a caixa de diálogo Modelos em Configurações ou coloque um arquivo *.gguf como Hermes-3 / Qwen2.5 / Llama-3.2 na pasta acima).",
+    "msg.noEmbeddingGguf": "Nenhum GGUF de embeddings encontrado em {path}. A busca vetorial ficará desativada. Baixe nomic-embed-text-v1.5.f16.gguf para ativar a busca semântica.",
+    "msg.openchronicleFound": "OpenChronicle encontrado",
+    "msg.openchronicleNotFound": "OpenChronicle não encontrado",
+    "msg.memoryCommandsRegistered": "Comandos de memória registrados: {path}",
+    "msg.childExitedTcp": "O processo de {host}:{port} foi encerrado com código {code} antes de a porta ficar disponível. Verifique o log do processo na pasta de logs de depuração.",
+    "msg.childExitedHttp": "O processo de {url} foi encerrado com código {code} antes de o endpoint ficar acessível. Verifique o log do processo na pasta de logs de depuração.",
+    "msg.tcpTimeout": "{host}:{port} (TCP) não ficou disponível em {seconds} s",
+    "msg.httpTimeout": "{url} (HTTP) não retornou um status inferior a 500 em {seconds} s"
   },
   "pl-PL": {
     "meta.title": "Deeper Notebook — Konfiguracja",
@@ -533,7 +596,16 @@ window.DN_WIZARD_I18N = {
     "step.window.ready": "Okno główne",
     "msg.governorDeferred": "Lokalny menedżer zasobów odroczył uruchomienie",
     "msg.healthCheckFailed": "Usługa nie przeszła kontroli stanu po uruchomieniu",
-    "error.invalidProvider": "Nieprawidłowy dostawca"
+    "error.invalidProvider": "Nieprawidłowy dostawca",
+    "msg.noChatGguf": "Nie znaleziono pliku GGUF czatu w {path}. Lokalny czat będzie wyłączony, dopóki nie pobierzesz modelu (użyj okna Modele w Ustawieniach lub wrzuć plik *.gguf, np. Hermes-3 / Qwen2.5 / Llama-3.2, do wskazanego folderu).",
+    "msg.noEmbeddingGguf": "Nie znaleziono pliku GGUF osadzania w {path}. Wyszukiwanie wektorowe będzie wyłączone. Pobierz nomic-embed-text-v1.5.f16.gguf, aby włączyć wyszukiwanie semantyczne.",
+    "msg.openchronicleFound": "Znaleziono OpenChronicle",
+    "msg.openchronicleNotFound": "Nie znaleziono OpenChronicle",
+    "msg.memoryCommandsRegistered": "Zarejestrowano polecenia pamięci: {path}",
+    "msg.childExitedTcp": "Proces dla {host}:{port} zakończył się kodem {code}, zanim port stał się dostępny. Sprawdź dziennik procesu w folderze dzienników debugowania.",
+    "msg.childExitedHttp": "Proces dla {url} zakończył się kodem {code}, zanim punkt końcowy stał się dostępny. Sprawdź dziennik procesu w folderze dzienników debugowania.",
+    "msg.tcpTimeout": "{host}:{port} (TCP) nie stał się dostępny w ciągu {seconds} s",
+    "msg.httpTimeout": "{url} (HTTP) nie zwrócił statusu poniżej 500 w ciągu {seconds} s"
   },
   "ru-RU": {
     "meta.title": "Deeper Notebook — Настройка",
@@ -599,7 +671,16 @@ window.DN_WIZARD_I18N = {
     "step.window.ready": "Главное окно",
     "msg.governorDeferred": "Локальный менеджер ресурсов отложил запуск",
     "msg.healthCheckFailed": "Служба не прошла проверку работоспособности после запуска",
-    "error.invalidProvider": "Недопустимый провайдер"
+    "error.invalidProvider": "Недопустимый провайдер",
+    "msg.noChatGguf": "GGUF-файл для чата не найден в {path}. Локальный чат будет отключён, пока вы не скачаете модель (используйте диалог «Модели» в настройках или поместите файл *.gguf, например Hermes-3 / Qwen2.5 / Llama-3.2, в указанную выше папку).",
+    "msg.noEmbeddingGguf": "GGUF-файл эмбеддингов не найден в {path}. Векторный поиск будет отключён. Скачайте nomic-embed-text-v1.5.f16.gguf, чтобы включить семантический поиск.",
+    "msg.openchronicleFound": "OpenChronicle найден",
+    "msg.openchronicleNotFound": "OpenChronicle не найден",
+    "msg.memoryCommandsRegistered": "Команды памяти зарегистрированы: {path}",
+    "msg.childExitedTcp": "Процесс для {host}:{port} завершился с кодом {code}, прежде чем порт стал доступен. Проверьте журнал процесса в папке журналов отладки.",
+    "msg.childExitedHttp": "Процесс для {url} завершился с кодом {code}, прежде чем конечная точка стала доступна. Проверьте журнал процесса в папке журналов отладки.",
+    "msg.tcpTimeout": "{host}:{port} (TCP) не стал доступен за {seconds} с",
+    "msg.httpTimeout": "{url} (HTTP) не вернул статус ниже 500 за {seconds} с"
   },
   "tr-TR": {
     "meta.title": "Deeper Notebook — Kurulum",
@@ -665,7 +746,16 @@ window.DN_WIZARD_I18N = {
     "step.window.ready": "Ana pencere",
     "msg.governorDeferred": "Yerel kaynak yöneticisi başlatmayı erteledi",
     "msg.healthCheckFailed": "Hizmet, başladıktan sonra sağlık denetimini geçemedi",
-    "error.invalidProvider": "Geçersiz sağlayıcı"
+    "error.invalidProvider": "Geçersiz sağlayıcı",
+    "msg.noChatGguf": "{path} konumunda sohbet GGUF'u bulunamadı. Bir model indirene kadar yerel sohbet devre dışı kalır (Ayarlar'daki Modeller penceresini kullanın veya Hermes-3 / Qwen2.5 / Llama-3.2 gibi bir *.gguf dosyasını yukarıdaki klasöre bırakın).",
+    "msg.noEmbeddingGguf": "{path} konumunda gömme GGUF'u bulunamadı. Vektör arama devre dışı kalır. Anlamsal aramayı etkinleştirmek için nomic-embed-text-v1.5.f16.gguf dosyasını indirin.",
+    "msg.openchronicleFound": "OpenChronicle bulundu",
+    "msg.openchronicleNotFound": "OpenChronicle bulunamadı",
+    "msg.memoryCommandsRegistered": "Bellek komutları kaydedildi: {path}",
+    "msg.childExitedTcp": "{host}:{port} için süreç, bağlantı noktası kullanılabilir olmadan önce {code} koduyla sona erdi. Hata ayıklama günlükleri klasöründeki süreç günlüğünü kontrol edin.",
+    "msg.childExitedHttp": "{url} için süreç, uç nokta erişilebilir olmadan önce {code} koduyla sona erdi. Hata ayıklama günlükleri klasöründeki süreç günlüğünü kontrol edin.",
+    "msg.tcpTimeout": "{host}:{port} (TCP) {seconds} sn içinde kullanılabilir olmadı",
+    "msg.httpTimeout": "{url} (HTTP) {seconds} sn içinde 500'ün altında bir durum döndürmedi"
   },
   "ja-JP": {
     "meta.title": "Deeper Notebook — セットアップ",
@@ -731,7 +821,16 @@ window.DN_WIZARD_I18N = {
     "step.window.ready": "メインウィンドウ",
     "msg.governorDeferred": "ローカルのリソースマネージャーが起動を保留しました",
     "msg.healthCheckFailed": "サービスが起動後のヘルスチェックに失敗しました",
-    "error.invalidProvider": "無効なプロバイダーです"
+    "error.invalidProvider": "無効なプロバイダーです",
+    "msg.noChatGguf": "{path} にチャット用のGGUFが見つかりません。モデルをダウンロードするまでローカルチャットは無効です（設定のモデルダイアログを使うか、Hermes-3 / Qwen2.5 / Llama-3.2 などの *.gguf を上記のフォルダに入れてください）。",
+    "msg.noEmbeddingGguf": "{path} にEmbedding用のGGUFが見つかりません。ベクトル検索は無効になります。セマンティック検索を有効にするには nomic-embed-text-v1.5.f16.gguf をダウンロードしてください。",
+    "msg.openchronicleFound": "OpenChronicleが見つかりました",
+    "msg.openchronicleNotFound": "OpenChronicleが見つかりません",
+    "msg.memoryCommandsRegistered": "メモリコマンドを登録しました: {path}",
+    "msg.childExitedTcp": "{host}:{port} のプロセスは、ポートが利用可能になる前にコード {code} で終了しました。デバッグログフォルダにあるプロセスのログを確認してください。",
+    "msg.childExitedHttp": "{url} のプロセスは、エンドポイントに到達できるようになる前にコード {code} で終了しました。デバッグログフォルダにあるプロセスのログを確認してください。",
+    "msg.tcpTimeout": "{host}:{port}（TCP）は{seconds}秒以内に利用可能になりませんでした",
+    "msg.httpTimeout": "{url}（HTTP）は{seconds}秒以内に500未満のステータスを返しませんでした"
   },
   "zh-CN": {
     "meta.title": "Deeper Notebook — 设置",
@@ -797,7 +896,16 @@ window.DN_WIZARD_I18N = {
     "step.window.ready": "主窗口",
     "msg.governorDeferred": "本地资源管理器已推迟启动",
     "msg.healthCheckFailed": "服务启动后未通过健康检查",
-    "error.invalidProvider": "无效的提供商"
+    "error.invalidProvider": "无效的提供商",
+    "msg.noChatGguf": "在 {path} 中未找到聊天用 GGUF。在您下载模型之前，本地聊天将不可用（请使用设置中的“模型”对话框，或将 Hermes-3 / Qwen2.5 / Llama-3.2 等 *.gguf 文件放入上述文件夹）。",
+    "msg.noEmbeddingGguf": "在 {path} 未找到嵌入用 GGUF。向量搜索将不可用。请下载 nomic-embed-text-v1.5.f16.gguf 以启用语义搜索。",
+    "msg.openchronicleFound": "已找到 OpenChronicle",
+    "msg.openchronicleNotFound": "未找到 OpenChronicle",
+    "msg.memoryCommandsRegistered": "记忆命令已注册：{path}",
+    "msg.childExitedTcp": "{host}:{port} 的子进程在端口可用之前就以退出码 {code} 结束。请查看调试日志文件夹中该进程的日志。",
+    "msg.childExitedHttp": "{url} 的子进程在端点可访问之前就以退出码 {code} 结束。请查看调试日志文件夹中该进程的日志。",
+    "msg.tcpTimeout": "{host}:{port}（TCP）在 {seconds} 秒内未能就绪",
+    "msg.httpTimeout": "{url}（HTTP）在 {seconds} 秒内未返回低于 500 的状态码"
   },
   "zh-TW": {
     "meta.title": "Deeper Notebook — 設定",
@@ -863,7 +971,16 @@ window.DN_WIZARD_I18N = {
     "step.window.ready": "主視窗",
     "msg.governorDeferred": "本機資源管理員已延後啟動",
     "msg.healthCheckFailed": "服務啟動後未通過健康檢查",
-    "error.invalidProvider": "無效的供應商"
+    "error.invalidProvider": "無效的供應商",
+    "msg.noChatGguf": "在 {path} 中找不到聊天用 GGUF。在您下載模型之前，本機聊天將無法使用（請使用設定中的「模型」對話框，或將 Hermes-3 / Qwen2.5 / Llama-3.2 等 *.gguf 檔案放入上述資料夾）。",
+    "msg.noEmbeddingGguf": "在 {path} 找不到嵌入用 GGUF。向量搜尋將無法使用。請下載 nomic-embed-text-v1.5.f16.gguf 以啟用語意搜尋。",
+    "msg.openchronicleFound": "已找到 OpenChronicle",
+    "msg.openchronicleNotFound": "找不到 OpenChronicle",
+    "msg.memoryCommandsRegistered": "記憶指令已註冊：{path}",
+    "msg.childExitedTcp": "{host}:{port} 的子程序在連接埠可用之前就以結束代碼 {code} 結束。請查看偵錯記錄資料夾中該程序的記錄。",
+    "msg.childExitedHttp": "{url} 的子程序在端點可存取之前就以結束代碼 {code} 結束。請查看偵錯記錄資料夾中該程序的記錄。",
+    "msg.tcpTimeout": "{host}:{port}（TCP）在 {seconds} 秒內未能就緒",
+    "msg.httpTimeout": "{url}（HTTP）在 {seconds} 秒內未傳回低於 500 的狀態碼"
   },
   "bn-IN": {
     "meta.title": "Deeper Notebook — সেটআপ",
@@ -929,7 +1046,16 @@ window.DN_WIZARD_I18N = {
     "step.window.ready": "প্রধান উইন্ডো",
     "msg.governorDeferred": "লোকাল রিসোর্স ম্যানেজার চালু করা স্থগিত রেখেছে",
     "msg.healthCheckFailed": "চালু হওয়ার পর সার্ভিসটি হেলথ চেক পাস করেনি",
-    "error.invalidProvider": "অবৈধ প্রদানকারী"
+    "error.invalidProvider": "অবৈধ প্রদানকারী",
+    "msg.noChatGguf": "{path}-এ চ্যাটের জন্য কোনো GGUF পাওয়া যায়নি। মডেল ডাউনলোড না করা পর্যন্ত লোকাল চ্যাট বন্ধ থাকবে (সেটিংসের মডেল ডায়ালগ ব্যবহার করুন, অথবা Hermes-3 / Qwen2.5 / Llama-3.2-এর মতো একটি *.gguf ফাইল উপরের ফোল্ডারে রাখুন)।",
+    "msg.noEmbeddingGguf": "{path}-এ এমবেডিংয়ের জন্য কোনো GGUF পাওয়া যায়নি। ভেক্টর সার্চ বন্ধ থাকবে। সিম্যান্টিক সার্চ চালু করতে nomic-embed-text-v1.5.f16.gguf ডাউনলোড করুন।",
+    "msg.openchronicleFound": "OpenChronicle পাওয়া গেছে",
+    "msg.openchronicleNotFound": "OpenChronicle পাওয়া যায়নি",
+    "msg.memoryCommandsRegistered": "মেমরি কমান্ড নিবন্ধিত হয়েছে: {path}",
+    "msg.childExitedTcp": "পোর্ট চালু হওয়ার আগেই {host}:{port}-এর প্রসেস কোড {code} দিয়ে বন্ধ হয়ে গেছে। ডিবাগ লগ ফোল্ডারে প্রসেসের লগ দেখুন।",
+    "msg.childExitedHttp": "এন্ডপয়েন্ট পাওয়া যাওয়ার আগেই {url}-এর প্রসেস কোড {code} দিয়ে বন্ধ হয়ে গেছে। ডিবাগ লগ ফোল্ডারে প্রসেসের লগ দেখুন।",
+    "msg.tcpTimeout": "{host}:{port} (TCP) {seconds} সেকেন্ডের মধ্যে চালু হয়নি",
+    "msg.httpTimeout": "{url} (HTTP) {seconds} সেকেন্ডের মধ্যে 500-এর কম কোনো স্ট্যাটাস ফেরত দেয়নি"
   }
 };
 
