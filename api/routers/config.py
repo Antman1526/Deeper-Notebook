@@ -9,6 +9,7 @@ from fastapi import APIRouter, Request
 from loguru import logger
 
 from api.routers.sources import _source_upload_max_bytes
+from desktop.data_root import active_data_root
 from deeper_notebook.database.repository import repo_query
 from deeper_notebook.utils.version_utils import (
     compare_versions,
@@ -134,6 +135,24 @@ async def check_database_health() -> dict:
         return {"status": "offline", "error": str(e)}
 
 
+def _data_path_display() -> Optional[str]:
+    """v0.8.130 — where this install keeps its data, as the interface shows it.
+
+    Home's tip named ~/.deeper-notebook/ whatever the real folder was. The home
+    directory is shown as `~`; `None` means the root could not be resolved, and
+    the interface then keeps its default wording.
+    """
+    try:
+        root = active_data_root()
+    except Exception:
+        return None
+    try:
+        shown = f"~/{root.relative_to(Path.home()).as_posix()}"
+    except ValueError:
+        shown = root.as_posix()
+    return shown.rstrip("/") + "/"
+
+
 @router.get("/config")
 async def get_config(request: Request):
     """
@@ -172,6 +191,7 @@ async def get_config(request: Request):
         "hasUpdate": has_update,
         "dbStatus": db_status,
         "sourceUploadMaxBytes": _source_upload_max_bytes(),
+        "dataPath": _data_path_display(),
     }
 
 

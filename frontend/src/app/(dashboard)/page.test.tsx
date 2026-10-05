@@ -54,6 +54,11 @@ vi.mock('@/components/layout/AppShell', () => ({
   ),
 }))
 
+// v0.8.130 — the page asks /api/config for the data folder (see page.data-path.test.tsx).
+vi.mock('@/lib/config', () => ({
+  getConfig: async () => ({ apiUrl: '', version: 'test', buildTime: '', dataPath: null }),
+}))
+
 vi.mock('@/lib/hooks/use-notebooks', () => ({
   useNotebooks: () => dashboardFixtures.notebooks,
 }))

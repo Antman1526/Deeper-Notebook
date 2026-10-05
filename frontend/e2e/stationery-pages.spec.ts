@@ -57,6 +57,15 @@ test('the page title sits on a letterhead rule with a marker in the brand ink', 
   expect(rule).toEqual({ line: true, marker: true, ink: true })
 })
 
+test('Studio, which has its own header, carries the same letterhead rule', async ({ page }) => {
+  await open(page, '/studio')
+  const marker = await page.locator('main [data-dn-letterhead]').first().evaluate((el) => {
+    const style = getComputedStyle(el, '::after')
+    return style.content !== 'none' && parseFloat(style.height) === 2
+  })
+  expect(marker).toBe(true)
+})
+
 test('tabs are index tabs: the open one is a raised paper tab marked in the brand ink', async ({ page }) => {
   await open(page, '/podcasts')
   const tabs = await page.evaluate(() => {

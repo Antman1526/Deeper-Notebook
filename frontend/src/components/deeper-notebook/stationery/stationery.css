@@ -921,15 +921,15 @@ html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] :where(main
 }
 
 /* The letterhead: a hairline under the page title, begun by a short stroke of brand ink. */
-html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] [data-dn-folio-page-header] {
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] :is([data-dn-folio-page-header], [data-dn-letterhead]) {
   position: relative;
   /* Room for the rule, and air between it and the page. */
   padding-block-end: 1.125rem;
   margin-block-end: 0.875rem;
 }
 
-html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] [data-dn-folio-page-header]::before,
-html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] [data-dn-folio-page-header]::after {
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] :is([data-dn-folio-page-header], [data-dn-letterhead])::before,
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] :is([data-dn-folio-page-header], [data-dn-letterhead])::after {
   position: absolute;
   inset-block-end: 0;
   inset-inline-start: 0;
@@ -937,13 +937,13 @@ html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] [data-dn-fo
   pointer-events: none;
 }
 
-html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] [data-dn-folio-page-header]::before {
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] :is([data-dn-folio-page-header], [data-dn-letterhead])::before {
   inset-inline-end: 0;
   block-size: 1px;
   background: var(--border);
 }
 
-html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] [data-dn-folio-page-header]::after {
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] :is([data-dn-folio-page-header], [data-dn-letterhead])::after {
   inline-size: 2.5rem;
   block-size: 2px;
   margin-block-end: -0.5px;
@@ -981,4 +981,12 @@ html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] main [role=
   border-radius: 0 0 2px 2px;
   background: var(--primary);
   content: '';
+}
+
+/* The rail's scrollbar, when it needs one (the desktop shell adds rows to the rail):
+   a thin stroke in the page's own grey. It was the system's heavy dark bar. */
+[data-dn-visual-system='v2'] .dn-rail,
+.dn-rail {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--muted-foreground) 32%, transparent) transparent;
 }

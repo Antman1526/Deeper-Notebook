@@ -364,7 +364,8 @@ export default function StudioPage() {
               bumped from `text-sm` to default body size — the
               Studio is a flagship feature; the explainer copy
               shouldn't read as a footnote. */}
-          <header className="mb-6 space-y-2">
+          {/* v0.8.130 — data-dn-letterhead: the rule under the title, as on every other page. */}
+          <header data-dn-letterhead="" className="mb-6 space-y-2">
             <h1 className="text-3xl font-semibold tracking-tight">{t('studio.title')}</h1>
             <p className="text-muted-foreground max-w-3xl">
               {t('studio.subtitle')}
