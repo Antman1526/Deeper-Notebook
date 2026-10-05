@@ -2,6 +2,35 @@
   const THEMES = window.DN_THEME_CATALOG;
   const dnWizardT = window.dnWizardT;
 
+  // v0.8.130 — fixed sentences the launcher/server send as `message` / `error`,
+  // keyed by the exact English literal. Only literals with no interpolated
+  // values belong here; paths, exception text and URLs are shown as received.
+  // desktop/tests/test_wizard_i18n.py asserts each literal still appears
+  // verbatim in the backend source, so a reworded sentence fails a test
+  // instead of silently falling back to English.
+  const FIXED_MESSAGE_KEYS = {
+    // desktop/app.py
+    'Launcher starting…': 'msg.launcherStarting',
+    'Main window opening…': 'msg.windowOpening',
+    // desktop/launcher.py
+    'Local resource governor deferred spawn': 'msg.governorDeferred',
+    'sidecar failed its post-spawn health check': 'msg.healthCheckFailed',
+  };
+  // desktop/first_run/server.py, /api/save handler
+  const SAVE_ERROR_KEYS = {
+    'invalid provider': 'error.invalidProvider',
+  };
+  const fromTable = (table, text) =>
+    Object.prototype.hasOwnProperty.call(table, text) ? dnWizardT(table[text]) : text;
+
+  // Progress step codes ("supervisor.surreal") get a friendly label when the
+  // dictionary has a `step.<code>` key, else the raw code as before.
+  const stepLabel = (code) => {
+    const key = 'step.' + code;
+    const label = dnWizardT(key);
+    return label !== key ? label : code.replaceAll('.', ' › ');
+  };
+
   // v0.8.130 — indigo is the one brand; the wizard used to preselect teal Research Core Dark.
   let chosenTheme = 'gemini-forward-light';
   let openchronicleChoice = 'skip';
@@ -131,8 +160,8 @@
             let detail = `HTTP ${resp.status}`;
             try {
               const body = await resp.json();
-              if (body.error) detail = body.error;
-              else if (body.detail) detail = body.detail;
+              if (body.error) detail = fromTable(SAVE_ERROR_KEYS, body.error);
+              else if (body.detail) detail = fromTable(SAVE_ERROR_KEYS, body.detail);
             } catch (_) { /* not JSON */ }
             throw new Error(detail);
           }
@@ -171,21 +200,14 @@
           let li = items[evt.step];
           if (!li) {
             li = document.createElement('li');
-            li.textContent = evt.step.replaceAll('.', ' › ');
+            li.textContent = stepLabel(evt.step);
             list.appendChild(li);
             items[evt.step] = li;
           }
           li.dataset.status = evt.status;
-          // v0.8.130 — the two fixed, code-keyed messages the launcher sends are
-          // mapped client-side; every other message is free-form backend text
-          // (paths, exception strings) and is shown as received.
-          if (evt.step === 'startup' && evt.status === 'running') {
-            latest.textContent = dnWizardT('progress.launcherStarting');
-          } else if (evt.step === 'ready' && evt.status === 'done') {
-            latest.textContent = dnWizardT('progress.windowOpening');
-          } else if (evt.message) {
-            latest.textContent = evt.message;
-          }
+          // v0.8.130 — fixed launcher sentences are translated by exact match;
+          // every other message is free-form backend text and shown as received.
+          if (evt.message) latest.textContent = fromTable(FIXED_MESSAGE_KEYS, evt.message);
           if (evt.step === 'ready' && evt.status === 'done') {
             es.close();
           }

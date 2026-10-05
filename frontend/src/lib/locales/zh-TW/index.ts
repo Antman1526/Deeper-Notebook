@@ -4076,7 +4076,7 @@ Object.assign(ensureSection(rootNode, 'notebooks'), {
 });
 // v0.8.130 — auto-registered local credentials are named in English in the database; translated at display time.
 Object.assign(ensureSection(ensureSection(rootNode, 'models'), 'localCredential'), {
-  named: "{{name}}（本地）",
+  named: "{{name}}（本機）",
   memory: "記憶",
 });
 // v0.8.130 — overall local-model health (healthy / degraded / down) was shown as the raw API value.

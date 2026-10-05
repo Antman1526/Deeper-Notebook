@@ -29,7 +29,8 @@
       '  70%  { box-shadow: 0 0 0 14px rgba(var(--dn-pulse-rgb,45,212,191), 0); }',
       '  100% { box-shadow: 0 0 0 0 rgba(var(--dn-pulse-rgb,45,212,191), 0); }',
       '}',
-      '#onp-mic-fab.recording { animation: onp-pulse 1.1s ease-out infinite; }',
+      '#onp-mic-fab.recording { animation: onp-pulse 1.1s ease-out infinite; background: var(--destructive, #dc2626) !important; color: #fff !important; }',
+      '#onp-mic-fab:active { transform: scale(0.96); }',
 
       // SVG spinner (used by both mic and speaker)
       '@keyframes onp-spin { to { transform: rotate(360deg); } }',
@@ -37,7 +38,7 @@
 
       // Audio level bars
       '#onp-level-bars {',
-      '  position: fixed; bottom: 82px; right: 28px;',
+      '  position: fixed; bottom: 76px; right: 28px;',
       '  display: flex; align-items: flex-end; gap: 3px;',
       '  height: 20px; z-index: 99998; opacity: 0;',
       '  transition: opacity 0.2s;',
@@ -57,7 +58,8 @@
       '}',
       '.onp-toast {',
       '  min-width: 240px; max-width: 420px;',
-      '  background: var(--surface, #fff); color: var(--text, #222);',
+      '  background: var(--card, #fff); color: var(--card-foreground, #222);',
+      '  border: 1px solid var(--border, #ddd);',
       '  border-radius: 8px; padding: 10px 14px;',
       '  font: 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;',
       '  box-shadow: 0 4px 20px rgba(0,0,0,0.18);',
@@ -72,7 +74,7 @@
       '.onp-toast .onp-toast-msg { flex: 1; }',
       '.onp-toast .onp-toast-close {',
       '  background: transparent; border: none; cursor: pointer;',
-      '  font-size: 14px; color: var(--muted, #888); line-height: 1;',
+      '  font-size: 14px; color: var(--muted-foreground, #888); line-height: 1;',
       '  padding: 0 2px;',
       '}',
 
@@ -121,7 +123,7 @@
     var closeBtn = document.createElement('button');
     closeBtn.className = 'onp-toast-close';
     closeBtn.setAttribute('aria-label', 'Close notification');
-    closeBtn.textContent = '✕';
+    closeBtn.textContent = '\u00D7';
     closeBtn.addEventListener('click', function () { dismissToast(toast); });
     toast.appendChild(msgSpan);
     toast.appendChild(closeBtn);
@@ -146,18 +148,23 @@
   // ---------------------------------------------------------------------------
   // Mic FAB
   // ---------------------------------------------------------------------------
+  // v0.8.130 — drawn icons in the app's own tokens: the emoji glyphs and the circle did
+  // not match the interface, and `--on-primary` is not a token the app defines.
+  var MIC_ICON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19v3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><rect x="9" y="2" width="6" height="13" rx="3"/></svg>';
+  var RECORDING_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="2"/></svg>';
   var fab = document.createElement('button');
   fab.id = 'onp-mic-fab';
-  fab.innerHTML = '🎤';
+  fab.innerHTML = MIC_ICON;
   fab.title = 'Hold to record · Release to send';
   Object.assign(fab.style, {
     position: 'fixed', bottom: '24px', right: '24px',
-    width: '52px', height: '52px', borderRadius: '50%',
-    background: 'var(--primary, #2D7FF9)', color: 'var(--on-primary, #fff)',
-    border: '1px solid var(--border, #ccc)', fontSize: '24px',
+    width: '44px', height: '44px', borderRadius: '10px',
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    background: 'var(--primary, #2D7FF9)', color: 'var(--primary-foreground, #fff)',
+    border: 'none', padding: '0',
     cursor: 'pointer', zIndex: '99999',
-    boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
-    transition: 'transform 0.15s',
+    boxShadow: '0 1px 2px rgba(0,0,0,0.12), 0 10px 22px -12px rgba(0,0,0,0.45)',
+    transition: 'transform 0.15s, background-color 0.15s',
   });
   document.body.appendChild(fab);
 
@@ -257,13 +264,13 @@
             showToast(msg, 'error');
           })
           .finally(function () {
-            fab.innerHTML = '🎤';
+            fab.innerHTML = MIC_ICON;
             stream.getTracks().forEach(function (t) { t.stop(); });
           });
       };
       mediaRecorder.start();
       fab.classList.add('recording');
-      fab.innerHTML = '🔴';
+      fab.innerHTML = RECORDING_ICON;
       startLevelMeter(stream);
     }).catch(function (e) {
       showToast('Microphone permission denied', 'error');
@@ -285,7 +292,7 @@
   var _currentProgressFill = null;
   var _currentSpeakerBtn = null;
 
-  var SPEAKER_ICON = '🔊';
+  var SPEAKER_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4.7a.7.7 0 0 0-1.2-.5L6.4 7.6A1.4 1.4 0 0 1 5.4 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.4a1.4 1.4 0 0 1 1 .4l3.4 3.4a.7.7 0 0 0 1.2-.5z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.4 18.4a9 9 0 0 0 0-12.8"/></svg>';
   var STOP_ICON = '<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><rect x="2" y="2" width="12" height="12" rx="2"/></svg>';
 
   function stopCurrentAudio() {
@@ -320,7 +327,7 @@
       btn.title = 'Play this response';
       Object.assign(btn.style, {
         marginLeft: '8px', background: 'transparent', border: 'none',
-        cursor: 'pointer', fontSize: '14px', opacity: '0.6',
+        cursor: 'pointer', fontSize: '14px', opacity: '0.6', color: 'inherit',
         verticalAlign: 'middle',
       });
 

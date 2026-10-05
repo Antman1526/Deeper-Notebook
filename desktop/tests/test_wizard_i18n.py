@@ -150,6 +150,8 @@ def test_wizard_js_has_no_leftover_english_ui_strings(wizard_js):
     code = "\n".join(
         line for line in wizard_js.splitlines() if not line.lstrip().startswith("//")
     )
+    # The exact-English lookup tables (backend literals) legitimately hold English.
+    code = re.sub(r"const (?:FIXED_MESSAGE_KEYS|SAVE_ERROR_KEYS) = \{.*?\n  \};", "", code, flags=re.DOTALL)
     for phrase in (
         "Saving config",
         "Failed to save config",
@@ -211,3 +213,91 @@ def test_non_english_locales_are_actually_translated(dictionary):
             continue
         same = [k for k, v in dictionary[locale].items() if v == english[k]]
         assert len(same) <= 3, f"{locale} leaves English values: {same}"
+
+
+# --- v0.8.130 follow-up: progress step labels, fixed launcher messages, save errors ---
+
+DESKTOP = ROOT / "desktop"
+_STEP_CALL = re.compile(
+    r'(?:\b_progress|\b_try_spawn|\bprogress_bus\.publish|\.publish)\(\s*"([a-z_]+(?:\.[a-z_]+)*)"'
+)
+_STEP_TO_KIND_KEY = re.compile(r'^\s+"(supervisor\.[a-z_]+)":', re.MULTILINE)
+
+
+def _launcher_step_codes() -> set[str]:
+    codes: set[str] = set()
+    for name in ("app.py", "launcher.py"):
+        text = (DESKTOP / name).read_text(encoding="utf-8")
+        codes.update(_STEP_CALL.findall(text))
+        codes.update(_STEP_TO_KIND_KEY.findall(text))
+    return codes
+
+
+def test_launcher_step_codes_are_found():
+    # Guards the collector itself: if a refactor changes how steps are emitted
+    # and the regex goes blind, the test below would pass vacuously.
+    codes = _launcher_step_codes()
+    assert {"startup", "ready", "supervisor.surreal", "supervisor.llamacpp_chat"} <= codes
+    assert len(codes) >= 15, sorted(codes)
+
+
+def test_every_launcher_step_code_has_a_label_key(dictionary):
+    # A step added to the launcher later fails here instead of silently
+    # showing a raw "supervisor › something" in the wizard.
+    missing = [c for c in sorted(_launcher_step_codes()) if f"step.{c}" not in dictionary["en-US"]]
+    assert not missing, missing
+
+
+def test_no_stale_step_label_keys(dictionary):
+    codes = _launcher_step_codes()
+    stale = [k for k in dictionary["en-US"] if k.startswith("step.") and k[5:] not in codes]
+    assert not stale, stale
+
+
+def _js_table(wizard_js: str, name: str) -> dict[str, str]:
+    block = re.search(rf"const {name} = \{{(.*?)\n  \}};", wizard_js, re.DOTALL)
+    assert block, f"{name} table not found in wizard.js"
+    entries = dict(re.findall(r"'([^'\n]+)':\s*'([\w.]+)'", block.group(1)))
+    assert entries, f"{name} table is empty"
+    return entries
+
+
+def _source_has_literal(files: list[Path], literal: str) -> bool:
+    quoted = f'"{literal}"'
+    return any(quoted in f.read_text(encoding="utf-8") for f in files)
+
+
+def test_fixed_message_table_keys_exist_and_literals_match_backend(dictionary, wizard_js):
+    table = _js_table(wizard_js, "FIXED_MESSAGE_KEYS")
+    sources = [DESKTOP / "app.py", DESKTOP / "launcher.py"]
+    for literal, key in table.items():
+        assert key.startswith("msg."), key
+        assert key in dictionary["en-US"], key
+        # Exact, quoted, no f-string interpolation: a reworded backend sentence
+        # must fail here rather than silently fall back to English.
+        assert _source_has_literal(sources, literal), f"not verbatim in app.py/launcher.py: {literal!r}"
+
+
+def test_save_error_table_keys_exist_and_literals_match_server(dictionary, wizard_js):
+    table = _js_table(wizard_js, "SAVE_ERROR_KEYS")
+    sources = [DESKTOP / "first_run/server.py"]
+    for literal, key in table.items():
+        assert key.startswith("error."), key
+        assert key in dictionary["en-US"], key
+        assert _source_has_literal(sources, literal), f"not verbatim in server.py: {literal!r}"
+
+
+def test_every_save_handler_error_string_is_mapped(wizard_js):
+    # Every fixed {"error": "..."} the /api/save handler returns must be mapped.
+    server = (DESKTOP / "first_run/server.py").read_text(encoding="utf-8")
+    start = server.index("async def save(")
+    end = server.index("async def open_url(")
+    fixed = re.findall(r'json_response\(\{"(?:error|detail)":\s*"([^"]+)"', server[start:end])
+    assert fixed, "no fixed error strings found in the save handler"
+    table = _js_table(wizard_js, "SAVE_ERROR_KEYS")
+    assert set(fixed) <= set(table), sorted(set(fixed) - set(table))
+
+
+def test_wizard_js_uses_the_lookup_tables(wizard_js):
+    assert "'step.' + " in wizard_js
+    assert "FIXED_MESSAGE_KEYS" in wizard_js and "SAVE_ERROR_KEYS" in wizard_js

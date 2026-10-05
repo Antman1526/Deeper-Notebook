@@ -4084,7 +4084,7 @@ Object.assign(ensureSection(ensureSection(rootNode, 'models'), 'localCredential'
 });
 // v0.8.130 — overall local-model health (healthy / degraded / down) was shown as the raw API value.
 Object.assign(ensureSection(ensureSection(rootNode, 'models'), 'overallHealth'), {
-  healthy: "Sano",
+  healthy: "Operativo",
   degraded: "Degradado",
   down: "Caído",
 });
