@@ -578,10 +578,14 @@ build-mac-install:
 	@echo "⏹  Quitting any running Deeper Notebook first…"
 	@osascript -e 'quit app "Deeper Notebook"' 2>/dev/null || true
 	@for i in $$(seq 1 20); do pgrep -f '/Applications/Deeper Notebook.app/Contents/MacOS' >/dev/null 2>&1 || break; sleep 1; done
+	@# v0.8.130 — only this app's own processes. These three used to be killed by
+	@# bare name ('surreal-darwin', 'llama_cpp.server', 'surreal_commands.cli.worker'),
+	@# which took down any other SurrealDB or llama.cpp server on the machine. The
+	@# app's services run from its bundle or from the Python environment in its
+	@# data folder, so those two paths find them (seen in `ps` during a packaged
+	@# run, 2026-10-05). A custom DEEPER_NOTEBOOK_DATA_DIR is not covered here.
 	@pkill -9 -f '/Applications/Deeper Notebook.app' 2>/dev/null || true
-	@pkill -9 -f 'surreal-darwin' 2>/dev/null || true
-	@pkill -9 -f 'llama_cpp.server' 2>/dev/null || true
-	@pkill -9 -f 'surreal_commands.cli.worker' 2>/dev/null || true
+	@pkill -9 -f "$$HOME/.deeper-notebook/" 2>/dev/null || true
 	@sleep 2
 	@rm -rf "/Applications/Deeper Notebook.app"
 	@cp -R "dist/Deeper Notebook.app" /Applications/

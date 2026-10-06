@@ -285,6 +285,9 @@
 
   show('welcome');
   if (new URLSearchParams(location.search).get('screen') === 'setting-up') {
+    // v0.8.130 — the launcher passes the theme chosen in the wizard.
+    const wanted = new URLSearchParams(location.search).get('theme');
+    if (wanted && THEMES.some(theme => theme.id === wanted)) setTheme(wanted);
     show('setting-up');
     startSetupClock();
     followProgress();

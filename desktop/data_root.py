@@ -1789,6 +1789,32 @@ def resolve_data_root(
     )
 
 
+def backup_directory() -> Path:
+    """v0.8.130 — where automatic exports and pre-repair copies of this install go.
+
+    A default install: ~/onp-backups, where they have always been. A redirected
+    data folder (DEEPER_NOTEBOOK_DATA_DIR): a folder of its own beside it. They
+    all used to share ~/onp-backups, so a second install or a test data folder
+    read, pruned and reported on the main one's backups. Beside the data folder
+    rather than inside it, so the backups survive the folder being deleted or
+    damaged. Pure: it only names the folder and never creates or resolves anything.
+    """
+    default = user_home() / "onp-backups"
+    raw = os.environ.get(_CONTROLLED_DATA_ROOT_ENV, "").strip()
+    if not raw:
+        return default
+    try:
+        root = Path(raw).expanduser()
+        if not root.is_absolute():
+            return default
+        root = Path(os.path.abspath(root))
+        if root == Path(root.anchor) or not root.name:
+            return default
+        return root.parent / f"{root.name}-backups"
+    except (OSError, ValueError):
+        return default
+
+
 def active_data_root(*, home: Path | None = None) -> Path:
     """Return the writable root, blocking only unsafe/uncertain states."""
     if home is None:

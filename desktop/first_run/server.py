@@ -269,6 +269,10 @@ def run_wizard_blocking(
         width=720,
         height=540,
     )
+    # v0.8.130 — the title bar follows the page's translated <title>.
+    from desktop.setup_progress_window import follow_page_title
+
+    follow_page_title(window)
 
     def _watch_done():
         import time as _t

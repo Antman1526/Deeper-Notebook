@@ -69,7 +69,10 @@ def test_the_helper_knows_when_its_launcher_is_gone():
 
 
 def test_arguments_are_parsed_and_anything_else_is_not_ours():
-    assert helper.parse_args([helper.FLAG, "4321", "77"]) == (4321, 77)
+    assert helper.parse_args([helper.FLAG, "4321", "77"]) == (4321, 77, None)
+    assert helper.parse_args([helper.FLAG, "4321", "77", "tokyo-night"]) == (4321, 77, "tokyo-night")
+    # A theme id is letters, digits and hyphens; anything else is dropped, not passed into a URL.
+    assert helper.parse_args([helper.FLAG, "4321", "77", "x&screen=welcome"]) == (4321, 77, None)
     assert helper.parse_args([]) is None
     assert helper.parse_args(["-psn_0_12345"]) is None
     assert helper.parse_args([helper.FLAG, "not-a-port", "77"]) is None
@@ -85,6 +88,94 @@ def test_the_helper_window_shows_the_setting_up_screen(monkeypatch):
     assert helper.main([helper.FLAG, "4321", str(os.getpid())]) == 0
     assert opened["url"] == "http://127.0.0.1:4321/?screen=setting-up"
     assert opened["started"] is True
+
+
+def test_the_helper_window_wears_the_theme_just_chosen(monkeypatch):
+    opened = {}
+    fake = types.SimpleNamespace(
+        create_window=lambda title, url, **kw: opened.update(url=url) or object(),
+        start=lambda *a, **k: None,
+    )
+    monkeypatch.setitem(sys.modules, "webview", fake)
+    helper.main([helper.FLAG, "4321", str(os.getpid()), "tokyo-night"])
+    assert opened["url"] == "http://127.0.0.1:4321/?screen=setting-up&theme=tokyo-night"
+    assert helper.command_for(port=1, parent_pid=2, theme="nord")[-1] == "nord"
+    wizard = (STATIC / "wizard.js").read_text(encoding="utf-8")
+    assert "get('theme')" in wizard
+
+
+class _Event:
+    def __init__(self):
+        self.handlers = []
+
+    def __iadd__(self, handler):
+        self.handlers.append(handler)
+        return self
+
+
+def _titled_window(page_title):
+    window = types.SimpleNamespace(
+        events=types.SimpleNamespace(loaded=_Event()),
+        evaluate_js=lambda script: page_title if script == "document.title" else None,
+        titles=[],
+        destroy=lambda: None,
+    )
+    window.set_title = window.titles.append
+    return window
+
+
+def test_window_titles_follow_the_translated_page_title():
+    window = _titled_window("Deeper Notebook — Einrichtung")
+    helper.follow_page_title(window)
+    for handler in window.events.loaded.handlers:
+        handler()
+    assert window.titles == ["Deeper Notebook — Einrichtung"]
+
+    # A page that gives no title, or a web view that cannot say, changes nothing.
+    silent = _titled_window("")
+    helper.follow_page_title(silent)
+    for handler in silent.events.loaded.handlers:
+        handler()
+    assert silent.titles == []
+    helper.follow_page_title(object())  # no events at all: must not raise
+
+
+def test_the_progress_window_adds_no_second_dock_icon(monkeypatch):
+    """The app already has a Dock icon; the helper is a window of it, not a second app."""
+    policies, scheduled = [], []
+    application = types.SimpleNamespace(
+        setActivationPolicy_=policies.append,
+        activateIgnoringOtherApps_=lambda flag: policies.append(("front", flag)),
+    )
+    appkit = types.SimpleNamespace(
+        NSApplication=types.SimpleNamespace(sharedApplication=lambda: application),
+        NSApplicationActivationPolicyAccessory=1,
+    )
+    tools = types.SimpleNamespace(AppHelper=types.SimpleNamespace(callAfter=scheduled.append))
+    monkeypatch.setitem(sys.modules, "AppKit", appkit)
+    monkeypatch.setitem(sys.modules, "PyObjCTools", tools)
+    monkeypatch.setattr(helper.sys, "platform", "darwin")
+
+    window = types.SimpleNamespace(events=types.SimpleNamespace(shown=_Event()))
+    helper.stay_out_of_the_dock(window)
+    for handler in window.events.shown.handlers:
+        handler()
+    assert policies == [], "AppKit is only touched on the main thread"
+    for job in scheduled:
+        job()
+    assert policies == [1, ("front", True)]
+
+    # Elsewhere, or with no window events, it does nothing and does not raise.
+    monkeypatch.setattr(helper.sys, "platform", "linux")
+    other = types.SimpleNamespace(events=types.SimpleNamespace(shown=_Event()))
+    helper.stay_out_of_the_dock(other)
+    assert other.events.shown.handlers == []
+    helper.stay_out_of_the_dock(object())
+
+
+def test_the_wizard_window_title_is_translated_too():
+    source = (Path(helper.__file__).parent / "first_run" / "server.py").read_text(encoding="utf-8")
+    assert "follow_page_title(window)" in source
 
 
 def test_the_entry_point_hands_over_before_the_launcher_starts():
@@ -162,7 +253,7 @@ def test_first_run_opens_the_progress_window_and_closes_it_exactly_once(tmp_path
     server = types.SimpleNamespace(port=4321, stop=lambda: calls.append("server stopped"))
     process = object()
     monkeypatch.setattr("desktop.first_run.server.run_wizard_blocking", lambda *a, **k: server)
-    monkeypatch.setattr(helper, "spawn", lambda port: calls.append(f"spawn {port}") or process)
+    monkeypatch.setattr(helper, "spawn", lambda port, theme=None: calls.append(f"spawn {port}") or process)
     monkeypatch.setattr(helper, "close", lambda proc: calls.append("closed" if proc is process else "closed other"))
 
     app._phase_wizard_if_first_run(ctx)
@@ -176,7 +267,7 @@ def test_first_run_opens_the_progress_window_and_closes_it_exactly_once(tmp_path
 def test_later_launches_open_no_progress_window(tmp_path, monkeypatch):
     app, ctx = _context(tmp_path)
     ctx._first_run = False
-    monkeypatch.setattr(helper, "spawn", lambda port: pytest.fail("no wizard, no helper"))
+    monkeypatch.setattr(helper, "spawn", lambda port, theme=None: pytest.fail("no wizard, no helper"))
     app._phase_wizard_if_first_run(ctx)
     app._close_setup_progress(ctx)  # nothing to close
 

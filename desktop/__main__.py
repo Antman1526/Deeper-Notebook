@@ -58,6 +58,13 @@ if __name__ == "__main__":
     if _setup_progress_window.parse_args(sys.argv[1:]) is not None:
         sys.exit(_setup_progress_window.main(sys.argv[1:]))
 
+    # v0.8.130 — likewise the orphan guard (desktop/orphan_guard.py), which stops
+    # the app's services if the launcher dies without cleaning up.
+    from desktop import orphan_guard as _orphan_guard
+
+    if _orphan_guard.parse_args(sys.argv[1:]) is not None:
+        sys.exit(_orphan_guard.main(sys.argv[1:]))
+
     try:
         from desktop.app import run
 
