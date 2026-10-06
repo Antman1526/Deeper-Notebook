@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import math
 import re
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
@@ -72,6 +73,13 @@ _MAX_STARTUP_RECEIPT_BYTES = 64 * 1024
 _MAX_COUNT = 1_000_000
 _MAX_RUNTIME_REASONS = 15
 AUTO_EXPORT_STALE_AFTER_SECONDS = 172_800
+# v0.8.130 — the desktop launcher writes its first export 600 seconds after
+# every launch (DEEPER_NOTEBOOK_AUTO_EXPORT_FIRST_DELAY_SECS), then daily. Until
+# that first run has had its chance, "no export yet" and "newest export is old"
+# describe a schedule that has not come due, not a fault. 1800 is that 600s
+# delay plus margin for a slow start and a large database; past it, a missing
+# or stale export is reported exactly as before.
+AUTO_EXPORT_STARTUP_GRACE_SECONDS = 1800
 _KNOWN_VAULT_STATES = frozenset(
     {
         "disconnected",
@@ -207,6 +215,14 @@ class RuntimeSnapshotProviders:
     auto_export_directory: Provider | None = None
     provenance_summary: Provider | None = None
     model_config_health: Provider | None = None
+    # v0.8.130 — seconds since this API process started. Optional so every
+    # existing caller keeps the strict behaviour: without it no backup state
+    # is ever excused as "not yet due".
+    uptime_seconds: Provider | None = None
+    # v0.8.130 — whether anything is scheduled to take exports at all. Only
+    # the desktop launcher does; exactly False means "nobody is", so a missing
+    # or old export is not a fault. Anything else keeps the strict behaviour.
+    auto_export_expected: Provider | None = None
 
 
 async def _invoke(provider: Provider | None) -> Any:
@@ -312,9 +328,11 @@ def _default_update_status() -> Mapping[str, Any] | None:
 
 
 def default_auto_export_directory() -> Path:
-    from desktop.paths import user_home
+    # v0.8.130 — the same resolver the launcher writes with, so the panel reads
+    # this install's backups and not another data folder's.
+    from desktop.data_root import backup_directory
 
-    return user_home() / "onp-backups"
+    return backup_directory()
 
 
 def _as_mapping(value: Any) -> Mapping[str, Any] | None:
@@ -511,6 +529,13 @@ def _normalise_knowledge(value: Any) -> tuple[KnowledgeSnapshot, list[ReasonCode
         raw = _as_mapping(value)
         if raw is None:
             return KnowledgeSnapshot(state="unknown"), ["knowledge_unknown"]
+        # v0.8.130 — the knowledge engine is off by default. The router sends
+        # this explicit sentinel only when the feature flag is off, so a
+        # default install is not reported as a fault. Deliberately `is False`:
+        # a missing service with the flag on still arrives as None above, and
+        # any other mapping without counts still falls through to unknown.
+        if raw.get("enabled") is False:
+            return KnowledgeSnapshot(state="ready"), []
         projected = _bounded_count(raw.get("projected"))
         unchanged = _bounded_count(raw.get("unchanged"))
         failed = _bounded_count(raw.get("failed"))
@@ -536,14 +561,56 @@ def _normalise_knowledge(value: Any) -> tuple[KnowledgeSnapshot, list[ReasonCode
         return KnowledgeSnapshot(state="unknown"), ["knowledge_unknown"]
 
 
-def _normalise_backup(value: Any) -> tuple[AutoExportSnapshot, list[ReasonCode]]:
+def _within_auto_export_startup_grace(uptime_seconds: Any) -> bool:
+    """True only for a trustworthy uptime inside the first-export window."""
+    # v0.8.130 — anything that is not a plain finite non-negative number
+    # (None from a failed provider, NaN, a negative clock, a bool) grants no
+    # grace, so a broken uptime source can never hide a real backup problem.
+    if isinstance(uptime_seconds, bool) or not isinstance(uptime_seconds, (int, float)):
+        return False
+    if not math.isfinite(uptime_seconds):
+        return False
+    return 0 <= uptime_seconds < AUTO_EXPORT_STARTUP_GRACE_SECONDS
+
+
+def _no_auto_export_yet(
+    file_count: int, excused: bool
+) -> tuple[AutoExportSnapshot, list[ReasonCode]]:
+    # v0.8.130 — no export file has ever been found. Shortly after start that
+    # is the launcher's schedule not having come due, and without a launcher
+    # nothing is scheduled at all, so the component is ready; freshness stays
+    # "unknown" so the detailed panel does not claim a backup exists.
+    if excused:
+        return AutoExportSnapshot(state="ready", file_count=file_count), []
+    return (
+        AutoExportSnapshot(state="unknown", file_count=file_count),
+        ["auto_export_unknown"],
+    )
+
+
+def _normalise_backup(
+    value: Any,
+    *,
+    uptime_seconds: float | None = None,
+    auto_export_expected: Any = None,
+) -> tuple[AutoExportSnapshot, list[ReasonCode]]:
+    # v0.8.130 — two reasons a missing or old export is not a fault: the
+    # launcher's first export is not due yet, or nothing is scheduled to take
+    # exports here. Deliberately `is False`: a provider that failed (None) or
+    # returned anything else must not silence a real backup problem.
+    excused = (
+        _within_auto_export_startup_grace(uptime_seconds)
+        or auto_export_expected is False
+    )
     if value is None:
-        return (
-            AutoExportSnapshot(state="unknown", file_count=0),
-            ["auto_export_unknown"],
-        )
+        return _no_auto_export_yet(0, excused)
     try:
         directory = Path(value).expanduser()
+        # v0.8.130 — a directory that does not exist yet is "no export yet"
+        # (the launcher creates it on first export). A symlink or a non-
+        # directory at that path is still an anomaly and is never excused.
+        if not directory.is_symlink() and not directory.exists():
+            return _no_auto_export_yet(0, excused)
         if directory.is_symlink() or not directory.is_dir():
             raise OSError("not a directory")
         count = 0
@@ -580,10 +647,7 @@ def _normalise_backup(value: Any) -> tuple[AutoExportSnapshot, list[ReasonCode]]
                 newest_mtime = float(mtime)
                 newest_size = size
         if newest_mtime is None:
-            return (
-                AutoExportSnapshot(state="unknown", file_count=count),
-                ["auto_export_unknown"],
-            )
+            return _no_auto_export_yet(count, excused)
 
         age_raw = time.time() - newest_mtime
         if age_raw < 0:
@@ -621,6 +685,14 @@ def _normalise_backup(value: Any) -> tuple[AutoExportSnapshot, list[ReasonCode]]
         reasons: list[ReasonCode] = (
             [] if freshness == "valid" else ["auto_export_stale"]
         )
+        # v0.8.130 — a stale newest export right after launch (e.g. first
+        # launch after a few days away) is about to be replaced by the
+        # launcher's scheduled export, and where no exports are scheduled an
+        # old file is just an old file. Report the component ready but leave
+        # freshness/age untouched so the backup panel stays truthful.
+        if freshness == "stale" and excused:
+            state = "ready"
+            reasons = []
         return (
             AutoExportSnapshot(
                 state=state,
@@ -785,7 +857,13 @@ async def build_runtime_snapshot(
     updates, update_reasons = _normalise_updates(updates_raw)
     vault, vault_reasons = _normalise_vault(vault_raw)
     knowledge, knowledge_reasons = _normalise_knowledge(knowledge_raw)
-    backup, backup_reasons = _normalise_backup(backup_raw)
+    # v0.8.130 — both through _invoke, so a throwing provider yields None and
+    # therefore excuses nothing.
+    uptime_raw = await _invoke(configured.uptime_seconds)
+    expected_raw = await _invoke(configured.auto_export_expected)
+    backup, backup_reasons = _normalise_backup(
+        backup_raw, uptime_seconds=uptime_raw, auto_export_expected=expected_raw
+    )
     provenance_raw = await _invoke(configured.provenance_summary)
     if configured.provenance_summary is None:
         provenance_raw = vault_raw
@@ -836,6 +914,7 @@ async def build_runtime_snapshot(
 
 __all__ = [
     "ALLOWED_REASON_CODES",
+    "AUTO_EXPORT_STARTUP_GRACE_SECONDS",
     "AutoExportSnapshot",
     "KnowledgeSnapshot",
     "ProvenanceSnapshot",
