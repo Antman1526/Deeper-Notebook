@@ -223,7 +223,7 @@ export function IntelligenceHorizon({
         className="relative overflow-hidden rounded-2xl border border-[var(--dn-glass-border)] bg-[var(--dn-panel)] p-6 shadow-[var(--dn-shadow-soft)] sm:p-8"
       >
         <div className="relative max-w-3xl">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--dn-brass)]">
+          <p className="text-xs font-semibold text-[var(--dn-brass)]">
             {t('workspace.intelligenceHorizon.coverEyebrow')}
           </p>
           <h2 className="mt-3 max-w-2xl text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
@@ -249,7 +249,7 @@ export function IntelligenceHorizon({
         primary={
           <section aria-labelledby="horizon-today-title" className="space-y-5">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--dn-brass)]">
+              <p className="text-xs font-semibold text-[var(--dn-brass)]">
                 {t('workspace.intelligenceHorizon.todayEyebrow')}
               </p>
               <h2 id="horizon-today-title" className="mt-2 text-xl font-semibold tracking-tight">
@@ -276,7 +276,7 @@ export function IntelligenceHorizon({
       <section aria-labelledby="recent-folios-title" className="mt-6 space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--dn-brass)]">
+            <p className="text-xs font-semibold text-[var(--dn-brass)]">
               {t('workspace.intelligenceHorizon.libraryIndex')}
             </p>
             <h2 id="recent-folios-title" className="mt-1 text-xl font-semibold tracking-tight">

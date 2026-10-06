@@ -43,7 +43,7 @@ function EntryList({ entries, label }: { entries: PodcastSelectionPreviewEntry[]
   const untitledLabel = t('podcasts.researchSetPanel.untitledReference')
   return (
     <section aria-label={label} className="space-y-2">
-      <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</h4>
+      <h4 className="text-xs font-semibold text-muted-foreground">{label}</h4>
       <ul className="space-y-1 text-sm">
         {entries.map((entry) => (
           <li key={`${entry.stableId}:${entry.revisionId ?? 'current'}:${entry.state}`} className="flex items-start justify-between gap-3 rounded border px-3 py-2">

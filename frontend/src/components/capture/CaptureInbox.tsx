@@ -73,14 +73,14 @@ export function CaptureInbox() {
               value={path}
               onChange={(event) => setPath(event.target.value)}
               placeholder={t('capture.captureInbox.folderPathPlaceholder')}
-              className="font-mono text-xs rounded-xl"
+              className="font-mono text-xs"
             />
             <Button
               type="button"
               variant="secondary"
               disabled={!path.trim() || actions.addRoot.isPending}
               onClick={() => void addRoot()}
-              className="shrink-0 rounded-xl duration-150"
+              className="shrink-0 duration-150"
             >
               <FolderPlus className="mr-2 h-4 w-4" />
               {t('common.add')}

@@ -99,7 +99,7 @@ export function CaptureItemRow({ item, showVisualCover = false }: { item: Captur
               variant="outline"
               disabled={isRouting}
               onClick={() => void previewRoute()}
-              className="rounded-xl duration-150 gap-1.5 text-xs"
+              className="duration-150 gap-1.5 text-xs"
             >
               <AudioLines className="h-3.5 w-3.5 text-primary" />
               {isRouting ? t('capture.captureItemRow.preparing') : t('capture.captureItemRow.reviewRoute')}

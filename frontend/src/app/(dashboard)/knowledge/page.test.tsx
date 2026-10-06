@@ -48,6 +48,28 @@ describe('KnowledgePage source visuals', () => {
     )
   })
 
+  // v0.8.130 — with no recent sources the reserved slot was a 12rem blank band above the page for good.
+  it('gives the reserved space back once it is known there are no recent sources', () => {
+    mockVisualSystemEnabled.mockReturnValue(true)
+    mockSourceVisualsEnabled.mockReturnValue(true)
+    mockRecentSources.mockReturnValue({ data: [], isSuccess: true })
+
+    render(<KnowledgePage />)
+
+    expect(document.querySelector('[data-dn-recent-source-slot="true"]')).toBeNull()
+    expect(screen.getByRole('region', { name: 'Knowledge explorer' })).toBeInTheDocument()
+  })
+
+  it('keeps the space reserved while recent sources are still loading', () => {
+    mockVisualSystemEnabled.mockReturnValue(true)
+    mockSourceVisualsEnabled.mockReturnValue(true)
+    mockRecentSources.mockReturnValue({ data: undefined, isSuccess: false })
+
+    render(<KnowledgePage />)
+
+    expect(document.querySelector('[data-dn-recent-source-slot="true"]')).toHaveClass('min-h-[15rem]')
+  })
+
   it.each([
     ['visual system off', false, true],
     ['source visuals off', true, false],

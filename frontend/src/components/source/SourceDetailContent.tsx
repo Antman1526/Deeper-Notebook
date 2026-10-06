@@ -859,7 +859,7 @@ export function SourceDetailContent({
                     <div className="flex items-center justify-between gap-2 mb-2 pl-2">
                       <div className="flex items-center gap-2">
                         <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
-                        <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+                        <p className="text-xs font-semibold text-primary">
                           {t('sources.citedPassage', { defaultValue: 'Cited passage' })}
                         </p>
                       </div>
@@ -1011,7 +1011,7 @@ export function SourceDetailContent({
                       <div key={insight.id} className="rounded-lg border bg-background p-4">
                         <div className="flex items-start justify-between">
                           <div className="flex items-center gap-2">
-                            <Badge variant="outline" className="text-xs uppercase">
+                            <Badge variant="outline" className="text-xs">
                               {insight.insight_type}
                             </Badge>
                           </div>

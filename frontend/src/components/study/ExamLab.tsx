@@ -338,7 +338,7 @@ export function ExamLab() {
 
         {(attempts.data ?? []).length > 0 ? (
           <div className="space-y-2 border-t pt-3">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <p className="text-xs font-medium text-muted-foreground">
               {t('study.examLab.recentAttempts')}
             </p>
             <ul className="space-y-1.5">

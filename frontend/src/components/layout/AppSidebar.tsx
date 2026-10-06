@@ -310,7 +310,7 @@ export function AppSidebar() {
             <div key={section.title} className={index > 0 ? "mt-6" : ""}>
               <div className="space-y-1">
                 {!isCollapsed && (
-                  <h3 className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/60">
+                  <h3 className="mb-2 px-3 text-xs font-semibold text-sidebar-foreground/60">
                     {section.title}
                   </h3>
                 )}

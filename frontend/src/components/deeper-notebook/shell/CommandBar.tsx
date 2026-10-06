@@ -67,7 +67,7 @@ export function CommandBar({ showBrand = true, onMenu, menuOpen = false, focusSh
         {showBrand ? (
           <>
             {/* v0.8.130 — 12px type floor, and no hard-coded teal glow (the old brand hue in every theme). */}
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wider bg-primary/10 text-primary border border-primary/20">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20">
               <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
               <span className="dn-command-kicker m-0 leading-none">{routeLabel}</span>
             </span>

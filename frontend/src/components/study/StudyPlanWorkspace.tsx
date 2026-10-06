@@ -229,9 +229,9 @@ export function StudyPlanWorkspace({ planId }: StudyPlanWorkspaceProps) {
               <CardDescription>{t('study.studyPlanWorkspace.overview.description')}</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-4 sm:grid-cols-3">
-              <div><p className="text-xs uppercase tracking-wide text-muted-foreground">{t('study.studyPlanWorkspace.overview.startingLevel')}</p><p className="mt-1 font-medium">{currentPlan.starting_level}</p></div>
-              <div><p className="text-xs uppercase tracking-wide text-muted-foreground">{t('study.studyPlanWorkspace.overview.linkedSources')}</p><p className="mt-1 font-medium">{sourceCount}</p></div>
-              <div><p className="text-xs uppercase tracking-wide text-muted-foreground">{t('study.studyPlanWorkspace.overview.approvedVersion')}</p><p className="mt-1 font-medium">{currentPlan.approved_syllabus_version ?? t('study.studyPlanWorkspace.overview.notApproved')}</p></div>
+              <div><p className="text-xs text-muted-foreground">{t('study.studyPlanWorkspace.overview.startingLevel')}</p><p className="mt-1 font-medium">{currentPlan.starting_level}</p></div>
+              <div><p className="text-xs text-muted-foreground">{t('study.studyPlanWorkspace.overview.linkedSources')}</p><p className="mt-1 font-medium">{sourceCount}</p></div>
+              <div><p className="text-xs text-muted-foreground">{t('study.studyPlanWorkspace.overview.approvedVersion')}</p><p className="mt-1 font-medium">{currentPlan.approved_syllabus_version ?? t('study.studyPlanWorkspace.overview.notApproved')}</p></div>
             </CardContent>
           </Card>
           <p className="text-sm text-muted-foreground"><RichText text={t('study.studyPlanWorkspace.overview.existingCards')} components={{ link: (children) => <Link href="/study" className="underline underline-offset-4">{children}</Link> }} /></p>

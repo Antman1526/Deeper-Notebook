@@ -368,7 +368,7 @@ export function ImportNotebookDialog({
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div className="border rounded-md">
-                    <div className="px-3 py-2 border-b text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    <div className="px-3 py-2 border-b text-xs font-medium text-muted-foreground">
                       {t('notebooks.import.notesHeading')} ({preview.notes.length})
                     </div>
                     <ScrollArea className="h-40">
@@ -387,7 +387,7 @@ export function ImportNotebookDialog({
                   </div>
 
                   <div className="border rounded-md">
-                    <div className="px-3 py-2 border-b text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    <div className="px-3 py-2 border-b text-xs font-medium text-muted-foreground">
                       {t('notebooks.import.sourcesHeading')} ({preview.sources.length})
                     </div>
                     <ScrollArea className="h-40">

@@ -108,7 +108,7 @@ function StatusBadge({ status }: { status?: EpisodeStatus | null }) {
   return (
     <Badge
       variant={meta.variant ?? 'outline'}
-      className={cn('uppercase tracking-wide text-xs rounded-full px-2.5 py-0.5 font-medium shadow-xs', meta.className)}
+      className={cn('text-xs rounded-full px-2.5 py-0.5 font-medium shadow-xs', meta.className)}
     >
       {meta.label}
     </Badge>
@@ -709,7 +709,7 @@ export function EpisodeCard({ episode, onDelete, deleting, onRetry, retrying }: 
                                 <div className="flex items-center justify-between gap-2">
                                   <p className="font-semibold text-foreground">{segment.name ?? `${t('podcasts.segment')} ${index + 1}`}</p>
                                   {segment.size ? (
-                                    <Badge variant="outline" className="text-xs uppercase tracking-wide">{segment.size}</Badge>
+                                    <Badge variant="outline" className="text-xs">{segment.size}</Badge>
                                   ) : null}
                                 </div>
                                 <p className="text-muted-foreground whitespace-pre-wrap">{segment.description ?? t('podcasts.noDescription')}</p>

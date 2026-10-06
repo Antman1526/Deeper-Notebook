@@ -50,7 +50,7 @@ export function StudyLearningSession({
   return (
     <section aria-labelledby="study-learning-session-heading" className="space-y-4">
       <div>
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('study.studyLearningSession.eyebrow')}</p>
+        <p className="text-xs font-medium text-muted-foreground">{t('study.studyLearningSession.eyebrow')}</p>
         <h2 id="study-learning-session-heading" className="text-xl font-semibold">{t('study.studyLearningSession.heading')}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           {t('study.studyLearningSession.description')}

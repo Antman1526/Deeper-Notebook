@@ -185,7 +185,7 @@ export function EpisodeLab({ episode, onClose, onRetry, onCancel, onCitationClic
                 <li key={`${name}-${index}`} className="rounded border bg-muted/20 p-3 text-sm">
                   <div className="flex items-center justify-between gap-2">
                     <p className="font-medium">{name}</p>
-                    {size ? <span className="rounded border px-2 py-0.5 text-xs uppercase tracking-wide">{size}</span> : null}
+                    {size ? <span className="rounded border px-2 py-0.5 text-xs">{size}</span> : null}
                   </div>
                   <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{description ?? t('podcasts.episodeLab.segmentDescriptionUnavailable')}</p>
                 </li>

@@ -161,7 +161,7 @@ export function ThemeSwitcher({ iconOnly = false }: ThemeSwitcherProps) {
           return (
             <div key={group.id}>
               {groupIndex > 0 && <DropdownMenuSeparator />}
-              <DropdownMenuLabel className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              <DropdownMenuLabel className="text-xs font-semibold text-muted-foreground">
                 {t(group.labelKey)}
               </DropdownMenuLabel>
               {themes.map(theme => (

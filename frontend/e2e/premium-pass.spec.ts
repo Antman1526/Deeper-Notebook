@@ -13,7 +13,8 @@ import { installVisualSystemFixture } from './fixtures/visual-system'
 // weave, ruling, light and soft shadow (components/deeper-notebook/stationery). The
 // ban still holds everywhere else, and glass blur stays banned on stationery too.
 
-const ROUTES = ['/', '/notebooks', '/sources', '/studio', '/settings'] as const
+// v0.8.130 — Study, Podcasts, Capture and Search were not covered, and Study had capital-letter eyebrows.
+const ROUTES = ['/', '/notebooks', '/sources', '/studio', '/settings', '/study', '/podcasts', '/capture', '/search'] as const
 
 async function open(page: Page, route: string) {
   await installVisualSystemFixture(page, { theme: 'gemini-forward-light' })

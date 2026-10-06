@@ -55,7 +55,7 @@ export default function SettingsPage() {
 
             <section aria-labelledby="appearance-heading" className="space-y-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">{t('settings.settingsPage.appearance')}</p>
+                <p className="text-xs font-semibold text-muted-foreground">{t('settings.settingsPage.appearance')}</p>
                 <h2 id="appearance-heading" className="mt-1 text-xl font-semibold">{t('settings.settingsPage.chooseEnvironment')}</h2>
                 <p className="mt-1 text-sm text-muted-foreground">{t('settings.settingsPage.themePreviewHint')}</p>
               </div>

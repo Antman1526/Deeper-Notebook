@@ -990,3 +990,45 @@ html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] main [role=
   scrollbar-width: thin;
   scrollbar-color: color-mix(in oklab, var(--muted-foreground) 32%, transparent) transparent;
 }
+
+/* ---------- Sources and Knowledge (2026-10-05) ----------
+   Colour, shadow and absolutely-placed ornament only: the source gallery's sizes
+   are pinned by its own contract (e2e/source-gallery.spec.ts), so nothing here
+   changes a box. */
+
+/* A source is a sheet in a tray, like the panels elsewhere. */
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] .dn-source-gallery__card,
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] .research-core-folio {
+  box-shadow: var(--dn-sheet-shadow);
+}
+
+/* A source with no cover image: the ring sat on top of the first letters of its
+   title. It is a small mark in the far corner now, clear of the text. */
+[data-dn-visual-system='v2'] .dn-source-cover__shape {
+  inset: 0.75rem 0.75rem auto auto;
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+/* "Select …" is a quiet control until it is on; then it carries the brand ink,
+   without the doubled ring it had. */
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] .dn-source-gallery__select {
+  background: transparent;
+  color: var(--muted-foreground);
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] .dn-source-gallery__select[aria-pressed='true'] {
+  outline: none;
+  border-color: var(--primary);
+  background: color-mix(in oklab, var(--primary) 8%, var(--card));
+  color: var(--foreground);
+}
+
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] .dn-source-gallery__select:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+}

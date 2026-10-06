@@ -201,7 +201,7 @@ export function MindMapArtifactViewer({
 
         <aside className="space-y-3 rounded-md border bg-background p-3" aria-live="polite">
           <div>
-            <div className="text-xs font-medium uppercase tracking-normal text-muted-foreground">{t('artifacts.mindMapArtifactViewer.selectedTopic')}</div>
+            <div className="text-xs font-medium tracking-normal text-muted-foreground">{t('artifacts.mindMapArtifactViewer.selectedTopic')}</div>
             <div className="mt-1 text-sm font-semibold">{selected?.label}</div>
             {selected?.relationship && <div className="mt-1 text-xs text-muted-foreground">{selected.relationship}</div>}
           </div>

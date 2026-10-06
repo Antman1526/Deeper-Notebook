@@ -83,7 +83,7 @@ export function DeepResearchPanel({ result, openModal, copiedBrief, onCopyBrief,
       <CardContent className="space-y-5 pt-4">
         {result.plan?.inquiry_paths && result.plan.inquiry_paths.length > 0 && (
           <div className="space-y-2">
-            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('searchPage.deepResearchPanel.inquiryPaths')}</Label>
+            <Label className="text-xs font-semibold text-muted-foreground">{t('searchPage.deepResearchPanel.inquiryPaths')}</Label>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
               {result.plan.inquiry_paths.map((p, idx) => (
                 <div key={idx} className="p-3 rounded-lg border bg-card/60 text-xs space-y-1.5 shadow-xs">
@@ -114,7 +114,7 @@ export function DeepResearchPanel({ result, openModal, copiedBrief, onCopyBrief,
         )}
 
         <div className="space-y-2">
-          <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('searchPage.deepResearchPanel.researchBrief')}</Label>
+          <Label className="text-xs font-semibold text-muted-foreground">{t('searchPage.deepResearchPanel.researchBrief')}</Label>
           <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none break-words p-5 rounded-lg border bg-card/40 leading-relaxed shadow-xs prose-headings:font-semibold prose-a:text-primary prose-a:underline prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-table:my-4">
             <ReactMarkdown
               remarkPlugins={[remarkGfm, remarkMath]}
@@ -139,7 +139,7 @@ export function DeepResearchPanel({ result, openModal, copiedBrief, onCopyBrief,
 
         {result.citations && result.citations.length > 0 && (
           <div className="space-y-2">
-            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('searchPage.deepResearchPanel.groundedCitations')}</Label>
+            <Label className="text-xs font-semibold text-muted-foreground">{t('searchPage.deepResearchPanel.groundedCitations')}</Label>
             <div className="flex flex-wrap gap-1.5">
               {result.citations.map((c, idx) => (
                 <Badge

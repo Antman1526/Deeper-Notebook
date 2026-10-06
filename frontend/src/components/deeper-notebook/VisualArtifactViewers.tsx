@@ -151,7 +151,7 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
           }}
         >
           {/* v0.8.130 — 12px type floor (UI audit Phase 1) */}
-          <span className="block text-xs font-semibold uppercase tracking-normal">01</span>
+          <span className="block text-xs font-semibold tracking-normal">01</span>
           <span className="mt-1 block line-clamp-2 text-xs font-medium leading-4">
             {document.title}
           </span>
@@ -173,7 +173,7 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
               setShowNotes(false)
             }}
           >
-            <span className="block text-xs font-semibold uppercase tracking-normal">
+            <span className="block text-xs font-semibold tracking-normal">
               {String(slideIndex + 2).padStart(2, '0')}
             </span>
             <span className="mt-1 block line-clamp-2 text-xs font-medium leading-4">
@@ -233,7 +233,7 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
                     {t('artifacts.visualArtifactViewers.preparedFor', { audience: document.audience })}
                   </div>
                 )}
-                <div className="mt-auto text-[clamp(0.55rem,1.4cqi,0.75rem)] font-semibold uppercase tracking-normal text-[var(--dn-artifact-muted)]">
+                <div className="mt-auto text-[clamp(0.55rem,1.4cqi,0.75rem)] font-semibold tracking-normal text-[var(--dn-artifact-muted)]">
                   Deeper Notebook / Evidence Studio
                 </div>
               </div>
@@ -257,7 +257,7 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
                 </ul>
                 {slide.visual_direction && (
                   <div className="hidden min-h-0 overflow-y-auto border-l border-[var(--dn-artifact-line)] pl-4 md:block">
-                    <div className="text-xs font-semibold uppercase tracking-normal text-[var(--dn-status-info)]">
+                    <div className="text-xs font-semibold tracking-normal text-[var(--dn-status-info)]">
                       {t('artifacts.visualArtifactViewers.visualDirection')}
                     </div>
                     <div className="mt-2 text-[clamp(0.68rem,1.8cqi,0.92rem)] leading-relaxed text-[var(--dn-artifact-muted)]">
@@ -353,7 +353,7 @@ export function InfographicViewer({ document }: { document: InfographicVisualDoc
     >
       <div className="border-t-4 border-t-[var(--dn-status-info)] pt-4">
         <h3 className="text-xl font-semibold leading-tight sm:text-2xl">{document.title}</h3>
-        <div className="mt-2 text-xs font-semibold uppercase tracking-normal text-[var(--dn-artifact-muted)]">
+        <div className="mt-2 text-xs font-semibold tracking-normal text-[var(--dn-artifact-muted)]">
           {t('artifacts.visualArtifactViewers.infographicCaption')}
         </div>
       </div>

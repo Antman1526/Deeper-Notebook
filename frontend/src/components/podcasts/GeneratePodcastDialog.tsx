@@ -163,7 +163,7 @@ function ContentSelectionPanel({
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          <h3 className="text-sm font-semibold text-muted-foreground">
             {tr.content}
           </h3>
           <p className="text-xs text-muted-foreground">
@@ -263,7 +263,7 @@ function ContentSelectionPanel({
                       <div className="space-y-4 px-4 pb-4">
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
-                            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            <h4 className="text-xs font-semibold text-muted-foreground">
                               {tr.sources}
                             </h4>
                             {fetchingNotebookIds.has(notebook.id) && (
@@ -346,7 +346,7 @@ function ContentSelectionPanel({
                         <Separator />
 
                         <div className="space-y-2">
-                          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          <h4 className="text-xs font-semibold text-muted-foreground">
                             {tr.notes}
                           </h4>
                           {notes.length === 0 ? (
@@ -1020,7 +1020,7 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
           <div className="space-y-6">
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                <h3 className="text-sm font-semibold text-muted-foreground">
                   {t('podcasts.episodeSettings')}
                 </h3>
                 {/* v0.7.31 — heuristic auto-fill button. Calls

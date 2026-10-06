@@ -258,7 +258,7 @@ export function TutorDock({
     <section aria-label={t('study.tutorDock.title')} className="space-y-3">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('study.tutorDock.foregroundTutor')}</p>
+          <p className="text-xs font-medium text-muted-foreground">{t('study.tutorDock.foregroundTutor')}</p>
           <h2 className="text-lg font-semibold">{t('study.tutorDock.subtitle')}</h2>
         </div>
         <Button
@@ -361,7 +361,7 @@ export function TutorDock({
                 <div className="whitespace-pre-wrap text-sm leading-6">{(localResponse ?? invocation.data)?.answer}</div>
                 {(localResponse ?? invocation.data)?.citations.length ? (
                   <div className="space-y-2" aria-label={t('study.tutorDock.citationsLabel')} role="region">
-                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('study.tutorDock.evidence')}</p>
+                    <p className="text-xs font-medium text-muted-foreground">{t('study.tutorDock.evidence')}</p>
                     <div className="flex flex-wrap gap-2">
                       {(localResponse ?? invocation.data)?.citations.map((citation, index) => (
                         <Button
@@ -379,7 +379,7 @@ export function TutorDock({
                 ) : null}
                 {(localResponse ?? invocation.data)?.proposed_actions.length ? (
                   <div className="space-y-2" aria-label={t('study.tutorDock.proposalsLabel')}>
-                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('study.tutorDock.proposedActions')}</p>
+                    <p className="text-xs font-medium text-muted-foreground">{t('study.tutorDock.proposedActions')}</p>
                     <div className="grid gap-2">
                       {(localResponse ?? invocation.data)?.proposed_actions.map((action) => (
                         <Button key={`${action.action}-${action.label}`} type="button" variant="outline" className="justify-start whitespace-normal text-left" onClick={() => setProposal(action)}>

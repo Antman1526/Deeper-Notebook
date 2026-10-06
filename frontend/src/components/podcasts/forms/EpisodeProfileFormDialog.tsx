@@ -201,7 +201,7 @@ export function EpisodeProfileFormDialog({
 
           <div className="space-y-4">
             <div>
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              <h3 className="text-sm font-semibold text-muted-foreground">
                 {t('podcasts.speakerConfig')}
               </h3>
               <Separator className="mt-2" />
@@ -236,7 +236,7 @@ export function EpisodeProfileFormDialog({
 
           <div className="space-y-4">
             <div>
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              <h3 className="text-sm font-semibold text-muted-foreground">
                 {t('podcasts.outlineGeneration')}
               </h3>
               <Separator className="mt-2" />
@@ -265,7 +265,7 @@ export function EpisodeProfileFormDialog({
 
           <div className="space-y-4">
             <div>
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              <h3 className="text-sm font-semibold text-muted-foreground">
                 {t('podcasts.transcriptGeneration')}
               </h3>
               <Separator className="mt-2" />
@@ -294,7 +294,7 @@ export function EpisodeProfileFormDialog({
 
           <div className="space-y-4">
             <div>
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              <h3 className="text-sm font-semibold text-muted-foreground">
                 {t('podcasts.podcastLanguage')}
               </h3>
               <Separator className="mt-2" />

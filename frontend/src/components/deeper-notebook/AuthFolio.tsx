@@ -14,7 +14,7 @@ export function AuthFolio({ children }: { children: ReactNode }) {
       data-dn-folio-page="true"
     >
       <section className="w-full max-w-md rounded-lg border border-[var(--dn-paper-edge)] bg-[var(--dn-folio-paper)] p-2 shadow-sm">
-        <p className="px-4 pt-3 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--dn-brass)]">
+        <p className="px-4 pt-3 text-xs font-semibold text-[var(--dn-brass)]">
           Deeper Notebook
         </p>
         {children}

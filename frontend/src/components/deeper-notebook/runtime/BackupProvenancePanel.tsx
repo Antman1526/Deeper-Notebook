@@ -90,7 +90,7 @@ export function BackupProvenancePanel({ snapshot }: BackupProvenancePanelProps) 
       className="grid gap-4 rounded-xl border border-[var(--dn-paper-edge)] bg-[var(--dn-lens)] p-4 motion-reduce:transition-none"
     >
       <header>
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--dn-brass)]">
+        <p className="text-xs font-semibold text-[var(--dn-brass)]">
           {t('workspace.backupProvenancePanel.eyebrow')}
         </p>
         <h2 className="mt-1 text-base font-semibold">{t(FRESHNESS_RECEIPT_KEYS[freshness])}</h2>

@@ -198,7 +198,7 @@ export function EpisodeProfilesPanel({
                 <CardContent className="space-y-4 text-sm">
                   <div className="grid gap-3 md:grid-cols-2">
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      <p className="text-xs font-semibold text-muted-foreground">
                         {t('podcasts.outlineModel')}
                       </p>
                       <p className="text-foreground">
@@ -210,7 +210,7 @@ export function EpisodeProfilesPanel({
                       </p>
                     </div>
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      <p className="text-xs font-semibold text-muted-foreground">
                         {t('podcasts.transcriptModel')}
                       </p>
                       <p className="text-foreground">
@@ -222,21 +222,21 @@ export function EpisodeProfilesPanel({
                       </p>
                     </div>
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      <p className="text-xs font-semibold text-muted-foreground">
                         {t('podcasts.segments')}
                       </p>
                       <p className="text-foreground">{profile.num_segments}</p>
                     </div>
                     {profile.language ? (
                       <div>
-                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        <p className="text-xs font-semibold text-muted-foreground">
                           {t('podcasts.language')}
                         </p>
                         <p className="text-foreground">{profile.language}</p>
                       </div>
                     ) : null}
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      <p className="text-xs font-semibold text-muted-foreground">
                         {t('podcasts.speakerProfile')}
                       </p>
                       <div className="flex items-center gap-2 text-foreground">
@@ -257,7 +257,7 @@ export function EpisodeProfilesPanel({
 
                   {profile.default_briefing ? (
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      <p className="text-xs font-semibold text-muted-foreground">
                         {t('podcasts.defaultBriefingTitle')}
                       </p>
                       <p className="mt-1 whitespace-pre-wrap text-muted-foreground">

@@ -31,7 +31,7 @@ export function StudyWorkbench({ cards = [], cardsLoading = false, cardsError = 
       <section aria-labelledby="study-plans-heading" className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('study.studyWorkbench.eyebrow')}</p>
+            <p className="text-xs font-medium text-muted-foreground">{t('study.studyWorkbench.eyebrow')}</p>
             <h2 id="study-plans-heading" className="text-2xl font-semibold tracking-tight">{t('study.studyWorkbench.activePlansHeading')}</h2>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
               {t('study.studyWorkbench.activePlansDescription')}

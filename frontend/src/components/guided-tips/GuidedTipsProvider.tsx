@@ -23,6 +23,66 @@ function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(Math.max(value, minimum), maximum)
 }
 
+interface PlainRect {
+  top: number
+  left: number
+  right: number
+  bottom: number
+}
+
+// v0.8.130 — the callout sits right of its rail anchor, and the rail ends where the main
+// column (and its <h1>) begins, so the callout covered the page title. Keep it beside the
+// anchor, but if it would touch the heading (closer than ANCHOR_GAP counts as touching)
+// slide it down to just below the heading. Staying on screen wins over clearing the
+// heading, so the viewport clamp runs last. Pure and rect-based because jsdom has no layout.
+export function placeCallout({
+  anchor,
+  heading,
+  calloutHeight,
+  viewport,
+}: {
+  anchor: PlainRect
+  heading: PlainRect | null
+  calloutHeight: number
+  viewport: { width: number; height: number }
+}): TipPosition {
+  const maxTop = Math.max(VIEWPORT_INSET, viewport.height - calloutHeight - VIEWPORT_INSET)
+  const left = clamp(
+    anchor.right + ANCHOR_GAP,
+    VIEWPORT_INSET,
+    Math.max(VIEWPORT_INSET, viewport.width - CALLOUT_WIDTH - VIEWPORT_INSET),
+  )
+  const top = clamp(anchor.top, VIEWPORT_INSET, maxTop)
+
+  if (!heading) {
+    return { top, left }
+  }
+
+  const touchesHeading =
+    left < heading.right + ANCHOR_GAP
+    && left + CALLOUT_WIDTH + ANCHOR_GAP > heading.left
+    && top < heading.bottom + ANCHOR_GAP
+    && top + calloutHeight + ANCHOR_GAP > heading.top
+
+  if (!touchesHeading) {
+    return { top, left }
+  }
+
+  return { top: clamp(heading.bottom + ANCHOR_GAP, VIEWPORT_INSET, maxTop), left }
+}
+
+function findMainHeading(callout: HTMLElement | null): PlainRect | null {
+  const heading =
+    document.querySelector<HTMLElement>('main h1') ?? document.querySelector<HTMLElement>('h1')
+
+  if (!heading || callout?.contains(heading)) {
+    return null
+  }
+
+  const rect = heading.getBoundingClientRect()
+  return rect.width > 0 && rect.height > 0 ? rect : null
+}
+
 export function GuidedTipsProvider() {
   const { t } = useTranslation()
   const pathname = usePathname()
@@ -61,18 +121,14 @@ export function GuidedTipsProvider() {
 
       const anchorRect = anchor.getBoundingClientRect()
       const calloutHeight = calloutRef.current?.getBoundingClientRect().height ?? 180
-      setPosition({
-        top: clamp(
-          anchorRect.top,
-          VIEWPORT_INSET,
-          Math.max(VIEWPORT_INSET, window.innerHeight - calloutHeight - VIEWPORT_INSET),
-        ),
-        left: clamp(
-          anchorRect.right + ANCHOR_GAP,
-          VIEWPORT_INSET,
-          Math.max(VIEWPORT_INSET, window.innerWidth - CALLOUT_WIDTH - VIEWPORT_INSET),
-        ),
-      })
+      setPosition(
+        placeCallout({
+          anchor: anchorRect,
+          heading: findMainHeading(calloutRef.current),
+          calloutHeight,
+          viewport: { width: window.innerWidth, height: window.innerHeight },
+        }),
+      )
     }
 
     const observer = new MutationObserver(updatePosition)

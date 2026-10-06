@@ -48,7 +48,7 @@ export default function TransformationsPage() {
               all dashboard page titles weigh the same. */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('transformations.workspace')}</p>
+            <p className="text-xs font-semibold text-muted-foreground">{t('transformations.workspace')}</p>
             <TabsList aria-label={t('common.accessibility.transformationViews')} className="w-full max-w-xl">
               <TabsTrigger value="transformations" className="min-w-0 flex-1 gap-1 px-2 text-xs sm:gap-2 sm:px-4 sm:text-sm">
                 <Wand2 className="h-4 w-4" />

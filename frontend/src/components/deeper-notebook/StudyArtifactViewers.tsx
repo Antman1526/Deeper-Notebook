@@ -584,7 +584,7 @@ export function DataTableViewer({
                 <th
                   key={header}
                   scope="col"
-                  className="border-b px-3 py-2 text-xs font-semibold uppercase tracking-normal text-muted-foreground"
+                  className="border-b px-3 py-2 text-xs font-semibold tracking-normal text-muted-foreground"
                 >
                   {header}
                 </th>
@@ -709,11 +709,11 @@ export function FlashcardDeck({
       </div>
 
       <div className="mt-4 rounded-md border bg-muted/30 p-4">
-        <div className="text-xs font-medium uppercase text-muted-foreground">{t('artifacts.studyArtifactViewers.prompt')}</div>
+        <div className="text-xs font-medium text-muted-foreground">{t('artifacts.studyArtifactViewers.prompt')}</div>
         <div className="mt-2 text-base font-medium leading-7">{card.front}</div>
         {revealed && (
           <div className="mt-4 border-t pt-4">
-            <div className="text-xs font-medium uppercase text-muted-foreground">{t('artifacts.studyArtifactViewers.answer')}</div>
+            <div className="text-xs font-medium text-muted-foreground">{t('artifacts.studyArtifactViewers.answer')}</div>
             <div className="mt-2 text-sm leading-6">{card.back}</div>
             {card.source && (
               <div className="mt-3 text-xs text-muted-foreground">{t('artifacts.studyArtifactViewers.sourceLine', { source: card.source })}</div>

@@ -93,7 +93,7 @@ export function ProductionTimeline({ state, selectedStage, onStageChange, childr
           const status = stageStatus(index, state)
           return (
             <button ref={(element) => { stageRefs.current[index] = element }} key={stage.name} type="button" role="tab" aria-label={t(stage.nameKey)} aria-selected={activeStage === stage.name} data-status={status} className="rounded border p-2 text-left text-sm" onClick={() => move(index)} onKeyDown={(event) => handleKeyDown(event, index)}>
-              <span className="block font-medium">{t(stage.nameKey)}</span><span className="mt-1 block text-xs text-muted-foreground">{t(stage.detailKey)}</span><span className="mt-1 block text-xs uppercase tracking-wide text-muted-foreground">{t(STATUS_LABEL_KEYS[status])}</span>
+              <span className="block font-medium">{t(stage.nameKey)}</span><span className="mt-1 block text-xs text-muted-foreground">{t(stage.detailKey)}</span><span className="mt-1 block text-xs text-muted-foreground">{t(STATUS_LABEL_KEYS[status])}</span>
             </button>
           )
         })}

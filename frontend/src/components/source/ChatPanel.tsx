@@ -756,7 +756,7 @@ function ThoughtAccordion({
       >
         <div className="flex items-center gap-2">
           <Sparkles className={cn('h-3.5 w-3.5 transition-colors', isThinkingActive ? 'text-primary animate-pulse' : 'text-muted-foreground')} />
-          <span className="font-mono text-xs uppercase tracking-wider">
+          <span className="font-mono text-xs">
             {isThinkingActive ? t('sources.chatPanel.thinking') : t('sources.chatPanel.thoughtProcess')}
           </span>
           {isThinkingActive && (
