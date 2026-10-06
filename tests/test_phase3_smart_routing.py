@@ -201,7 +201,7 @@ class TestProvisionLangchainChatModelDisabled:
     """DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT unset — wrapper must be a transparent
     pass-through to provision_langchain_model(model_id=None, default_type='chat')."""
 
-    def test_provision_skips_router_when_disabled(self, monkeypatch):
+    def test_provision_skips_router_when_disabled(self, monkeypatch, unset_setting):
         """When auto-routing env var is unset the wrapper delegates directly
         to provision_langchain_model with model_id=None and default_type='chat'.
         pick_provider() must never be called."""
@@ -210,7 +210,7 @@ class TestProvisionLangchainChatModelDisabled:
         import deeper_notebook.ai.provision as provision_mod
 
         # Ensure env var is absent
-        monkeypatch.delenv("DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT", raising=False)
+        unset_setting("DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT")
 
         captured: list[dict] = []
 
@@ -269,14 +269,14 @@ class TestProvisionLangchainChatModelEnabled:
         # raised "Event loop is closed" in that ordering.
         return asyncio.run(coro)
 
-    def test_provision_calls_router_when_enabled_picks_local(self, monkeypatch):
+    def test_provision_calls_router_when_enabled_picks_local(self, monkeypatch, unset_setting):
         """Small content + healthy local → router picks local model."""
         import deeper_notebook.ai.provision as provision_mod
 
         monkeypatch.setenv("DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT", "1")
         monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
         monkeypatch.setenv("DEEPER_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
-        monkeypatch.delenv("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
+        unset_setting("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL")
 
         # Patch health cache to return healthy
         monkeypatch.setattr(
@@ -302,7 +302,7 @@ class TestProvisionLangchainChatModelEnabled:
         )
         assert captured[0]["default_type"] == "chat"
 
-    def test_provision_calls_router_when_enabled_picks_cloud(self, monkeypatch):
+    def test_provision_calls_router_when_enabled_picks_cloud(self, monkeypatch, unset_setting):
         """Huge content overflows local n_ctx → router picks cloud model."""
         import deeper_notebook.ai.provision as provision_mod
 
@@ -310,7 +310,7 @@ class TestProvisionLangchainChatModelEnabled:
         monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
         monkeypatch.setenv("DEEPER_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
         monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_N_CTX", "32768")
-        monkeypatch.delenv("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL", raising=False)
+        unset_setting("DEEPER_NOTEBOOK_LOCAL_CHAT_BASE_URL")
 
         monkeypatch.setattr(
             provision_mod, "_local_chat_healthy_cached", AsyncMock(return_value=True)
@@ -355,7 +355,7 @@ class TestCloudModelIdResolution:
         # raised "Event loop is closed" in that ordering.
         return asyncio.run(coro)
 
-    def test_cloud_id_resolves_from_auto_route_cloud_field(self, monkeypatch):
+    def test_cloud_id_resolves_from_auto_route_cloud_field(self, monkeypatch, unset_setting):
         """Env var unset: cloud_model_id must come from auto_route_cloud, NOT
         default_chat_model.  The v0.8.0 bug would have used default_chat_model
         which might be a local model."""
@@ -364,7 +364,7 @@ class TestCloudModelIdResolution:
         monkeypatch.setenv("DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT", "1")
         monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:local_y")
         # Env var intentionally absent — must resolve via field.
-        monkeypatch.delenv("DEEPER_NOTEBOOK_CLOUD_CHAT_MODEL_ID", raising=False)
+        unset_setting("DEEPER_NOTEBOOK_CLOUD_CHAT_MODEL_ID")
         monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_N_CTX", "32768")
 
         # Local is unhealthy so the router will try to use the cloud model.
@@ -445,7 +445,7 @@ class TestCloudModelIdResolution:
             f"Expected env override 'model:env_z', got {captured[0]['model_id']!r}"
         )
 
-    def test_cloud_id_is_none_when_neither_env_nor_field_set(self, monkeypatch):
+    def test_cloud_id_is_none_when_neither_env_nor_field_set(self, monkeypatch, unset_setting):
         """Neither env var nor auto_route_cloud set: cloud_model_id must be None
         so pick_provider falls through to its 'no cloud configured' branch
         (uses local fallback) rather than masquerading a local model as cloud."""
@@ -453,7 +453,7 @@ class TestCloudModelIdResolution:
 
         monkeypatch.setenv("DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT", "1")
         monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:local_y")
-        monkeypatch.delenv("DEEPER_NOTEBOOK_CLOUD_CHAT_MODEL_ID", raising=False)
+        unset_setting("DEEPER_NOTEBOOK_CLOUD_CHAT_MODEL_ID")
         monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_N_CTX", "32768")
 
         # Local is healthy; content fits — pick_provider should return local.
@@ -524,12 +524,13 @@ class TestNCtxEnvVarSync:
     def test_router_picks_up_onp_chat_llm_ctx_when_router_var_unset(
         self,
         monkeypatch,
+        unset_setting,
     ):
         """v0.8.5 — operator sets DEEPER_NOTEBOOK_CHAT_LLM_CTX=8192 (low-RAM mode);
         router must respect that 8k ceiling and flip to cloud for
         prompts that would have fit a 32k local."""
         monkeypatch.setenv("DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT", "1")
-        monkeypatch.delenv("DEEPER_NOTEBOOK_LOCAL_N_CTX", raising=False)
+        unset_setting("DEEPER_NOTEBOOK_LOCAL_N_CTX")
         monkeypatch.setenv("DEEPER_NOTEBOOK_CHAT_LLM_CTX", "8192")
         monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
         monkeypatch.setenv("DEEPER_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
@@ -641,12 +642,15 @@ class TestNCtxEnvVarSync:
     def test_router_falls_back_to_32768_default_when_both_unset(
         self,
         monkeypatch,
+        unset_setting,
     ):
         """v0.8.5 — neither env var set → 32768 default. Mirrors the
         launcher's own default so the no-config case stays correct."""
         monkeypatch.setenv("DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT", "1")
-        monkeypatch.delenv("DEEPER_NOTEBOOK_LOCAL_N_CTX", raising=False)
-        monkeypatch.delenv("DEEPER_NOTEBOOK_CHAT_LLM_CTX", raising=False)
+        unset_setting(
+            "DEEPER_NOTEBOOK_LOCAL_N_CTX",
+            "DEEPER_NOTEBOOK_CHAT_LLM_CTX",
+        )
         monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
         monkeypatch.setenv("DEEPER_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
         monkeypatch.setenv(
@@ -690,6 +694,7 @@ class TestNCtxEnvVarSync:
     def test_router_falls_back_to_32768_when_var_is_malformed(
         self,
         monkeypatch,
+        unset_setting,
     ):
         """v0.8.5 — operator typo ('32k' instead of '32768') must not
         crash the chat turn. Mirrors v0.7.206's same-shape guard in
@@ -697,7 +702,7 @@ class TestNCtxEnvVarSync:
         (the log line will surface it once they check)."""
         monkeypatch.setenv("DEEPER_NOTEBOOK_AUTO_ROUTE_CHAT", "1")
         monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_N_CTX", "thirtytwo-thousand")
-        monkeypatch.delenv("DEEPER_NOTEBOOK_CHAT_LLM_CTX", raising=False)
+        unset_setting("DEEPER_NOTEBOOK_CHAT_LLM_CTX")
         monkeypatch.setenv("DEEPER_NOTEBOOK_LOCAL_CHAT_MODEL_ID", "model:hermes")
         monkeypatch.setenv("DEEPER_NOTEBOOK_CLOUD_CHAT_MODEL_ID", "model:gpt4")
         monkeypatch.setenv(

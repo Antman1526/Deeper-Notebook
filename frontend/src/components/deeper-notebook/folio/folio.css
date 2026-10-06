@@ -38,21 +38,24 @@
   min-inline-size: 0;
 }
 
+/* v0.8.130 — premium pass: quiet grey sentence case (was brass, tracked uppercase). */
 [data-dn-folio-page-eyebrow] {
   margin-block: 0 var(--dn-space-2);
-  color: var(--dn-brass);
+  color: var(--muted-foreground);
   font-size: var(--dn-text-xs);
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
 }
 
+/* v0.8.130 — sans display step (32/40); 44px was sized for the serif. */
 [data-dn-folio-page-title] {
   margin-block: 0;
   color: var(--dn-folio-ink);
-  font-size: clamp(1.75rem, 3vw, 2.75rem);
+  font-size: clamp(1.75rem, 3vw, 2rem);
   font-weight: 600;
-  line-height: 1.08;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
 }
 
 [data-dn-folio-page-subtitle] {
@@ -167,9 +170,11 @@
   color: var(--foreground);
 }
 
+/* v0.8.130 — 3px like the global ring (it overrode this rule with !important until
+ * Phase 1); inset because the tab strip clips. */
 [data-dn-folio-tab]:focus-visible {
-  outline: 2px solid var(--dn-focus);
-  outline-offset: -2px;
+  outline: 3px solid var(--dn-focus);
+  outline-offset: -3px;
 }
 
 [data-dn-folio-tab-badge] {
@@ -193,6 +198,14 @@
   border-radius: 0.5rem;
   background: var(--dn-lens);
   color: var(--foreground);
+}
+
+/* v0.8.130 — an evidence receipt in a narrow column (the notebook's Studio) keeps its
+ * frame but not a full-page inset. */
+@container (max-width: 28rem) {
+  [data-dn-folio-evidence] {
+    padding: var(--dn-space-3);
+  }
 }
 
 [data-dn-folio-margin-note] {
@@ -241,11 +254,11 @@
 
 [data-dn-folio-state-kind-label] {
   margin: 0;
-  color: var(--dn-brass);
+  color: var(--muted-foreground);
   font-size: var(--dn-text-xs);
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 [data-dn-folio-state-title],
@@ -268,11 +281,17 @@
     flex-direction: column;
   }
 
+  /* v0.8.130 — stretched: stacked, the actions shrank to their widest control. */
   [data-dn-folio-page-actions] {
+    align-self: stretch;
     justify-content: flex-start;
   }
 
-  [data-dn-folio-spread] {
+  /* v0.8.130 — The Evidence Studio variant needs its own selector here: its two-column rule
+   * above is more specific, so a bare `[data-dn-folio-spread]` override lost to
+   * it and the 18rem rail crushed the source desk on phones. */
+  [data-dn-folio-spread],
+  [data-dn-folio-spread][data-dn-folio-variant='evidence-studio'] {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -298,4 +317,15 @@
   [data-dn-folio-tab] {
     transition: none;
   }
+}
+
+/* v0.8.130 — Phase 3a (V2 only): Studio's header and its two columns sit on the canvas.
+   The header was a tinted margin-note block and each column a tinted or paper panel
+   holding its own cards (card-in-card-in-card). The pre-V2 folio keeps its panels. */
+[data-dn-visual-system='v2'] [data-dn-studio-header],
+[data-dn-visual-system='v2'] [data-dn-folio-variant='evidence-studio'] > [data-dn-folio-primary],
+[data-dn-visual-system='v2'] [data-dn-folio-variant='evidence-studio'] > [data-dn-folio-secondary] {
+  padding: 0;
+  border: 0;
+  background: transparent;
 }

@@ -1,4 +1,5 @@
 import type { VaultPage } from '@/lib/api/vault'
+import { useTranslation } from '@/lib/hooks/use-translation'
 import type { HeadingDescriptor, MarkdownModel } from '@/lib/vault/markdown-model'
 
 interface VaultNoteSidebarProps {
@@ -188,14 +189,15 @@ function formatProperty(value: unknown): string {
 }
 
 export function VaultNoteSidebar({ model, page, onHeading }: VaultNoteSidebarProps) {
+  const { t } = useTranslation()
   const properties = Object.entries(page.note.properties || {})
     .sort(([left], [right]) => compareDisplay(left, right))
   const tags = Array.from(new Set(page.note.tags || [])).sort(compareDisplay)
 
   return (
-    <aside className="space-y-5" aria-label="Note details">
+    <aside className="space-y-5" aria-label={t('knowledge.overlay.noteDetails')}>
       <section aria-labelledby="vault-outline-title">
-        <h3 id="vault-outline-title" className="text-sm font-semibold">Outline</h3>
+        <h3 id="vault-outline-title" className="text-sm font-semibold">{t('knowledge.outline')}</h3>
         {model.headings.length ? (
           <ol className="mt-2 space-y-1 text-sm text-muted-foreground">
             {model.headings.map((heading) => (
@@ -203,7 +205,7 @@ export function VaultNoteSidebar({ model, page, onHeading }: VaultNoteSidebarPro
                 <button
                   type="button"
                   className="text-left hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  aria-label={`Level ${heading.level} ${heading.text}`}
+                  aria-label={t('knowledge.headingLevel', { level: heading.level, title: heading.text })}
                   onClick={() => onHeading(heading)}
                 >
                   {heading.text}
@@ -211,11 +213,11 @@ export function VaultNoteSidebar({ model, page, onHeading }: VaultNoteSidebarPro
               </li>
             ))}
           </ol>
-        ) : <p className="mt-2 text-sm text-muted-foreground">No headings</p>}
+        ) : <p className="mt-2 text-sm text-muted-foreground">{t('knowledge.overlay.noHeadings')}</p>}
       </section>
 
       <section aria-labelledby="vault-properties-title">
-        <h3 id="vault-properties-title" className="text-sm font-semibold">Properties</h3>
+        <h3 id="vault-properties-title" className="text-sm font-semibold">{t('knowledge.properties')}</h3>
         {properties.length ? (
           <dl className="mt-2 space-y-1 text-sm text-muted-foreground">
             {properties.map(([key, value]) => (
@@ -225,20 +227,20 @@ export function VaultNoteSidebar({ model, page, onHeading }: VaultNoteSidebarPro
               </div>
             ))}
           </dl>
-        ) : <p className="mt-2 text-sm text-muted-foreground">No properties</p>}
+        ) : <p className="mt-2 text-sm text-muted-foreground">{t('knowledge.vaultNoteSidebar.noProperties')}</p>}
       </section>
 
       <section aria-labelledby="vault-tags-title">
-        <h3 id="vault-tags-title" className="text-sm font-semibold">Tags</h3>
+        <h3 id="vault-tags-title" className="text-sm font-semibold">{t('knowledge.tags')}</h3>
         {tags.length ? (
           <ul className="mt-2 flex flex-wrap gap-1" role="list">
             {tags.map((tag) => <li key={tag} className="rounded bg-muted px-1.5 py-0.5 text-xs">#{tag}</li>)}
           </ul>
-        ) : <p className="mt-2 text-sm text-muted-foreground">No tags</p>}
+        ) : <p className="mt-2 text-sm text-muted-foreground">{t('knowledge.vaultNoteSidebar.noTags')}</p>}
       </section>
 
       <section aria-labelledby="vault-source-title">
-        <h3 id="vault-source-title" className="text-sm font-semibold">Source</h3>
+        <h3 id="vault-source-title" className="text-sm font-semibold">{t('knowledge.source')}</h3>
         <p className="mt-2 break-all text-sm text-muted-foreground">{page.file.relative_path}</p>
       </section>
     </aside>

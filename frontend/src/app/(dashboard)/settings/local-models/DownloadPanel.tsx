@@ -43,6 +43,7 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import apiClient from '@/lib/api/client'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatDecimal } from '@/lib/utils/format'
 
 export type Recommendation = {
   id: string
@@ -95,10 +96,10 @@ type SnapshotInstallResponse = {
   log_tail: string[]
 }
 
-function fmtGb(n: number): string {
+function fmtGb(n: number, language: string): string {
   if (!n) return '—'
   if (n < 1) return `${Math.round(n * 1000)} MB`
-  return `${n.toFixed(1)} GB`
+  return `${formatDecimal(n, language, 1)} GB`
 }
 
 function recommendationJobKey(rec: Recommendation): string {
@@ -126,7 +127,7 @@ function RecommendationCard({
   onDownload: (rec: Recommendation) => void
   onCancel: (job: DownloadJob) => void
 }) {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const key = recommendationJobKey(rec)
   const job = jobByKey[key]
   const isActive = job && (job.status === 'queued' || job.status === 'downloading')
@@ -150,10 +151,11 @@ function RecommendationCard({
           </div>
           <div className="flex items-center gap-1 flex-wrap">
             {rec.tags.map(tag => (
+              // v0.8.130 — 12px type floor, status colours from theme tokens (UI audit Phase 1)
               <Badge
                 key={tag}
                 variant={tag === 'recommended' ? 'default' : 'secondary'}
-                className="text-[10px]"
+                className="text-xs"
               >
                 {tag}
               </Badge>
@@ -167,7 +169,7 @@ function RecommendationCard({
             <dt className="text-muted-foreground">
               {t('localModels.colSize', { defaultValue: 'Size' })}
             </dt>
-            <dd className="font-mono">~{fmtGb(rec.approx_size_gb ?? 0)}</dd>
+            <dd className="font-mono">~{fmtGb(rec.approx_size_gb ?? 0, language)}</dd>
           </div>
           <div>
             <dt className="text-muted-foreground">
@@ -183,7 +185,7 @@ function RecommendationCard({
             <dt className="text-muted-foreground">
               {t('localModels.colRepo', { defaultValue: 'Repo' })}
             </dt>
-            <dd className="text-[10px] font-mono break-all">{rec.repo_id}</dd>
+            <dd className="text-xs font-mono break-all">{rec.repo_id}</dd>
           </div>
         </dl>
 
@@ -230,7 +232,7 @@ function RecommendationCard({
         )}
 
         {isDone && (
-          <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+          <div className="flex items-center gap-1.5 text-xs text-success-ink">
             <CheckCircle2 className="h-3 w-3" />
             {t('localModels.completed', { defaultValue: 'Installed' })}
           </div>

@@ -1,5 +1,6 @@
 'use client'
 
+import { markErrorReported } from '@/lib/api/client'
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -121,6 +122,7 @@ export function useNotebookChat({
   // Fetch current session with messages
   const {
     data: currentSession,
+    isSuccess: currentSessionLoaded,
     refetch: refetchCurrentSession
   } = useQuery({
     queryKey: QUERY_KEYS.notebookChatSession(currentSessionId!),
@@ -382,6 +384,7 @@ export function useNotebookChat({
           queryKey: QUERY_KEYS.notebookChatSessions(notebookId)
         })
       } catch (err: unknown) {
+        markErrorReported(err) // v0.8.130 — this caller reports the failure itself
         const error = err as { response?: { data?: { detail?: string } }, message?: string };
         toast.error(getApiErrorMessage(error.response?.data?.detail || error.message, (key) => t(key), 'apiErrors.failedToCreateSession'))
         return
@@ -608,6 +611,7 @@ export function useNotebookChat({
         })
       }
     } catch (err: unknown) {
+      markErrorReported(err) // v0.8.130 — this caller reports the failure itself
       // v0.7.50 — AbortError = user navigated away mid-stream or a
       // second send aborted us. Silent: don't toast (no real failure).
       // Clean up only THIS send's IDs so the new send's optimistic
@@ -815,6 +819,9 @@ export function useNotebookChat({
     messages,
     isSending,
     loadingSessions,
+    // v0.8.130 — true once we know what the chat history is: the session list has
+    // loaded and there is either no session or the current one has been fetched.
+    historyLoaded: !loadingSessions && (sessions.length === 0 || currentSessionLoaded),
     tokenCount,
     charCount,
     pendingModelOverride,

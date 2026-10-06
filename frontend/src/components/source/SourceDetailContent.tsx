@@ -1,5 +1,7 @@
 'use client'
 
+import { markErrorReported } from '@/lib/api/client'
+import { useConfirm } from '@/components/common/use-confirm'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { isAxiosError } from 'axios'
@@ -70,6 +72,7 @@ import { formatDistanceToNow } from 'date-fns'
 import { formatDateTime, getDateLocale } from '@/lib/utils/date-locale'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatNumber } from '@/lib/utils/format'
 import { SourceInsightDialog } from '@/components/source/SourceInsightDialog'
 import { NotebookAssociations } from '@/components/source/NotebookAssociations'
 import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
@@ -89,7 +92,7 @@ interface SourceDetailContentProps {
   notebookId?: string | null
 }
 
-function formatProvenanceEntries(provenance: Record<string, unknown> | undefined) {
+function formatProvenanceEntries(provenance: Record<string, unknown> | undefined, language: string) {
   if (!provenance) return []
 
   const values: Array<[string, string]> = []
@@ -97,21 +100,21 @@ function formatProvenanceEntries(provenance: Record<string, unknown> | undefined
     if (typeof value === 'string' && value.trim()) {
       values.push([label, value.trim()])
     } else if (typeof value === 'number' && Number.isFinite(value)) {
-      values.push([label, value.toLocaleString()])
+      values.push([label, formatNumber(value, language)])
     }
   }
 
-  push('Origin', provenance.origin)
-  push('Domain', provenance.domain)
-  push('Original file', provenance.original_filename)
-  push('File name', provenance.file_name)
-  push('Size', provenance.size_bytes)
+  push('sources.sourceDetailContent.provenance.origin', provenance.origin)
+  push('sources.sourceDetailContent.provenance.domain', provenance.domain)
+  push('sources.sourceDetailContent.provenance.originalFile', provenance.original_filename)
+  push('sources.sourceDetailContent.provenance.fileName', provenance.file_name)
+  push('sources.sourceDetailContent.provenance.size', provenance.size_bytes)
 
   const extraction = provenance.extraction
   if (extraction && typeof extraction === 'object' && !Array.isArray(extraction)) {
     const extractionMap = extraction as Record<string, unknown>
-    push('Extractor', extractionMap.extractor)
-    push('Detected type', extractionMap.identified_type)
+    push('sources.sourceDetailContent.provenance.extractor', extractionMap.extractor)
+    push('sources.sourceDetailContent.provenance.detectedType', extractionMap.identified_type)
   }
 
   return values
@@ -148,10 +151,11 @@ function renderHighlightedText(
       return (
         <>
           {before}
+          {/* v0.8.130 — highlight tint from theme tokens, no glow shadow (UI audit Phase 1) */}
           <mark
             id={isFirst ? 'inline-cited-passage' : undefined}
             data-testid="inline-cited-passage"
-            className="rounded-md bg-amber-300/35 dark:bg-amber-400/25 px-1.5 py-0.5 font-medium text-foreground ring-1 ring-amber-400/40 dark:ring-amber-300/30 scroll-mt-32 transition-all shadow-[0_0_14px_rgba(251,191,36,0.25)]"
+            className="rounded-md bg-warning-soft px-1.5 py-0.5 font-medium text-foreground ring-1 ring-warning/40 scroll-mt-32"
           >
             {match}
           </mark>
@@ -178,6 +182,8 @@ export function SourceDetailContent({
   notebookId,
 }: SourceDetailContentProps) {
   const { t, language } = useTranslation()
+  // v0.8.130 — Phase 4c: the app's confirm dialog, not the browser's confirm().
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const queryClient = useQueryClient()
   const openPodcastReview = usePodcastStudioStore((state) => state.open)
   const [source, setSource] = useState<SourceDetailResponse | null>(null)
@@ -279,7 +285,7 @@ export function SourceDetailContent({
   const [isEmbedding, setIsEmbedding] = useState(false)
   const [isRetryingSource, setIsRetryingSource] = useState(false)
   const [isDownloadingFile, setIsDownloadingFile] = useState(false)
-  const provenanceEntries = formatProvenanceEntries(source?.provenance)
+  const provenanceEntries = formatProvenanceEntries(source?.provenance, language)
   const [fileAvailable, setFileAvailable] = useState<boolean | null>(null)
   const [selectedInsight, setSelectedInsight] = useState<SourceInsightResponse | null>(null)
   const [insightToDelete, setInsightToDelete] = useState<string | null>(null)
@@ -399,6 +405,7 @@ export function SourceDetailContent({
         }, 5000)
       }
     } catch (err) {
+      markErrorReported(err) // v0.8.130 — this caller reports the failure itself
       console.error('Failed to create insight:', err)
       toast.error(t('common.error'))
     } finally {
@@ -417,6 +424,7 @@ export function SourceDetailContent({
       setInsightToDelete(null)
       await fetchInsights()
     } catch (err) {
+      markErrorReported(err) // v0.8.130 — this caller reports the failure itself
       console.error('Failed to delete insight:', err)
       toast.error(t('common.error'))
     } finally {
@@ -432,6 +440,7 @@ export function SourceDetailContent({
       toast.success(t('common.success'))
       setSource({ ...source, title })
     } catch (err) {
+      markErrorReported(err) // v0.8.130 — this caller reports the failure itself
       console.error('Failed to update source title:', err)
       toast.error(t('common.error'))
       await fetchSource()
@@ -447,6 +456,7 @@ export function SourceDetailContent({
       toast.success(response.message || t('common.success'))
       await fetchSource()
     } catch (err) {
+      markErrorReported(err) // v0.8.130 — this caller reports the failure itself
       console.error('Failed to embed content:', err)
       toast.error(t('common.error'))
     } finally {
@@ -468,6 +478,7 @@ export function SourceDetailContent({
       queryClient.invalidateQueries({ queryKey: ['sources'] })
       await fetchSource()
     } catch (err) {
+      markErrorReported(err) // v0.8.130 — this caller reports the failure itself
       console.error('Failed to retry source processing:', err)
       toast.error(t('common.error'))
     } finally {
@@ -523,6 +534,7 @@ export function SourceDetailContent({
       setFileAvailable(true)
       toast.success(t('common.success'))
     } catch (err) {
+      markErrorReported(err) // v0.8.130 — this caller reports the failure itself
       console.error('Failed to download file:', err)
       if (isAxiosError(err) && err.response?.status === 404) {
         setFileAvailable(false)
@@ -595,12 +607,18 @@ export function SourceDetailContent({
   const handleDelete = async () => {
     if (!source) return
 
-    if (confirm(t('sources.deleteSourceConfirm') || t('common.confirm'))) {
+    if (await confirm({
+      title: t('sources.delete'),
+      description: t('sources.deleteSourceConfirm'),
+      confirmText: t('common.delete'),
+      destructive: true,
+    })) {
       try {
         await sourcesApi.delete(source.id)
         toast.success(t('common.success'))
         onClose?.()
       } catch (error) {
+        markErrorReported(error) // v0.8.130 — this caller reports the failure itself
         console.error('Failed to delete source:', error)
         toast.error(t('common.error'))
       }
@@ -618,7 +636,7 @@ export function SourceDetailContent({
   if (error || !source) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 p-8">
-        {/* v0.7.180 — text-red-500 → text-destructive (theme-aware). */}
+        {/* v0.7.180 — error text uses the theme-aware destructive token. */}
         <p className="text-destructive">{error || t('sources.notFound')}</p>
       </div>
     )
@@ -629,6 +647,7 @@ export function SourceDetailContent({
 
   return (
     <div className="flex flex-col h-full">
+      {confirmDialog}
       {/* Header */}
       <div className="pb-4 px-2">
         <div className="flex items-start justify-between">
@@ -708,7 +727,7 @@ export function SourceDetailContent({
                   disabled={hasNoExtractedText}
                 >
                   <Podcast className="mr-2 h-4 w-4" />
-                  {hasNoExtractedText ? 'Podcast unavailable: no readable content' : 'Turn into podcast'}
+                  {hasNoExtractedText ? t('sources.sourceDetailContent.podcastUnavailable') : t('sources.sourceDetailContent.turnIntoPodcast')}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
@@ -727,12 +746,7 @@ export function SourceDetailContent({
       {(hasNoExtractedText || hasLowExtractedText) && (
         <div className="px-2 pb-4">
           <Alert
-            variant={hasNoExtractedText ? 'destructive' : 'default'}
-            className={
-              hasLowExtractedText
-                ? 'border-amber-500/60 text-amber-700 dark:text-amber-300 [&>svg]:text-amber-600'
-                : undefined
-            }
+            variant={hasNoExtractedText ? 'destructive' : 'warning'}
           >
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>
@@ -763,12 +777,12 @@ export function SourceDetailContent({
       {/* Tabs Content */}
       <div className="flex-1 overflow-y-auto px-2">
         <Tabs defaultValue="content" className="w-full">
-          <TabsList className="grid w-full grid-cols-3 sticky top-0 z-10 rounded-xl bg-muted/60 p-1 backdrop-blur-md border border-border/40 shadow-xs">
-            <TabsTrigger value="content" className="rounded-lg transition-all">{t('sources.content')}</TabsTrigger>
-            <TabsTrigger value="insights" className="rounded-lg transition-all">
+          <TabsList className="grid w-full grid-cols-3 sticky top-0 z-10 rounded-xl bg-muted/60 p-1 border border-border/40 shadow-xs">
+            <TabsTrigger value="content" className="rounded-lg">{t('sources.content')}</TabsTrigger>
+            <TabsTrigger value="insights" className="rounded-lg">
               {t('common.insights')} {insights.length > 0 && `(${insights.length})`}
             </TabsTrigger>
-            <TabsTrigger value="details" className="rounded-lg transition-all">{t('sources.details')}</TabsTrigger>
+            <TabsTrigger value="details" className="rounded-lg">{t('sources.details')}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="content" className="mt-6">
@@ -785,7 +799,7 @@ export function SourceDetailContent({
                       href={source.asset.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="hover:underline text-blue-600"
+                      className="hover:underline text-primary"
                     >
                       {source.asset.url}
                     </a>
@@ -839,13 +853,13 @@ export function SourceDetailContent({
                 {citedPassage && (
                   <div
                     ref={citedPassageRef}
-                    className="mb-5 relative overflow-hidden rounded-2xl border border-primary/30 bg-gradient-to-r from-primary/15 via-primary/5 to-transparent p-4 shadow-[0_0_24px_rgba(45,212,191,0.08),inset_0_1px_0_rgba(255,255,255,0.1)]"
+                    className="mb-5 relative overflow-hidden rounded-2xl border border-primary/30 bg-primary/5 p-4"
                   >
-                    <div className="absolute top-0 left-0 bottom-0 w-1.5 bg-primary shadow-[0_0_8px_rgba(45,212,191,0.6)]" />
+                    <div className="absolute top-0 left-0 bottom-0 w-1.5 bg-primary" />
                     <div className="flex items-center justify-between gap-2 mb-2 pl-2">
                       <div className="flex items-center gap-2">
                         <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
-                        <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+                        <p className="text-xs font-semibold text-primary">
                           {t('sources.citedPassage', { defaultValue: 'Cited passage' })}
                         </p>
                       </div>
@@ -853,7 +867,7 @@ export function SourceDetailContent({
                         type="button"
                         variant="ghost"
                         size="sm"
-                        className="h-7 text-xs text-primary hover:bg-primary/20 gap-1.5 px-2.5 rounded-lg active:scale-95 transition-all duration-150 font-medium"
+                        className="h-7 text-xs text-primary hover:bg-primary/20 gap-1.5 px-2.5 rounded-lg duration-150 font-medium"
                         onClick={() => {
                           const el = document.getElementById('inline-cited-passage')
                           if (el) {
@@ -862,7 +876,7 @@ export function SourceDetailContent({
                         }}
                       >
                         <Sparkles className="h-3.5 w-3.5" />
-                        Jump to in-text passage
+                        {t('sources.sourceDetailContent.jumpToPassage')}
                       </Button>
                     </div>
                     <p className="text-sm leading-6 text-foreground/90 pl-2">
@@ -872,7 +886,7 @@ export function SourceDetailContent({
                     </p>
                   </div>
                 )}
-                <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none prose-headings:font-semibold prose-a:text-blue-600 prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-p:mb-4 prose-p:leading-7 prose-li:mb-2">
+                <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none prose-headings:font-semibold prose-a:text-primary prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-p:mb-4 prose-p:leading-7 prose-li:mb-2">
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm, remarkMath]}
                     rehypePlugins={[rehypeKatex]}
@@ -997,7 +1011,7 @@ export function SourceDetailContent({
                       <div key={insight.id} className="rounded-lg border bg-background p-4">
                         <div className="flex items-start justify-between">
                           <div className="flex items-center gap-2">
-                            <Badge variant="outline" className="text-xs uppercase">
+                            <Badge variant="outline" className="text-xs">
                               {insight.insight_type}
                             </Badge>
                           </div>
@@ -1180,17 +1194,17 @@ export function SourceDetailContent({
                     </div>
                     {source.notebook_count !== undefined && (
                       <div>
-                        <p className="text-xs font-medium text-muted-foreground">Notebook use</p>
+                        <p className="text-xs font-medium text-muted-foreground">{t('sources.sourceDetailContent.notebookUse')}</p>
                         <p className="text-sm">
                           {source.is_shared || source.notebook_count > 1
-                            ? `Shared with ${source.notebook_count} notebooks`
-                            : 'Used in one notebook'}
+                            ? t('sources.sourceDetailContent.sharedWithNotebooks', { count: source.notebook_count })
+                            : t('sources.sourceDetailContent.usedInOneNotebook')}
                         </p>
                       </div>
                     )}
                     {provenanceEntries.map(([label, value]) => (
                       <div key={label}>
-                        <p className="text-xs font-medium text-muted-foreground">{label}</p>
+                        <p className="text-xs font-medium text-muted-foreground">{t(label)}</p>
                         <p className="break-all text-sm">{value}</p>
                       </div>
                     ))}
@@ -1224,6 +1238,7 @@ export function SourceDetailContent({
             setSelectedInsight(null)
             await fetchInsights()
           } catch (err) {
+            markErrorReported(err) // v0.8.130 — this caller reports the failure itself
             console.error('Failed to delete insight:', err)
             toast.error(t('common.error'))
           }

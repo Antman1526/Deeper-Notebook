@@ -27,7 +27,7 @@ describe('StudyPlanPage', () => {
     render(<StudyPlanPage />)
 
     expect(screen.getAllByRole('main')).toHaveLength(1)
-    expect(screen.getByRole('main', { name: 'Study' })).toBeInTheDocument()
+    expect(screen.getByRole('main', { name: 'study.planIdPage.title' })).toBeInTheDocument()
     expect(screen.getByTestId('workspace')).toHaveTextContent('study_plan:one')
   })
 

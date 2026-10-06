@@ -24,6 +24,7 @@
  * unlock for now.
  */
 
+import { isErrorReported } from '@/lib/api/client'
 import React from 'react'
 import { Sparkles, Cloud, MonitorCog, Workflow } from 'lucide-react'
 import {
@@ -72,12 +73,16 @@ export function SmartRoutingPanel({ defaults }: SmartRoutingPanelProps) {
                   defaultValue: 'Smart routing disabled',
                 }),
           ),
-        onError: () =>
+        // v0.8.130 — useUpdateModelDefaults reports failures itself; only toast an
+        // error nobody has reported.
+        onError: (error) => {
+          if (isErrorReported(error)) return
           toast.error(
             t('models.smartRouting.toastError', {
               defaultValue: 'Could not save smart-routing settings',
             }),
-          ),
+          )
+        },
       },
     )
   }
@@ -92,12 +97,16 @@ export function SmartRoutingPanel({ defaults }: SmartRoutingPanelProps) {
               defaultValue: 'Provider preference saved',
             }),
           ),
-        onError: () =>
+        // v0.8.130 — useUpdateModelDefaults reports failures itself; only toast an
+        // error nobody has reported.
+        onError: (error) => {
+          if (isErrorReported(error)) return
           toast.error(
             t('models.smartRouting.toastError', {
               defaultValue: 'Could not save smart-routing settings',
             }),
-          ),
+          )
+        },
       },
     )
   }

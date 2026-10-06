@@ -37,7 +37,7 @@ describe('VaultSourceView', () => {
       />,
     )
 
-    expect(screen.getByRole('textbox', { name: 'Plan source' }))
+    expect(screen.getByRole('textbox', { name: 'knowledge.vaultSourceView.source' }))
       .toHaveAttribute('aria-readonly', 'true')
     expect(screen.getByText('pages/plan.md')).toBeInTheDocument()
     expect(screen.getByText('aaaaaaaaaaaa')).toBeInTheDocument()

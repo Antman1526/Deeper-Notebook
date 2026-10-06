@@ -1,5 +1,6 @@
 'use client'
 
+import { cn } from '@/lib/utils'
 import { useEffect, useMemo, useState } from 'react'
 import {
   Select,
@@ -26,6 +27,8 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { formatModelProviderLabel } from '@/lib/types/models'
 
 interface ModelSelectorProps {
+  // v0.8.130 — lets a narrow host hide the visible model name (e.g. `sr-only`).
+  labelClassName?: string
   currentModel?: string
   onModelChange: (model?: string) => void
   disabled?: boolean
@@ -34,7 +37,8 @@ interface ModelSelectorProps {
 export function ModelSelector({ 
   currentModel, 
   onModelChange,
-  disabled = false 
+  disabled = false,
+  labelClassName,
 }: ModelSelectorProps) {
   const { t } = useTranslation()
   const defaultLabel = t('common.default')
@@ -93,7 +97,7 @@ export function ModelSelector({
           className="gap-2"
         >
           <Settings2 className="h-4 w-4" />
-          <span className="text-xs">
+          <span className={cn('text-xs', labelClassName)}>
             {currentModelName}
           </span>
         </Button>

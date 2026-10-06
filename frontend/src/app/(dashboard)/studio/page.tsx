@@ -27,7 +27,6 @@ import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { Upload, FileText, X, Loader2, AlertCircle, BookOpen, Mic, ArrowLeft, Sparkles, Link2, GraduationCap } from 'lucide-react'
 
-import { AppShell } from '@/components/layout/AppShell'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -43,7 +42,7 @@ import {
 import { useToast } from '@/lib/hooks/use-toast'
 import { useStudioCoursePack, useStudioGenerate } from '@/lib/hooks/use-studio'
 import { StudioMode } from '@/lib/api/studio'
-import apiClient from '@/lib/api/client'
+import apiClient, { isErrorReported } from '@/lib/api/client'
 // v0.7.1 — use existing QUERY_KEYS so Studio's profile fetches share
 // cache with use-podcasts.ts (and pick up invalidations from profile
 // mutations). Previously this file declared its own raw keys, causing
@@ -55,6 +54,7 @@ import { QUERY_KEYS } from '@/lib/api/query-client'
 // Alert below the form. The Studio page's English-only static
 // strings remain — full i18n extraction is deferred (see CHANGELOG).
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatDecimal } from '@/lib/utils/format'
 import { getApiErrorMessage } from '@/lib/utils/error-handler'
 import { EvidenceStudioFolio } from '@/components/deeper-notebook/studios/EvidenceStudioFolio'
 
@@ -97,14 +97,14 @@ interface RejectionReason {
   key: 'studio.unsupportedType' | 'studio.fileTooLarge'
   params: Record<string, string>
 }
-function isAllowed(file: File): { ok: boolean; reason?: RejectionReason } {
+function isAllowed(file: File, noExtensionLabel: string): { ok: boolean; reason?: RejectionReason } {
   const ext = fileExt(file.name)
   if (!ALLOWED_EXTS.has(ext)) {
     return {
       ok: false,
       reason: {
         key: 'studio.unsupportedType',
-        params: { ext: ext || '(no extension)' },
+        params: { ext: ext || noExtensionLabel },
       },
     }
   }
@@ -126,7 +126,7 @@ function isAllowed(file: File): { ok: boolean; reason?: RejectionReason } {
 export default function StudioPage() {
   const router = useRouter()
   const { toast } = useToast()
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const mutation = useStudioGenerate()
   const coursePackMutation = useStudioCoursePack()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -157,7 +157,7 @@ export default function StudioPage() {
     const rejected: { name: string; reason: string }[] = []
     const accepted: File[] = []
     for (const f of Array.from(incoming)) {
-      const { ok, reason } = isAllowed(f)
+      const { ok, reason } = isAllowed(f, t('common.studioPage.noExtension'))
       if (!ok) {
         // v0.7.203 — format the rejection reason via t() with the
         // returned key+params, so the user sees a translated string
@@ -169,7 +169,7 @@ export default function StudioPage() {
               (s, [k, v]) => s.replace(`{${k}}`, v),
               t(reason.key),
             )
-          : 'rejected'
+          : t('common.studioPage.rejectedFallback')
         rejected.push({ name: f.name, reason: reasonText })
         continue
       }
@@ -321,6 +321,8 @@ export default function StudioPage() {
       }
       router.push(`/notebooks/${encodeURIComponent(result.notebook_id)}`)
     } catch (e) {
+      // v0.8.130 — the mutation's own onError already told the user; don't toast twice.
+      if (isErrorReported(e)) return
       // v0.7.196 — was ad-hoc unwrap of axios `response.data.detail`
       // and bare `(e as Error).message` fallback — both could surface
       // raw stack-trace text. Route through getApiErrorMessage so
@@ -336,13 +338,14 @@ export default function StudioPage() {
   }
 
   // ----- Render -----
-  // v0.7.23 — wrap in AppShell so the persistent left sidebar is visible
+  // v0.7.23 — the persistent left sidebar is visible here (since v0.8.130 the shell is
+  // mounted once by (dashboard)/layout.tsx rather than by each page)
   // (matches every other dashboard page). Studio previously rendered a
   // bare <div> with no nav — users had no way back to the main page short
   // of the browser back button. Also adds an explicit "Back to Notebooks"
   // header link as a one-click escape hatch independent of the sidebar.
   return (
-    <AppShell>
+    <>
       <div className="flex-1 overflow-y-auto">
         <EvidenceStudioFolio status={<>
           <div className="mb-4">
@@ -361,7 +364,8 @@ export default function StudioPage() {
               bumped from `text-sm` to default body size — the
               Studio is a flagship feature; the explainer copy
               shouldn't read as a footnote. */}
-          <header className="mb-6 space-y-2">
+          {/* v0.8.130 — data-dn-letterhead: the rule under the title, as on every other page. */}
+          <header data-dn-letterhead="" className="mb-6 space-y-2">
             <h1 className="text-3xl font-semibold tracking-tight">{t('studio.title')}</h1>
             <p className="text-muted-foreground max-w-3xl">
               {t('studio.subtitle')}
@@ -369,8 +373,11 @@ export default function StudioPage() {
           </header>
         </>} sourceDesk={<>
 
-      <div className="mb-6 group relative rounded-2xl p-[1.5px] bg-gradient-to-b from-border/80 via-border/40 to-border/20 shadow-sm hover:shadow-md transition-all duration-200">
-        <div className="rounded-[14.5px] bg-card/95 backdrop-blur-sm p-6 space-y-6 border border-white/[0.04] dark:border-white/[0.02] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+      {/* v0.8.130 — no glow, no press/hover scale, narrow transitions (UI audit Phase 1) */}
+      {/* v0.8.130 — premium pass: one flat card (was a gradient bezel around a blurred
+          card with an inset highlight). */}
+      <div className="mb-6">
+        <div className="rounded-xl border bg-card p-6 space-y-6">
           <div>
             <h2 className="text-lg font-semibold text-foreground">{t('studio.step1Title')}</h2>
             <p className="text-sm text-muted-foreground mt-1">
@@ -385,10 +392,10 @@ export default function StudioPage() {
             onClick={() => fileInputRef.current?.click()}
             onKeyDown={onKeyDown}
             className={cn(
-              "border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all duration-200",
+              "border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors duration-200",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
               isDragging
-                ? "border-primary bg-primary/[0.08] shadow-[0_0_24px_rgba(45,212,191,0.15)]"
+                ? "border-primary bg-primary/[0.08]"
                 : "border-muted-foreground/25 hover:border-primary/40 hover:bg-muted/20"
             )}
             role="button"
@@ -422,7 +429,7 @@ export default function StudioPage() {
                   <FileText className="h-4 w-4 shrink-0 text-primary" />
                   <span className="flex-1 truncate font-medium">{f.name}</span>
                   <span className="text-xs font-mono text-muted-foreground shrink-0">
-                    {(f.size / 1024).toFixed(0)} KB
+                    {t('common.studioPage.fileSizeKb', { size: formatDecimal(f.size / 1024, language, 0) })}
                   </span>
                   <button
                     type="button"
@@ -459,8 +466,10 @@ export default function StudioPage() {
       </div>
       </>} editorialBrief={<>
 
-      <div className="mb-6 group relative rounded-2xl p-[1.5px] bg-gradient-to-b from-border/80 via-border/40 to-border/20 shadow-sm hover:shadow-md transition-all duration-200">
-        <div className="rounded-[14.5px] bg-card/95 backdrop-blur-sm p-6 space-y-6 border border-white/[0.04] dark:border-white/[0.02] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+      {/* v0.8.130 — premium pass: one flat card (was a gradient bezel around a blurred
+          card with an inset highlight). */}
+      <div className="mb-6">
+        <div className="rounded-xl border bg-card p-6 space-y-6">
           <div>
             <h2 className="text-lg font-semibold text-foreground">{t('studio.step2Title')}</h2>
           </div>
@@ -473,13 +482,13 @@ export default function StudioPage() {
               type="button"
               onClick={() => setMode('notebook')}
               className={cn(
-                "group relative rounded-2xl p-5 text-left transition-all duration-200 active:scale-[0.98]",
+                "group relative rounded-xl p-5 text-left transition-[border-color,background-color,box-shadow] duration-200",
                 mode === 'notebook'
-                  ? "border-2 border-primary bg-primary/[0.06] shadow-[0_0_20px_rgba(45,212,191,0.12),inset_0_1px_0_rgba(255,255,255,0.1)] ring-1 ring-primary/30"
+                  ? "border-2 border-primary bg-primary/[0.06]"
                   : "border border-border/70 bg-card/60 hover:border-primary/40 hover:bg-card/90"
               )}
             >
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary mb-3.5 group-hover:scale-105 transition-transform">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary mb-3.5">
                 <BookOpen className="h-5 w-5" />
               </div>
               <div className="text-base font-semibold text-foreground">{t('studio.notebookModeTitle')}</div>
@@ -492,13 +501,13 @@ export default function StudioPage() {
               type="button"
               onClick={() => setMode('podcast')}
               className={cn(
-                "group relative rounded-2xl p-5 text-left transition-all duration-200 active:scale-[0.98]",
+                "group relative rounded-xl p-5 text-left transition-[border-color,background-color,box-shadow] duration-200",
                 mode === 'podcast'
-                  ? "border-2 border-primary bg-primary/[0.06] shadow-[0_0_20px_rgba(45,212,191,0.12),inset_0_1px_0_rgba(255,255,255,0.1)] ring-1 ring-primary/30"
+                  ? "border-2 border-primary bg-primary/[0.06]"
                   : "border border-border/70 bg-card/60 hover:border-primary/40 hover:bg-card/90"
               )}
             >
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary mb-3.5 group-hover:scale-105 transition-transform">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary mb-3.5">
                 <Mic className="h-5 w-5" />
               </div>
               <div className="text-base font-semibold text-foreground">{t('studio.podcastModeTitle')}</div>
@@ -511,13 +520,13 @@ export default function StudioPage() {
               type="button"
               onClick={() => setMode('both')}
               className={cn(
-                "group relative rounded-2xl p-5 text-left transition-all duration-200 active:scale-[0.98]",
+                "group relative rounded-xl p-5 text-left transition-[border-color,background-color,box-shadow] duration-200",
                 mode === 'both'
-                  ? "border-2 border-primary bg-primary/[0.06] shadow-[0_0_20px_rgba(45,212,191,0.12),inset_0_1px_0_rgba(255,255,255,0.1)] ring-1 ring-primary/30"
+                  ? "border-2 border-primary bg-primary/[0.06]"
                   : "border border-border/70 bg-card/60 hover:border-primary/40 hover:bg-card/90"
               )}
             >
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary mb-3.5 group-hover:scale-105 transition-transform">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary mb-3.5">
                 <Sparkles className="h-5 w-5" />
               </div>
               <div className="text-base font-semibold text-foreground">{t('studio.bothModeTitle')}</div>
@@ -530,13 +539,13 @@ export default function StudioPage() {
               type="button"
               onClick={() => setMode('course_pack')}
               className={cn(
-                "group relative rounded-2xl p-5 text-left transition-all duration-200 active:scale-[0.98]",
+                "group relative rounded-xl p-5 text-left transition-[border-color,background-color,box-shadow] duration-200",
                 mode === 'course_pack'
-                  ? "border-2 border-primary bg-primary/[0.06] shadow-[0_0_20px_rgba(45,212,191,0.12),inset_0_1px_0_rgba(255,255,255,0.1)] ring-1 ring-primary/30"
+                  ? "border-2 border-primary bg-primary/[0.06]"
                   : "border border-border/70 bg-card/60 hover:border-primary/40 hover:bg-card/90"
               )}
             >
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary mb-3.5 group-hover:scale-105 transition-transform">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary mb-3.5">
                 <GraduationCap className="h-5 w-5" />
               </div>
               <div className="text-base font-semibold text-foreground">{t('studio.coursePackModeTitle')}</div>
@@ -615,7 +624,7 @@ export default function StudioPage() {
               onClick={onGenerate}
               disabled={!canSubmit}
               size="lg"
-              className="h-11 px-7 rounded-full font-medium bg-primary text-primary-foreground shadow-[0_4px_16px_rgba(20,184,166,0.35),inset_0_1px_0_rgba(255,255,255,0.2)] hover:bg-primary/95 active:scale-95 transition-all duration-150"
+              className="h-11 px-7 rounded-md font-medium bg-primary text-primary-foreground hover:bg-primary/95 duration-150"
             >
               {isPending ? (
                 <>
@@ -629,6 +638,6 @@ export default function StudioPage() {
           </div>
         </>} trustMargin={<p>{t('studio.trustMargin')}</p>} />
       </div>
-    </AppShell>
+    </>
   )
 }

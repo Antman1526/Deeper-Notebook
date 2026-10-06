@@ -2,11 +2,17 @@
 @import "tw-animate-css";
 @import "../components/deeper-notebook/source-gallery/source-gallery.css";
 
+/* v0.8.130 — Tailwind v4 ignores tailwind.config.ts unless the CSS opts in with @config,
+   so the typography plugin and class-based dark mode are declared here.
+   Without these, every `prose` class compiled to nothing and every `dark:`
+   utility followed the OS color scheme instead of the selected theme. */
+@plugin "@tailwindcss/typography";
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-dn-sans);
-  --font-editorial: var(--font-dn-editorial);
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -47,11 +53,49 @@
   --color-warning-foreground: var(--warning-foreground);
   --color-info: var(--info);
   --color-info-foreground: var(--info-foreground);
+  /* v0.8.130 — `-soft` is the tinted fill and `-ink` the readable text colour for
+     each status, so a warning chip is `bg-warning-soft text-warning-ink` instead
+     of a hand-picked amber-50 / amber-800 pair plus its dark: twin. */
+  --color-success-soft: var(--success-soft);
+  --color-success-ink: var(--success-ink);
+  --color-warning-soft: var(--warning-soft);
+  --color-warning-ink: var(--warning-ink);
+  --color-info-soft: var(--info-soft);
+  --color-info-ink: var(--info-ink);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-destructive-ink: var(--destructive-ink);
 
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  /* v0.8.130 — one radius scale (UI audit 4.2). Seven radii were in use, all
+     derived from --radius 0.65rem, so buttons, inputs, selects, badges and tooltips
+     were the same 8.4px. Remapping the steps moves every existing `rounded-*`
+     onto the spec; pill shapes use `rounded-full`. */
+  /* v0.8.130 — premium pass (user decision 2026-10-01): tighter corners. Buttons and
+     inputs 8px, cards 12px, dialogs 16px; the 24-28px card radii read soft and glossy. */
+  --radius-sm: 0.375rem; /* chips, tooltips */
+  --radius-md: 0.5rem;   /* buttons, inputs, menu items */
+  --radius-lg: 0.625rem; /* menus, popovers */
+  --radius-xl: 0.75rem;  /* cards */
+  --radius-2xl: 1rem;    /* dialogs, hero surfaces */
+
+  /* v0.8.130 — standard easing for every `transition-*` utility (Tailwind's default
+     was ease-in-out), and a serif family for the three stylesheets that use
+     var(--font-serif), which was undefined, so they fell back to Palatino. */
+  --default-transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  --font-serif: var(--font-dn-editorial);
+
+  /* v0.8.130 — Tailwind inlines a shadow's VALUE into each `shadow-*` utility, so the
+     dark-mode shadow tokens (declared only in plain CSS) never reached the utilities
+     and dark themes got Tailwind's near-invisible black-10% shadows. Mapping each key
+     to a var() makes Tailwind emit `--tw-shadow: var(--elevation-X)` for every variant
+     (shadow-md, hover:shadow-md, shadow-md/30), so the `.dark` values below apply by
+     ordinary cascade. Consequence: a shadow COLOR utility (`shadow-primary/20`) no
+     longer recolors these sizes; none exist in the codebase today. */
+  --shadow-xs: var(--elevation-xs);
+  --shadow-sm: var(--elevation-sm);
+  --shadow-md: var(--elevation-md);
+  --shadow-lg: var(--elevation-lg);
+  --shadow-xl: var(--elevation-xl);
 }
 
 :root {
@@ -70,7 +114,7 @@
   --research-line: color-mix(in oklab, var(--dn-light) 22%, transparent);
   --research-accent: var(--dn-teal);
   --research-accent-strong: var(--dn-cyan);
-  --research-warning: oklch(0.75 0.15 70);
+  --research-warning: var(--warning);
   --research-glow: color-mix(in oklab, var(--dn-cyan) 28%, transparent);
 
   --radius: 0.65rem;
@@ -86,17 +130,29 @@
   --secondary-foreground: var(--dn-light);
   --muted: color-mix(in oklab, var(--dn-dark-teal) 42%, var(--dn-deep));
   --muted-foreground: color-mix(in oklab, var(--dn-light) 72%, var(--dn-dark-teal));
-  --accent: var(--dn-dark-teal);
-  --accent-foreground: var(--dn-light);
-  --destructive: oklch(0.577 0.245 27.325);
+  /* v0.8.130 — `--accent` is shadcn's hover/selected fill (`hover:bg-accent`,
+     `data-[selected=true]:bg-accent`, …), but it was the theme's second brand hue,
+     so hovering a menu row or selecting a palette command painted it solid violet
+     or cyan. It is now a neutral state layer, defined once: it is computed on
+     <html>, so it follows whichever --foreground the active theme sets. The
+     brand's second hue stays available as --brand-accent. */
+  --accent: color-mix(in oklab, var(--foreground) 8%, transparent);
+  --accent-foreground: var(--foreground);
+  --brand-accent: var(--dn-cyan);
+  --brand-accent-foreground: var(--dn-deep);
+  /* v0.8.130 — was L 0.577, which measured 4.42:1 as text on Solarized Light's card. */
+  --destructive: oklch(0.54 0.22 27);
   --border: color-mix(in oklab, var(--dn-light) 20%, transparent);
   --input: color-mix(in oklab, var(--dn-light) 24%, transparent);
   --ring: var(--dn-cyan);
-  --chart-1: var(--dn-teal);
-  --chart-2: var(--dn-cyan);
-  --chart-3: var(--dn-light);
-  --chart-4: var(--dn-dark-teal);
-  --chart-5: oklch(0.78 0.16 75);
+  /* v0.8.130 — categorical colours derived from the active theme, defined once (they
+     are computed on <html>, so they follow whatever the theme sets). They were the
+     Research Core teal/cyan palette in every theme, including a near-white chart-3. */
+  --chart-1: var(--primary);
+  --chart-2: var(--brand-accent);
+  --chart-3: color-mix(in oklab, var(--primary) 50%, var(--brand-accent));
+  --chart-4: color-mix(in oklab, var(--foreground) 55%, var(--background));
+  --chart-5: oklch(0.72 0.15 65);
   --sidebar: var(--dn-deep);
   --sidebar-foreground: var(--dn-light);
   --sidebar-primary: var(--dn-teal);
@@ -106,30 +162,45 @@
   --sidebar-border: color-mix(in oklab, var(--dn-light) 18%, transparent);
   --sidebar-ring: var(--dn-cyan);
 
-  /* v0.7.27 — semantic state tokens (light) */
-  --success: oklch(0.62 0.16 145);            /* emerald-ish green */
-  --success-foreground: oklch(0.97 0.02 145);
-  --warning: oklch(0.71 0.17 70);             /* warm amber */
-  --warning-foreground: oklch(0.2 0.05 70);
-  --info: oklch(0.62 0.18 230);               /* refined blue */
-  --info-foreground: oklch(0.97 0.02 230);
+  /* v0.8.130 — status roles (light). Fixed hues: the shared catalog-theme block used
+     to set success to the theme's primary and warning/info to its accent, so these values
+     never showed in any theme. Now no catalog theme overrides them; the high-
+     contrast themes carry their own stronger set. `-foreground` is text on the
+     solid colour, `-soft` a tinted fill, `-ink` text on a soft fill, a card or the
+     canvas. Every pair is measured in every theme by e2e/theme-contract.spec.ts
+     (4.5:1 minimum). */
+  --success: oklch(0.52 0.14 150);
+  --success-foreground: oklch(0.99 0.01 150);
+  --success-soft: color-mix(in oklab, var(--success) 14%, transparent);
+  --success-ink: oklch(0.42 0.11 150);
+  --warning: oklch(0.78 0.16 75);
+  --warning-foreground: oklch(0.25 0.06 60);
+  --warning-soft: color-mix(in oklab, var(--warning) 22%, transparent);
+  --warning-ink: oklch(0.45 0.11 55);
+  --info: oklch(0.52 0.16 245);
+  --info-foreground: oklch(0.99 0.01 245);
+  --info-soft: color-mix(in oklab, var(--info) 14%, transparent);
+  --info-ink: oklch(0.44 0.14 250);
+  --destructive-foreground: oklch(0.99 0.01 27);
+  --destructive-soft: color-mix(in oklab, var(--destructive) 12%, transparent);
+  --destructive-ink: oklch(0.47 0.19 27);
 
   /* v0.7.27 — motion scale. Use these custom-property names so any
      surface can `transition: <prop> var(--motion-base)` and inherit
      the project's timing/curve choices. */
-  --motion-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
-  --motion-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
-  --motion-slow: 320ms cubic-bezier(0.4, 0, 0.2, 1);
-  --motion-spring: 400ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* v0.8.130 — standard easing (UI audit 4.2); the unused overshooting spring is gone. */
+  --motion-fast: 120ms cubic-bezier(0.2, 0, 0, 1);
+  --motion-base: 200ms cubic-bezier(0.2, 0, 0, 1);
+  --motion-slow: 320ms cubic-bezier(0.2, 0, 0, 1);
 
   /* v0.7.27 — elevation scale. Hand-tuned to feel right against the
      light background tokens above. The dark block overrides these
      because the eye reads light shadows differently on dark surfaces. */
-  --shadow-xs: 0 1px 2px 0 rgba(15, 23, 42, 0.04);
-  --shadow-sm: 0 1px 3px 0 rgba(15, 23, 42, 0.08), 0 1px 2px -1px rgba(15, 23, 42, 0.04);
-  --shadow-md: 0 4px 6px -1px rgba(15, 23, 42, 0.08), 0 2px 4px -2px rgba(15, 23, 42, 0.04);
-  --shadow-lg: 0 10px 15px -3px rgba(15, 23, 42, 0.08), 0 4px 6px -4px rgba(15, 23, 42, 0.04);
-  --shadow-xl: 0 20px 25px -5px rgba(15, 23, 42, 0.1), 0 8px 10px -6px rgba(15, 23, 42, 0.04);
+  --elevation-xs: 0 1px 2px 0 rgba(15, 23, 42, 0.04);
+  --elevation-sm: 0 1px 3px 0 rgba(15, 23, 42, 0.08), 0 1px 2px -1px rgba(15, 23, 42, 0.04);
+  --elevation-md: 0 4px 6px -1px rgba(15, 23, 42, 0.08), 0 2px 4px -2px rgba(15, 23, 42, 0.04);
+  --elevation-lg: 0 10px 15px -3px rgba(15, 23, 42, 0.08), 0 4px 6px -4px rgba(15, 23, 42, 0.04);
+  --elevation-xl: 0 20px 25px -5px rgba(15, 23, 42, 0.1), 0 8px 10px -6px rgba(15, 23, 42, 0.04);
 }
 
 .dark {
@@ -145,17 +216,13 @@
   --secondary-foreground: var(--dn-light);
   --muted: color-mix(in oklab, var(--dn-dark-teal) 42%, var(--dn-deep));
   --muted-foreground: color-mix(in oklab, var(--dn-light) 72%, var(--dn-dark-teal));
-  --accent: var(--dn-dark-teal);
-  --accent-foreground: var(--dn-light);
-  --destructive: oklch(0.704 0.191 22.216);
+  /* v0.8.130 — --accent is not set here: the :root state layer tints whatever the
+     foreground is. */
+  /* v0.8.130 — was L 0.704, which measured 3.48:1 as text on Nord's card. */
+  --destructive: oklch(0.79 0.14 22);
   --border: color-mix(in oklab, var(--dn-light) 20%, transparent);
   --input: color-mix(in oklab, var(--dn-light) 24%, transparent);
   --ring: var(--dn-cyan);
-  --chart-1: var(--dn-teal);
-  --chart-2: var(--dn-cyan);
-  --chart-3: var(--dn-light);
-  --chart-4: var(--dn-dark-teal);
-  --chart-5: oklch(0.78 0.16 75);
   --sidebar: var(--dn-deep);
   --sidebar-foreground: var(--dn-light);
   --sidebar-primary: var(--dn-teal);
@@ -165,20 +232,29 @@
   --sidebar-border: color-mix(in oklab, var(--dn-light) 18%, transparent);
   --sidebar-ring: var(--dn-cyan);
 
-  /* v0.7.27 — semantic state tokens (dark) */
-  --success: oklch(0.7 0.15 145);
-  --success-foreground: oklch(0.15 0.03 145);
-  --warning: oklch(0.75 0.15 70);
-  --warning-foreground: oklch(0.15 0.04 70);
-  --info: oklch(0.7 0.15 230);
-  --info-foreground: oklch(0.15 0.03 230);
+  /* v0.8.130 — status roles (dark); see the light block above. */
+  --success: oklch(0.72 0.15 150);
+  --success-foreground: oklch(0.2 0.03 150);
+  --success-soft: color-mix(in oklab, var(--success) 18%, transparent);
+  --success-ink: oklch(0.84 0.12 150);
+  --warning: oklch(0.8 0.15 80);
+  --warning-foreground: oklch(0.22 0.04 70);
+  --warning-soft: color-mix(in oklab, var(--warning) 18%, transparent);
+  --warning-ink: oklch(0.86 0.12 85);
+  --info: oklch(0.72 0.13 240);
+  --info-foreground: oklch(0.2 0.03 240);
+  --info-soft: color-mix(in oklab, var(--info) 18%, transparent);
+  --info-ink: oklch(0.84 0.1 240);
+  --destructive-foreground: oklch(0.2 0.03 25);
+  --destructive-soft: color-mix(in oklab, var(--destructive) 18%, transparent);
+  --destructive-ink: oklch(0.87 0.08 22);
 
   /* Dark-mode shadows are stronger and warmer to feel grounded */
-  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
-  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.5), 0 1px 2px -1px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.3);
-  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.6), 0 8px 10px -6px rgba(0, 0, 0, 0.4);
+  --elevation-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --elevation-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.5), 0 1px 2px -1px rgba(0, 0, 0, 0.3);
+  --elevation-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
+  --elevation-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.3);
+  --elevation-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.6), 0 8px 10px -6px rgba(0, 0, 0, 0.4);
 }
 
 /* Catalog themes set only six foundational values. Every application surface
@@ -196,8 +272,9 @@ html[data-theme] {
   --secondary-foreground: var(--dn-theme-text);
   --muted: color-mix(in oklab, var(--dn-theme-panel) 74%, var(--dn-theme-canvas));
   --muted-foreground: color-mix(in oklab, var(--dn-theme-text) 70%, var(--dn-theme-canvas));
-  --accent: var(--dn-theme-accent);
-  --accent-foreground: var(--dn-theme-accent-foreground);
+  /* v0.8.130 — the theme's second hue is the brand accent, not the hover fill. */
+  --brand-accent: var(--dn-theme-accent);
+  --brand-accent-foreground: var(--dn-theme-accent-foreground);
   --border: var(--dn-theme-border);
   --input: var(--dn-theme-border);
   --ring: var(--dn-theme-accent);
@@ -214,36 +291,37 @@ html[data-theme] {
   --research-line: var(--dn-theme-border);
   --research-accent: var(--dn-theme-primary);
   --research-accent-strong: var(--dn-theme-accent);
-  --research-warning: var(--dn-theme-accent);
+  /* v0.8.130 — was the theme accent, i.e. not a warning colour at all. */
+  --research-warning: var(--warning);
   --research-glow: color-mix(in oklab, var(--dn-theme-accent) 28%, transparent);
-  --success: var(--dn-theme-primary);
-  --success-foreground: var(--dn-theme-canvas);
-  --warning: var(--dn-theme-accent);
-  --warning-foreground: var(--dn-theme-canvas);
-  --info: var(--dn-theme-accent);
-  --info-foreground: var(--dn-theme-canvas);
+  /* v0.8.130 — status colours are deliberately NOT set here. This block used to map
+     success to the theme primary and warning/info to the theme accent, so "warning"
+     was violet in Gemini-Forward Light and pink in Dracula. */
 }
 
 html[data-theme="research-core-dark"] { --dn-theme-canvas: #071B1D; --dn-theme-panel: #0B292B; --dn-theme-text: #D8FFF8; --dn-theme-primary: #2DD4BF; --dn-theme-primary-foreground: #000000; --dn-theme-accent: #38BDF8; --dn-theme-accent-foreground: #000000; --dn-theme-border: #225053; }
+/* v0.8.130 — premium pass + notebook layer (user decisions 2026-10-01): the indigo
+   pair is paper and ink. A warm paper desk, off-white pages, ink text and warm
+   hairlines replace the lavender cast; indigo is the pen. */
 html[data-theme="gemini-forward-light"] {
-  --dn-theme-canvas: #F7F7FC;
-  --dn-theme-panel: #FFFFFF;
-  --dn-theme-text: #202235;
-  --dn-theme-primary: #5367D9;
+  --dn-theme-canvas: #F5F3EE;
+  --dn-theme-panel: #FFFEFB;
+  --dn-theme-text: #1E1C19;
+  --dn-theme-primary: #3F4FC9;
   --dn-theme-primary-foreground: #FFFFFF;
   --dn-theme-accent: #7B5BD6;
   --dn-theme-accent-foreground: #FFFFFF;
-  --dn-theme-border: #D9DDF0;
+  --dn-theme-border: #E6E1D7;
 }
 html[data-theme="gemini-forward-dark"] {
-  --dn-theme-canvas: #10111F;
-  --dn-theme-panel: #191B2E;
-  --dn-theme-text: #F1F2FF;
-  --dn-theme-primary: #91A0FF;
+  --dn-theme-canvas: #12110F;
+  --dn-theme-panel: #1B1A17;
+  --dn-theme-text: #F3F1EC;
+  --dn-theme-primary: #9AA5FF;
   --dn-theme-primary-foreground: #000000;
   --dn-theme-accent: #C59BFF;
   --dn-theme-accent-foreground: #000000;
-  --dn-theme-border: #343855;
+  --dn-theme-border: #2F2D29;
 }
 html[data-theme="research-core-light"] { --dn-theme-canvas: #F5FBF9; --dn-theme-panel: #FFFFFF; --dn-theme-text: #102A2A; --dn-theme-primary: #0F766E; --dn-theme-primary-foreground: #FFFFFF; --dn-theme-accent: #0284C7; --dn-theme-accent-foreground: #000000; --dn-theme-border: #C9DED8; }
 html[data-theme="deep-ocean"] { --dn-theme-canvas: #06151F; --dn-theme-panel: #0B2432; --dn-theme-text: #D8F3F8; --dn-theme-primary: #2DD4BF; --dn-theme-primary-foreground: #000000; --dn-theme-accent: #38BDF8; --dn-theme-accent-foreground: #000000; --dn-theme-border: #21485A; }
@@ -259,12 +337,16 @@ html[data-theme="high-contrast-dark"] {
   --dn-theme-accent: #67E8F9;
   --dn-theme-accent-foreground: #000000;
   --dn-theme-border: #FFFFFF;
-  --dn-status-success: oklch(0.82 0.16 145);
-  --dn-status-success-foreground: #000000;
-  --dn-status-warning: oklch(0.84 0.16 70);
-  --dn-status-warning-foreground: #000000;
-  --dn-status-info: oklch(0.82 0.16 230);
-  --dn-status-info-foreground: #000000;
+  /* v0.8.130 — canonical names (tokens.css aliases --dn-status-* to these). */
+  --success: oklch(0.82 0.16 145);
+  --success-foreground: #000000;
+  --success-ink: oklch(0.82 0.16 145);
+  --warning: oklch(0.84 0.16 70);
+  --warning-foreground: #000000;
+  --warning-ink: oklch(0.84 0.16 70);
+  --info: oklch(0.82 0.16 230);
+  --info-foreground: #000000;
+  --info-ink: oklch(0.82 0.16 230);
   --dn-graph-source: #5EEAD4;
   --dn-graph-source-foreground: #000000;
   --dn-graph-note: oklch(0.84 0.16 70);
@@ -281,12 +363,16 @@ html[data-theme="high-contrast-light"] {
   --dn-theme-accent: #005FCC;
   --dn-theme-accent-foreground: #FFFFFF;
   --dn-theme-border: #000000;
-  --dn-status-success: oklch(0.4 0.18 145);
-  --dn-status-success-foreground: #FFFFFF;
-  --dn-status-warning: oklch(0.42 0.17 70);
-  --dn-status-warning-foreground: #FFFFFF;
-  --dn-status-info: oklch(0.4 0.18 230);
-  --dn-status-info-foreground: #FFFFFF;
+  /* v0.8.130 — canonical names (tokens.css aliases --dn-status-* to these). */
+  --success: oklch(0.4 0.18 145);
+  --success-foreground: #FFFFFF;
+  --success-ink: oklch(0.4 0.18 145);
+  --warning: oklch(0.42 0.17 70);
+  --warning-foreground: #FFFFFF;
+  --warning-ink: oklch(0.42 0.17 70);
+  --info: oklch(0.4 0.18 230);
+  --info-foreground: #FFFFFF;
+  --info-ink: oklch(0.4 0.18 230);
   --dn-graph-source: #005FCC;
   --dn-graph-source-foreground: #FFFFFF;
   --dn-graph-note: oklch(0.42 0.17 70);
@@ -352,49 +438,6 @@ html[data-theme="nord"] { --dn-theme-canvas: #2E3440; --dn-theme-panel: #3B4252;
     border-color: var(--sidebar-border);
   }
 
-  /* Enhanced sidebar menu item hover effects */
-  .sidebar-menu-item {
-    @apply transition-all duration-200 ease-out;
-  }
-
-  /* v0.7.25 — removed `scale-[1.02]`. Sidebar items are `w-full`;
-     scaling caused a 1-2px overflow tear into the main pane on
-     every hover. The bg + shadow already convey hover state without
-     the layout-affecting transform. */
-  .sidebar-menu-item:hover {
-    background-color: var(--sidebar-accent) !important;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-  }
-
-  .dark .sidebar-menu-item:hover {
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-  }
-
-  /* Enhanced hover effects for cards */
-  .card-hover {
-    @apply transition-all duration-200 cursor-pointer;
-  }
-
-  .card-hover:hover {
-    background-color: var(--muted) !important;
-    border-color: var(--border);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  }
-
-  .dark .card-hover:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  }
-
-  /* Ensure clickable cards show pointer cursor */
-  .clickable-card {
-    cursor: pointer !important;
-  }
-
-  .clickable-card * {
-    cursor: pointer !important;
-  }
-
   /* v0.7.121 — Respect the user's OS-level "reduce motion" preference.
      People with vestibular disorders or who simply find animation
      distracting can set this in their OS (macOS → System Settings
@@ -417,15 +460,88 @@ html[data-theme="nord"] { --dn-theme-canvas: #2E3440; --dn-theme-panel: #3B4252;
     }
   }
 
-  /* v0.7.121 — Stronger focus-visible ring for keyboard users.
-     The default Tailwind / shadcn focus ring is 2px solid; some users
-     (especially those with low vision) need more contrast. This
-     bumps the ring to 3px and adds an outline offset so the ring
-     remains visible even on hover-darkened backgrounds. Only applies
-     to :focus-visible (keyboard/programmatic focus) — not :focus
-     (which fires on mouse click too and would be visually noisy). */
-  :focus-visible {
-    outline: 3px solid var(--ring) !important;
-    outline-offset: 2px !important;
-  }
+}
+
+/* v0.7.121 — Stronger focus-visible ring for keyboard users.
+   The default Tailwind / shadcn focus ring is 2px solid; some users
+   (especially those with low vision) need more contrast. This
+   bumps the ring to 3px and adds an outline offset so the ring
+   remains visible even on hover-darkened backgrounds. Only applies
+   to :focus-visible (keyboard/programmatic focus) — not :focus
+   (which fires on mouse click too and would be visually noisy).
+
+   v0.8.130 — Same ring, no !important: the rule now sits outside @layer base.
+   Unlayered CSS beats every layered Tailwind utility, so `outline-none` still
+   cannot remove it, and component stylesheets can now adjust it where they need
+   to. Menu rows and options draw it inset, because the menu's rounded, clipped
+   surface cut the outer ring off (the command palette's top edge showed this). */
+:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* v0.8.130 — Hover rules for sidebar rows and list rows, moved out of @layer base.
+   They used !important to beat utility classes; unlayered CSS already does. The
+   transitions name their properties, the shadows use the themeable elevation
+   tokens (so dark themes get their own), and the unused .clickable-card rules are
+   gone. v0.7.25 removed a hover scale here that tore 1-2px into the main pane. */
+.sidebar-menu-item {
+  transition-property: background-color, box-shadow;
+  transition-duration: 200ms;
+}
+
+.sidebar-menu-item:hover {
+  background-color: var(--sidebar-accent);
+  box-shadow: var(--elevation-sm);
+}
+
+.card-hover {
+  cursor: pointer;
+  transition-property: background-color, border-color, box-shadow, transform;
+  transition-duration: 200ms;
+}
+
+.card-hover:hover {
+  background-color: var(--muted);
+  border-color: var(--border);
+  transform: translateY(-1px);
+  box-shadow: var(--elevation-md);
+}
+
+[role='menuitem']:focus-visible,
+[role='menuitemcheckbox']:focus-visible,
+[role='menuitemradio']:focus-visible,
+[role='option']:focus-visible,
+[cmdk-input]:focus-visible,
+[data-slot='scroll-area-viewport']:focus-visible {
+  outline-offset: -3px;
+}
+
+/* v0.8.130 — Prose (typography plugin) follows the active theme instead of its own gray
+   palette. Every theme already flips these semantic tokens, so `prose-invert`
+   and the neutral palette are no longer needed to get readable text. */
+.prose {
+  --tw-prose-body: var(--foreground);
+  --tw-prose-headings: var(--foreground);
+  --tw-prose-lead: var(--muted-foreground);
+  --tw-prose-links: var(--primary);
+  --tw-prose-bold: var(--foreground);
+  --tw-prose-counters: var(--muted-foreground);
+  --tw-prose-bullets: var(--muted-foreground);
+  --tw-prose-hr: var(--border);
+  --tw-prose-quotes: var(--foreground);
+  --tw-prose-quote-borders: var(--border);
+  --tw-prose-captions: var(--muted-foreground);
+  --tw-prose-code: var(--foreground);
+  --tw-prose-pre-code: var(--foreground);
+  --tw-prose-pre-bg: var(--muted);
+  --tw-prose-th-borders: var(--border);
+  --tw-prose-td-borders: var(--border);
+}
+
+/* v0.8.130 — The plugin wraps inline code in literal backticks; the chat renderer already
+   styles inline code as a chip, so the extra marks would read as stray text. */
+.prose code::before,
+.prose code::after {
+  content: none;
 }

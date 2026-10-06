@@ -1,0 +1,1034 @@
+/* v0.8.130 — the stationery layer (user direction 2026-10-04: "premium, in a notebook
+   way… modern, motion flow… spectacular", with approval to change the earlier
+   no-gradient rule where the design needs it).
+
+   The app is a desk of fine stationery: headings are set in the editorial serif, and a
+   notebook is a bound book — linen cloth, a rounded spine, an elastic band, a ribbon,
+   a paper label, a blind-stamped initial — that lifts, leans toward the pointer and
+   opens on its hinge. Materials are drawn (weave, light, soft layered shadow); there
+   is still no glass blur and no neon glow. All motion is transform/opacity only and
+   stops under prefers-reduced-motion or the app's own reduced-motion preference.
+   High-contrast themes keep plain cards. */
+
+:root {
+  /* Springs, as CSS can say them: a settle with a hint of overshoot, and a soft glide. */
+  --dn-ease-settle: cubic-bezier(0.2, 0.9, 0.25, 1.06);
+  --dn-ease-glide: cubic-bezier(0.22, 0.8, 0.24, 1);
+  --dn-ease-swing: cubic-bezier(0.5, 0, 0.35, 1);
+  /* A book resting on the desk: contact, near and far shadow. */
+  --dn-book-shadow:
+    0 1px 1px rgb(0 0 0 / 0.14),
+    0 10px 18px -8px rgb(0 0 0 / 0.3),
+    0 28px 44px -22px rgb(0 0 0 / 0.34);
+  --dn-book-shadow-lifted:
+    0 2px 2px rgb(0 0 0 / 0.12),
+    0 18px 26px -10px rgb(0 0 0 / 0.32),
+    0 44px 64px -26px rgb(0 0 0 / 0.42);
+}
+
+/* ---------- Type: the editorial serif for headings ---------- */
+
+[data-dn-visual-system='v2'] :is(.dn-workspace-page-title, .dn-workspace-hero-title, .dn-workspace-section-title, .dn-folio-title),
+[data-dn-visual-system='v2'] main :is(h1, h2),
+[data-dn-visual-system='v2'] [data-dn-empty-state] h3,
+[data-dn-visual-system='v2'] [data-dn-notebook-card] [data-slot='card-title'] {
+  font-family: var(--font-dn-editorial), 'Iowan Old Style', Georgia, serif;
+  font-weight: 500;
+  letter-spacing: -0.012em;
+}
+
+[data-dn-visual-system='v2'] :is(.dn-workspace-page-title, .dn-folio-title) {
+  font-size: clamp(2rem, 4.4cqi, 2.5rem);
+  line-height: 1.15;
+}
+
+/* Readouts are instruments, not prose: the runtime panel keeps the UI face. */
+[data-dn-visual-system='v2'] main [data-dn-runtime-status] :is(h1, h2) {
+  font-family: inherit;
+  font-weight: 600;
+  letter-spacing: normal;
+}
+
+/* ---------- The book ---------- */
+
+/* Parts that only exist as a book stay out of the plain card (legacy shell, high contrast). */
+[data-dn-book-pages],
+[data-dn-book-ribbon],
+[data-dn-book-monogram] {
+  display: none;
+}
+
+[data-dn-notebook-card][data-dn-cover] {
+  --dn-cover: #2f3a6b;
+  --dn-ribbon: #cdb27a;
+}
+
+[data-dn-notebook-card][data-dn-cover='forest'] { --dn-cover: #2f5244; }
+[data-dn-notebook-card][data-dn-cover='oxblood'] { --dn-cover: #6b2f35; }
+[data-dn-notebook-card][data-dn-cover='ochre'] { --dn-cover: #7d6126; --dn-ribbon: #6b2f35; }
+[data-dn-notebook-card][data-dn-cover='slate'] { --dn-cover: #3e4a54; }
+[data-dn-notebook-card][data-dn-cover='plum'] { --dn-cover: #553a5a; }
+
+.dark [data-dn-notebook-card][data-dn-cover] {
+  --dn-cover-shade: 16%;
+}
+
+/* The shelf: books stand side by side instead of stretching across the page. */
+[data-dn-visual-system='v2'] [data-dn-notebook-shelf] {
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 17rem));
+  gap: 2.75rem 2.25rem;
+  padding-block-end: 1.5rem;
+}
+
+[data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] {
+  --dn-cover-cloth: color-mix(in oklab, var(--dn-cover), black var(--dn-cover-shade, 0%));
+  --dn-cover-ink: #f6f1e7;
+  --dn-cover-ink-quiet: color-mix(in oklab, var(--dn-cover-ink) 78%, var(--dn-cover-cloth));
+  display: flex;
+  min-block-size: 22rem;
+  border-radius: 4px 12px 12px 4px;
+  box-shadow: var(--dn-book-shadow);
+  /* `perspective` projects the hinged cover; the perspective() in the transform
+     projects the book's own lean. */
+  perspective: 2400px;
+  perspective-origin: 30% 50%;
+  transform: perspective(1400px) translateY(var(--dn-lift, 0)) rotateX(var(--dn-lean-x, 0deg)) rotateY(var(--dn-lean-y, 0deg));
+  transition:
+    transform 420ms var(--dn-ease-settle),
+    box-shadow 420ms var(--dn-ease-glide);
+  animation: dn-book-arrive 640ms var(--dn-ease-glide) backwards;
+  animation-delay: calc(var(--dn-shelf-index, 0) * 55ms);
+}
+
+@keyframes dn-book-arrive {
+  from {
+    opacity: 0;
+    transform: perspective(1400px) translateY(22px) rotateX(-9deg);
+  }
+}
+
+/* The page block: slightly proud of the cover at the fore-edge and the foot. */
+[data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] > [data-dn-book-pages] {
+  display: block;
+  position: absolute;
+  inset: 4px -5px -5px 12px;
+  border-radius: 2px 9px 9px 2px;
+  background:
+    linear-gradient(to right, transparent 2rem, var(--dn-paper-margin, rgb(63 79 201 / 0.24)) 2rem, var(--dn-paper-margin, rgb(63 79 201 / 0.24)) calc(2rem + 1px), transparent calc(2rem + 1px)),
+    repeating-linear-gradient(to bottom, transparent 0, transparent 23px, color-mix(in oklab, var(--foreground) 9%, transparent) 23px, color-mix(in oklab, var(--foreground) 9%, transparent) 24px),
+    var(--card);
+  box-shadow: inset -10px 0 12px -10px rgb(0 0 0 / 0.22);
+}
+
+/* Leaves at the fore-edge and the foot. */
+[data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] > [data-dn-book-pages]::before,
+[data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] > [data-dn-book-pages]::after {
+  content: '';
+  position: absolute;
+  --dn-leaf: color-mix(in oklab, var(--foreground) 16%, var(--card));
+}
+
+[data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] > [data-dn-book-pages]::before {
+  inset: 6px 0 6px auto;
+  inline-size: 5px;
+  background: repeating-linear-gradient(to right, var(--card) 0, var(--card) 1px, var(--dn-leaf) 1px, var(--dn-leaf) 2px);
+}
+
+[data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] > [data-dn-book-pages]::after {
+  inset: auto 6px 0 6px;
+  block-size: 5px;
+  background: repeating-linear-gradient(to bottom, var(--card) 0, var(--card) 1px, var(--dn-leaf) 1px, var(--dn-leaf) 2px);
+}
+
+/* The cover: linen weave under a soft light, hinged at the spine. */
+[data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] > [data-dn-book-cover] {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-inline-size: 0;
+  padding: 1.625rem 2.125rem 1.125rem 2rem;
+  border-radius: 4px 12px 12px 4px;
+  background:
+    radial-gradient(20rem circle at var(--dn-light-x, 28%) var(--dn-light-y, -10%), rgb(255 255 255 / 0.17), transparent 62%),
+    linear-gradient(100deg, rgb(255 255 255 / 0.05), transparent 45%, rgb(0 0 0 / 0.12)),
+    repeating-linear-gradient(0deg, rgb(255 255 255 / 0.035) 0, rgb(255 255 255 / 0.035) 1px, transparent 1px, transparent 3px),
+    repeating-linear-gradient(90deg, rgb(0 0 0 / 0.055) 0, rgb(0 0 0 / 0.055) 1px, transparent 1px, transparent 3px),
+    var(--dn-cover-cloth);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.1),
+    inset 0 -1px 0 rgb(0 0 0 / 0.25);
+  transform-origin: left center;
+  transform: rotateY(var(--dn-open, 0deg));
+  transition: transform 560ms var(--dn-ease-settle);
+  backface-visibility: hidden;
+}
+
+/* The spine and the hinge groove beside it. */
+[data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] > [data-dn-book-cover]::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  inline-size: 1.25rem;
+  border-radius: 4px 0 0 4px;
+  background:
+    linear-gradient(to right, transparent calc(100% - 3px), rgb(0 0 0 / 0.32) calc(100% - 3px), rgb(0 0 0 / 0.32) calc(100% - 2px), rgb(255 255 255 / 0.1) calc(100% - 2px), rgb(255 255 255 / 0.1) calc(100% - 1px), transparent calc(100% - 1px)),
+    linear-gradient(to right, rgb(0 0 0 / 0.42), rgb(0 0 0 / 0.16) 45%, rgb(0 0 0 / 0.06) 70%, transparent);
+  pointer-events: none;
+}
+
+/* The elastic band: it slips off as the cover lifts. */
+[data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] > [data-dn-book-cover]::after {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0.9375rem;
+  inline-size: 0.375rem;
+  background: linear-gradient(to right, rgb(0 0 0 / 0.5), rgb(0 0 0 / 0.34) 50%, rgb(0 0 0 / 0.52));
+  box-shadow: 1px 0 2px rgb(0 0 0 / 0.25);
+  pointer-events: none;
+  transition:
+    transform 420ms var(--dn-ease-glide),
+    opacity 300ms ease;
+}
+
+/* The label: paper let into the cloth, with the stationer's ruled border. */
+[data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] [data-dn-book-cover] > [data-slot='card'] {
+  position: relative;
+  border-color: color-mix(in oklab, var(--dn-cover-cloth) 40%, var(--border));
+  border-radius: 3px;
+  background-color: var(--card);
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 0.18),
+    0 1px 2px rgb(0 0 0 / 0.3),
+    inset 0 1px 2px rgb(0 0 0 / 0.06);
+  outline: 1px solid color-mix(in oklab, var(--dn-cover-cloth) 24%, var(--card));
+  outline-offset: -5px;
+}
+
+[data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] [data-slot='card-title'] {
+  /* The name is printed on the label: it stays ink when the book is touched. */
+  color: var(--card-foreground);
+  font-size: 1.1875rem;
+  line-height: 1.3;
+}
+
+/* Blind-stamped initial: pressed into the cloth, tone on tone. */
+[data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] [data-dn-book-monogram] {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  min-block-size: 3.5rem;
+  color: color-mix(in oklab, var(--dn-cover-cloth), black 11%);
+  font-family: var(--font-dn-editorial), Georgia, serif;
+  font-size: 3.75rem;
+  font-weight: 500;
+  line-height: 1;
+  text-shadow:
+    0 1px 0 rgb(255 255 255 / 0.1),
+    0 -1px 0 rgb(0 0 0 / 0.24);
+  pointer-events: none;
+  user-select: none;
+}
+
+[data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] [data-dn-book-monogram]::before {
+  content: attr(data-dn-book-monogram);
+}
+
+/* Written on the cloth, at the foot of the cover. */
+[data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] [data-dn-book-cover] > [data-dn-cover-footer] {
+  order: 3;
+  margin: 0;
+  padding: 0;
+  color: var(--dn-cover-ink);
+}
+
+[data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] [data-dn-book-cover] > [data-slot='card'] { order: 1; }
+[data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] [data-dn-book-cover] > [data-dn-book-monogram] { order: 2; }
+
+/* Why the podcast button is off (an empty notebook): in the cover's ink, on its own line. */
+[data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] [data-dn-cover-footer] p {
+  flex-basis: 100%;
+  color: var(--dn-cover-ink-quiet);
+  line-height: 1.3;
+}
+
+html[data-theme^='high-contrast'] [data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] [data-dn-cover-footer] p {
+  color: var(--muted-foreground);
+}
+
+[data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] [data-dn-cover-updated] {
+  color: var(--dn-cover-ink-quiet);
+}
+
+[data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] [data-dn-cover-footer] :is(button, a[data-slot='button']) {
+  border-color: color-mix(in oklab, var(--dn-cover-ink) 42%, var(--dn-cover-cloth));
+  background-color: color-mix(in oklab, var(--dn-cover-ink) 12%, var(--dn-cover-cloth));
+  color: var(--dn-cover-ink);
+  transition:
+    background-color 180ms ease,
+    transform 180ms var(--dn-ease-settle),
+    opacity 200ms ease;
+}
+
+[data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] [data-dn-cover-footer] :is(button, a[data-slot='button']):hover:not(:disabled) {
+  background-color: color-mix(in oklab, var(--dn-cover-ink) 24%, var(--dn-cover-cloth));
+}
+
+[data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] [data-dn-cover-footer] :is(button, a[data-slot='button']):active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* The ribbon marker, hanging below the foot. */
+[data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] > [data-dn-book-ribbon] {
+  display: block;
+  position: absolute;
+  inset-block: auto -1.125rem;
+  inset-inline-start: 64%;
+  inline-size: 0.6875rem;
+  block-size: 2.25rem;
+  background: linear-gradient(to right, color-mix(in oklab, var(--dn-ribbon), black 18%), var(--dn-ribbon) 45%, color-mix(in oklab, var(--dn-ribbon), black 10%));
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% calc(100% - 0.375rem), 0 100%);
+  z-index: -1;
+  transform-origin: top center;
+  transition: transform 520ms var(--dn-ease-settle);
+  pointer-events: none;
+}
+
+/* ---------- Motion: lift, lean, open ---------- */
+
+@media (hover: hover) {
+  [data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover]:hover {
+    --dn-lift: -6px;
+    --dn-open: -30deg;
+    box-shadow: var(--dn-book-shadow-lifted);
+  }
+}
+
+[data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover]:has(:focus-visible) {
+  --dn-lift: -6px;
+  --dn-open: -30deg;
+  box-shadow: var(--dn-book-shadow-lifted);
+}
+
+[data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover]:is(:hover, :has(:focus-visible)) > [data-dn-book-cover]::after {
+  opacity: 0;
+  transform: translateX(0.75rem);
+}
+
+[data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover]:is(:hover, :has(:focus-visible)) > [data-dn-book-ribbon] {
+  transform: translateY(0.5rem);
+}
+
+/* Opened: the cover swings wide just before the notebook itself appears. */
+[data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover][data-dn-opening] {
+  --dn-lift: -10px;
+  --dn-open: -118deg;
+  box-shadow: var(--dn-book-shadow-lifted);
+}
+
+[data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover][data-dn-opening] > [data-dn-book-cover] {
+  transition: transform 340ms var(--dn-ease-swing);
+}
+
+/* ---------- Reduced motion: the book stays shut and still ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  [data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover],
+  [data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] > [data-dn-book-cover],
+  [data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] > [data-dn-book-cover]::after,
+  [data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] > [data-dn-book-ribbon] {
+    --dn-lift: 0;
+    --dn-open: 0deg;
+    animation: none;
+    transition: none;
+  }
+}
+
+html[data-dn-motion='reduced'] [data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover],
+html[data-dn-motion='reduced'] [data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] > [data-dn-book-cover],
+html[data-dn-motion='reduced'] [data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] > [data-dn-book-cover]::after,
+html[data-dn-motion='reduced'] [data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] > [data-dn-book-ribbon] {
+  --dn-lift: 0;
+  --dn-open: 0deg;
+  animation: none;
+  transition: none;
+}
+
+/* ---------- High contrast: the plain card ---------- */
+
+html[data-theme^='high-contrast'] [data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] {
+  display: block;
+  min-block-size: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: none;
+  transform: none;
+  animation: none;
+}
+
+html[data-theme^='high-contrast'] [data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] > [data-dn-book-cover] {
+  display: block;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+html[data-theme^='high-contrast'] [data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] > [data-dn-book-cover]::before,
+html[data-theme^='high-contrast'] [data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] > [data-dn-book-cover]::after,
+html[data-theme^='high-contrast'] [data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] > [data-dn-book-pages],
+html[data-theme^='high-contrast'] [data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] > [data-dn-book-ribbon],
+html[data-theme^='high-contrast'] [data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] [data-dn-book-monogram] {
+  display: none;
+  content: none;
+}
+
+html[data-theme^='high-contrast'] [data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] [data-dn-book-cover] > [data-slot='card'] {
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+}
+
+html[data-theme^='high-contrast'] [data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] [data-dn-book-cover] > [data-dn-cover-footer] {
+  margin-block-start: 0;
+  padding: 0 1.5rem 0.75rem;
+  color: var(--foreground);
+}
+
+html[data-theme^='high-contrast'] [data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] [data-dn-cover-updated] {
+  color: var(--muted-foreground);
+}
+
+html[data-theme^='high-contrast'] [data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] [data-dn-cover-footer] :is(button, a[data-slot='button']) {
+  border-color: var(--border);
+  background-color: var(--card);
+  color: var(--foreground);
+}
+
+[data-dn-visual-system='v2'] [data-dn-empty-state] h3 {
+  font-size: 1.25rem;
+}
+
+/* On a phone one book fills the shelf's width, keeping its proportions. */
+@media (max-width: 639px) {
+  [data-dn-visual-system='v2'] [data-dn-notebook-shelf] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] [data-dn-notebook-card][data-dn-cover] {
+    aspect-ratio: 17 / 22;
+  }
+}
+
+/* An empty shelf: one blank book, waiting for a name. */
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] [data-dn-empty-book] {
+  --dn-cover: color-mix(in oklab, var(--muted-foreground) 62%, var(--background));
+  position: relative;
+  inline-size: 5.5rem;
+  block-size: 7.25rem;
+  border: 0;
+  border-radius: 2px 7px 7px 2px;
+  background:
+    linear-gradient(to right, rgb(0 0 0 / 0.3), rgb(0 0 0 / 0.06) 9%, rgb(255 255 255 / 0.1) 11%, transparent 15%),
+    linear-gradient(to right, transparent 84%, rgb(0 0 0 / 0.38) 84% 88%, transparent 88%),
+    var(--dn-cover);
+  box-shadow: var(--dn-book-shadow);
+}
+
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] [data-dn-empty-book]::before {
+  position: absolute;
+  inset: 0.875rem 1.25rem auto 1rem;
+  block-size: 1.75rem;
+  border-radius: 1px;
+  background: var(--card);
+  box-shadow: 0 1px 1px rgb(0 0 0 / 0.2);
+  content: '';
+}
+
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] [data-dn-empty-book] > svg {
+  display: none;
+}
+
+[data-dn-visual-system='v2'] [data-dn-empty-book] {
+  margin-block-end: 0.5rem;
+}
+
+/* The rollback shell (no new visual system) has no books: there the same markup is
+   one plain framed card, with the date, counts and actions inside the frame. */
+[data-dn-notebook-card]:not([data-dn-visual-system='v2'] *) {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  transition: border-color 150ms ease;
+}
+
+[data-dn-notebook-card]:not([data-dn-visual-system='v2'] *):hover {
+  border-color: color-mix(in oklab, var(--foreground) 25%, transparent);
+}
+
+[data-dn-notebook-card]:not([data-dn-visual-system='v2'] *) [data-dn-book-cover] > [data-slot='card'] {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+[data-dn-notebook-card]:not([data-dn-visual-system='v2'] *) [data-dn-book-cover] > [data-dn-cover-footer] {
+  margin-block-start: 0;
+  padding: 0 1.5rem 0.75rem;
+}
+
+/* ---------- Cloth colours for anything bound: the open notebook wears its cover ---------- */
+
+[data-dn-cover] {
+  --dn-cover: #2f3a6b;
+  --dn-ribbon: #cdb27a;
+  --dn-cover-cloth: color-mix(in oklab, var(--dn-cover), black var(--dn-cover-shade, 0%));
+}
+
+[data-dn-cover='forest'] { --dn-cover: #2f5244; }
+[data-dn-cover='oxblood'] { --dn-cover: #6b2f35; }
+[data-dn-cover='ochre'] { --dn-cover: #7d6126; --dn-ribbon: #6b2f35; }
+[data-dn-cover='slate'] { --dn-cover: #3e4a54; }
+[data-dn-cover='plum'] { --dn-cover: #553a5a; }
+
+.dark [data-dn-cover] {
+  --dn-cover-shade: 16%;
+}
+
+/* ---------- The open notebook: its book beside its name, columns as pages ---------- */
+
+[data-dn-header-book] {
+  display: none;
+}
+
+[data-dn-visual-system='v2'] [data-dn-notebook-header] {
+  block-size: 4rem;
+  gap: 0.875rem;
+  border-block-end-color: transparent;
+  padding-inline: 0.375rem;
+}
+
+[data-dn-visual-system='v2'] [data-dn-notebook-workspace][data-dn-cover] [data-dn-header-book] {
+  display: block;
+  flex: none;
+  inline-size: 1.625rem;
+  block-size: 2.125rem;
+  border-radius: 1.5px 4px 4px 1.5px;
+  background:
+    linear-gradient(to right, rgb(0 0 0 / 0.4), rgb(0 0 0 / 0.12) 22%, transparent 26%),
+    linear-gradient(to right, transparent calc(100% - 6px), rgb(0 0 0 / 0.42) calc(100% - 6px), rgb(0 0 0 / 0.42) calc(100% - 4px), transparent calc(100% - 4px)),
+    linear-gradient(105deg, rgb(255 255 255 / 0.14), transparent 55%),
+    var(--dn-cover-cloth);
+  box-shadow:
+    1.5px 1.5px 0 0 var(--card),
+    2.5px 2.5px 0 0 var(--border),
+    0 4px 8px -3px rgb(0 0 0 / 0.35);
+}
+
+[data-dn-visual-system='v2'] [data-dn-notebook-header] h1,
+[data-dn-visual-system='v2'] [data-dn-notebook-header] h1 :is(span, button, input, div) {
+  font-family: var(--font-dn-editorial), 'Iowan Old Style', Georgia, serif;
+  font-size: 1.625rem;
+  font-weight: 500;
+  letter-spacing: -0.014em;
+}
+
+/* A page: paper with one leaf showing beneath it, and a cloth tab at its head. */
+[data-dn-visual-system='v2'] [data-dn-notebook-workspace][data-dn-cover] [data-dn-column] {
+  border-radius: 3px 10px 10px 3px;
+  box-shadow:
+    0 1px 1px rgb(0 0 0 / 0.05),
+    0 12px 26px -18px rgb(0 0 0 / 0.34),
+    2px 2px 0 -0.5px var(--card),
+    3px 3px 0 -0.5px var(--border);
+}
+
+[data-dn-visual-system='v2'] [data-dn-notebook-workspace][data-dn-cover] [data-dn-column] > [data-slot='card-header'] {
+  position: relative;
+}
+
+[data-dn-visual-system='v2'] [data-dn-notebook-workspace][data-dn-cover] [data-dn-column] > [data-slot='card-header']::before {
+  content: '';
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 1rem;
+  inline-size: 1.75rem;
+  block-size: 3px;
+  border-radius: 0 0 2px 2px;
+  background-color: var(--dn-cover-cloth);
+}
+
+[data-dn-visual-system='v2'] [data-dn-notebook-workspace] [data-dn-column] > [data-slot='card-header'] [data-slot='card-title'] {
+  font-family: var(--font-dn-editorial), 'Iowan Old Style', Georgia, serif;
+  font-size: 1.125rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+html[data-theme^='high-contrast'] [data-dn-visual-system='v2'] [data-dn-notebook-workspace][data-dn-cover] [data-dn-header-book],
+html[data-theme^='high-contrast'] [data-dn-visual-system='v2'] [data-dn-notebook-workspace][data-dn-cover] [data-dn-column] > [data-slot='card-header']::before {
+  display: none;
+  content: none;
+}
+
+html[data-theme^='high-contrast'] [data-dn-visual-system='v2'] [data-dn-notebook-workspace][data-dn-cover] [data-dn-column] {
+  border-radius: var(--radius-xl);
+  box-shadow: none;
+}
+
+/* ---------- The rail: one marker that glides between pages ---------- */
+
+.dn-rail-marker {
+  display: none;
+}
+
+[data-dn-visual-system='v2'] .dn-rail-link {
+  isolation: isolate;
+}
+
+[data-dn-visual-system='v2'] .dn-rail-link .dn-rail-marker {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: var(--radius-md);
+  background: var(--accent);
+}
+
+/* The ribbon at the marker's edge. */
+[data-dn-visual-system='v2'] .dn-rail-link .dn-rail-marker::before {
+  content: '';
+  position: absolute;
+  inset: 0.375rem auto 0.375rem 0;
+  inline-size: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--primary);
+}
+
+[data-dn-visual-system='v2'] .dn-rail-link.is-active:not(:hover) {
+  background: transparent;
+}
+
+[data-dn-visual-system='v2'] .dn-rail-link.is-active::before {
+  content: none;
+}
+
+/* ---------- Flow: a page settles into place; controls answer a press ---------- */
+
+@keyframes dn-page-settle {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.994);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html:not([data-dn-motion='reduced']) [data-dn-visual-system='v2'] main {
+    animation: dn-page-settle 440ms var(--dn-ease-glide) backwards;
+  }
+
+  html:not([data-dn-motion='reduced']) [data-dn-visual-system='v2'] [data-slot='button']:active:not(:disabled) {
+    scale: 0.975;
+  }
+}
+
+/* ---------- Home: your books first, an open page, index cards ---------- */
+
+/* The recent shelf: small bound books, the same cloth each notebook wears everywhere. */
+[data-dn-visual-system='v2'] [data-dn-home-shelf] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.75rem 1.5rem;
+  padding-block: 0.25rem 1rem;
+}
+
+[data-dn-visual-system='v2'] [data-dn-home-shelf] > .dn-workspace-notebook-link[data-dn-cover] {
+  --dn-cover-ink: #f6f1e7;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 0.75rem;
+  inline-size: 10.5rem;
+  block-size: 14.25rem;
+  padding: 1.125rem 1rem 0.875rem 1.5rem;
+  border: 0;
+  border-radius: 3px 9px 9px 3px;
+  background:
+    radial-gradient(14rem circle at 26% -12%, rgb(255 255 255 / 0.17), transparent 62%),
+    linear-gradient(100deg, rgb(255 255 255 / 0.05), transparent 45%, rgb(0 0 0 / 0.12)),
+    repeating-linear-gradient(0deg, rgb(255 255 255 / 0.035) 0, rgb(255 255 255 / 0.035) 1px, transparent 1px, transparent 3px),
+    repeating-linear-gradient(90deg, rgb(0 0 0 / 0.055) 0, rgb(0 0 0 / 0.055) 1px, transparent 1px, transparent 3px),
+    var(--dn-cover-cloth);
+  box-shadow:
+    2px 2px 0 0 var(--card),
+    3px 3px 0 0 var(--border),
+    4.5px 4.5px 0 0 var(--card),
+    5.5px 5.5px 0 0 var(--border),
+    var(--dn-book-shadow);
+  color: var(--dn-cover-ink);
+  font-weight: 400;
+  transition:
+    transform 380ms var(--dn-ease-settle),
+    box-shadow 380ms var(--dn-ease-glide);
+  animation: dn-book-arrive 600ms var(--dn-ease-glide) backwards;
+}
+
+[data-dn-visual-system='v2'] [data-dn-home-shelf] > .dn-workspace-notebook-link[data-dn-cover]:nth-child(2) { animation-delay: 60ms; }
+[data-dn-visual-system='v2'] [data-dn-home-shelf] > .dn-workspace-notebook-link[data-dn-cover]:nth-child(3) { animation-delay: 120ms; }
+[data-dn-visual-system='v2'] [data-dn-home-shelf] > .dn-workspace-notebook-link[data-dn-cover]:nth-child(4) { animation-delay: 180ms; }
+[data-dn-visual-system='v2'] [data-dn-home-shelf] > .dn-workspace-notebook-link[data-dn-cover]:nth-child(n + 5) { animation-delay: 240ms; }
+
+/* Spine and hinge. */
+[data-dn-visual-system='v2'] [data-dn-home-shelf] > .dn-workspace-notebook-link[data-dn-cover]::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  inline-size: 0.875rem;
+  border-radius: 3px 0 0 3px;
+  background:
+    linear-gradient(to right, transparent calc(100% - 3px), rgb(0 0 0 / 0.32) calc(100% - 3px), rgb(0 0 0 / 0.32) calc(100% - 2px), rgb(255 255 255 / 0.1) calc(100% - 2px), rgb(255 255 255 / 0.1) calc(100% - 1px), transparent calc(100% - 1px)),
+    linear-gradient(to right, rgb(0 0 0 / 0.42), rgb(0 0 0 / 0.14) 50%, transparent);
+  pointer-events: none;
+}
+
+/* The name on its paper label; the date written on the cloth. */
+[data-dn-visual-system='v2'] [data-dn-home-shelf] .dn-workspace-notebook-name {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  padding: 0.625rem 0.6875rem;
+  border-radius: 2px;
+  background-color: var(--card);
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 0.18),
+    0 1px 2px rgb(0 0 0 / 0.3);
+  outline: 1px solid color-mix(in oklab, var(--dn-cover-cloth) 24%, var(--card));
+  outline-offset: -4px;
+  color: var(--card-foreground);
+  font-family: var(--font-dn-editorial), 'Iowan Old Style', Georgia, serif;
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.25;
+  white-space: normal;
+}
+
+[data-dn-visual-system='v2'] [data-dn-home-shelf] .dn-workspace-notebook-time {
+  color: color-mix(in oklab, var(--dn-cover-ink) 82%, var(--dn-cover-cloth));
+  font-size: var(--dn-text-xs);
+}
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  html:not([data-dn-motion='reduced']) [data-dn-visual-system='v2'] [data-dn-home-shelf] > .dn-workspace-notebook-link[data-dn-cover]:hover {
+    transform: translateY(-6px) rotate(-1.2deg);
+    box-shadow:
+      2px 2px 0 0 var(--card),
+      3px 3px 0 0 var(--border),
+      4.5px 4.5px 0 0 var(--card),
+      5.5px 5.5px 0 0 var(--border),
+      var(--dn-book-shadow-lifted);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-dn-visual-system='v2'] [data-dn-home-shelf] > .dn-workspace-notebook-link[data-dn-cover] {
+    animation: none;
+    transition: none;
+  }
+}
+
+html[data-dn-motion='reduced'] [data-dn-visual-system='v2'] [data-dn-home-shelf] > .dn-workspace-notebook-link[data-dn-cover] {
+  animation: none;
+  transition: none;
+}
+
+/* The hero is an open page: ruled paper with a margin rule, the question in display serif. */
+[data-dn-visual-system='v2'] .dn-workspace-home .dn-workspace-hero {
+  border-color: color-mix(in oklab, var(--border) 80%, transparent);
+  border-radius: 3px 12px 12px 3px;
+  background:
+    linear-gradient(to right, transparent 3rem, var(--dn-paper-margin, rgb(63 79 201 / 0.24)) 3rem, var(--dn-paper-margin, rgb(63 79 201 / 0.24)) calc(3rem + 1px), transparent calc(3rem + 1px)),
+    repeating-linear-gradient(to bottom, transparent 0, transparent 31px, color-mix(in oklab, var(--foreground) 6%, transparent) 31px, color-mix(in oklab, var(--foreground) 6%, transparent) 32px),
+    var(--card);
+  box-shadow:
+    0 1px 1px rgb(0 0 0 / 0.05),
+    0 14px 30px -20px rgb(0 0 0 / 0.34),
+    2px 2px 0 -0.5px var(--card),
+    3px 3px 0 -0.5px var(--border);
+}
+
+[data-dn-visual-system='v2'] .dn-workspace-home .dn-workspace-hero-copy {
+  /* Clear of the margin rule at 3rem. */
+  padding-inline-start: 4.25rem;
+}
+
+[data-dn-visual-system='v2'] .dn-workspace-home .dn-workspace-hero-title {
+  font-size: clamp(1.75rem, 4cqi, 2.375rem);
+  line-height: 1.15;
+  text-wrap: balance;
+}
+
+/* Ways to start are index cards: a ruled head, and a card that lifts off the stack. */
+[data-dn-visual-system='v2'] .dn-workspace-home .dn-visual-card {
+  border-color: color-mix(in oklab, var(--border) 85%, transparent);
+  border-radius: 4px;
+  background:
+    linear-gradient(to bottom, transparent 2.625rem, color-mix(in oklab, var(--destructive, #c0392b) 34%, transparent) 2.625rem, color-mix(in oklab, var(--destructive, #c0392b) 34%, transparent) calc(2.625rem + 1px), transparent calc(2.625rem + 1px)),
+    var(--card);
+  box-shadow:
+    0 1px 1px rgb(0 0 0 / 0.06),
+    0 8px 16px -12px rgb(0 0 0 / 0.3);
+  transition:
+    transform 320ms var(--dn-ease-settle),
+    box-shadow 320ms var(--dn-ease-glide),
+    border-color 0.15s ease;
+}
+
+[data-dn-visual-system='v2'] .dn-workspace-home .dn-visual-card-title {
+  font-family: var(--font-dn-editorial), 'Iowan Old Style', Georgia, serif;
+  font-size: 1.1875rem;
+  font-weight: 500;
+}
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  html:not([data-dn-motion='reduced']) [data-dn-visual-system='v2'] .dn-workspace-home .dn-visual-card:hover {
+    transform: translateY(-4px) rotate(-0.5deg);
+    box-shadow:
+      0 2px 2px rgb(0 0 0 / 0.06),
+      0 18px 28px -16px rgb(0 0 0 / 0.36);
+  }
+}
+
+html[data-theme^='high-contrast'] [data-dn-visual-system='v2'] [data-dn-home-shelf] > .dn-workspace-notebook-link[data-dn-cover],
+html[data-theme^='high-contrast'] [data-dn-visual-system='v2'] .dn-workspace-home .dn-workspace-hero,
+html[data-theme^='high-contrast'] [data-dn-visual-system='v2'] .dn-workspace-home .dn-visual-card {
+  background: var(--card);
+  box-shadow: none;
+  color: var(--foreground);
+}
+
+html[data-theme^='high-contrast'] [data-dn-visual-system='v2'] [data-dn-home-shelf] > .dn-workspace-notebook-link[data-dn-cover] {
+  border: 1px solid var(--border);
+}
+
+html[data-theme^='high-contrast'] [data-dn-visual-system='v2'] [data-dn-home-shelf] > .dn-workspace-notebook-link[data-dn-cover]::before {
+  content: none;
+}
+
+html[data-theme^='high-contrast'] [data-dn-visual-system='v2'] [data-dn-home-shelf] .dn-workspace-notebook-name {
+  padding: 0;
+  box-shadow: none;
+  outline: none;
+}
+
+html[data-theme^='high-contrast'] [data-dn-visual-system='v2'] [data-dn-home-shelf] .dn-workspace-notebook-time {
+  color: var(--muted-foreground);
+}
+
+/* ---------- The list view: each row shows its notebook's spine ---------- */
+
+[data-dn-row-spine] {
+  display: none;
+}
+
+[data-dn-visual-system='v2'] [data-dn-notebook-row][data-dn-cover] {
+  border-radius: 3px 10px 10px 3px;
+  transition:
+    transform 300ms var(--dn-ease-settle),
+    box-shadow 300ms var(--dn-ease-glide),
+    border-color 0.15s ease;
+}
+
+[data-dn-visual-system='v2'] [data-dn-notebook-row][data-dn-cover] > [data-dn-row-spine] {
+  display: block;
+  flex: none;
+  align-self: stretch;
+  inline-size: 0.625rem;
+  margin-block: -0.75rem;
+  margin-inline-start: -1rem;
+  border-radius: 2px 0 0 2px;
+  background:
+    linear-gradient(to right, rgb(0 0 0 / 0.34), rgb(0 0 0 / 0.08) 60%, transparent),
+    var(--dn-cover-cloth);
+}
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  html:not([data-dn-motion='reduced']) [data-dn-visual-system='v2'] [data-dn-notebook-row][data-dn-cover]:hover {
+    transform: translateX(3px);
+    box-shadow: 0 10px 20px -16px rgb(0 0 0 / 0.4);
+  }
+}
+
+html[data-theme^='high-contrast'] [data-dn-visual-system='v2'] [data-dn-notebook-row][data-dn-cover] > [data-dn-row-spine] {
+  display: none;
+}
+
+/* ---------- Beyond the shelf: every page is a desk of paper (2026-10-05) ----------
+   Panels are sheets resting on the desk, the page title sits on a letterhead rule,
+   and tabs are index tabs. Flat colour and soft outer shadow only: no gradient, glass
+   or shine, so the flat rules in e2e/premium-pass.spec.ts hold on these pages.
+   `:where()` keeps these at the specificity of one attribute, so a surface with its
+   own design (the open notebook's columns, the shelf, Home) keeps it. */
+
+:root {
+  --dn-sheet-shadow:
+    0 1px 1px rgb(0 0 0 / 0.05),
+    0 10px 24px -18px rgb(0 0 0 / 0.28);
+  --dn-sheet-shadow-lifted:
+    0 1px 2px rgb(0 0 0 / 0.06),
+    0 18px 32px -20px rgb(0 0 0 / 0.36);
+}
+
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] :where(main) :where([data-slot='card'], .rounded-xl.border.bg-card):where(:not([data-dn-notebook-card] *, [data-dn-notebook-workspace] *, .dn-workspace-home *)) {
+  box-shadow: var(--dn-sheet-shadow);
+  transition:
+    box-shadow 280ms var(--dn-ease-glide),
+    transform 280ms var(--dn-ease-settle),
+    border-color 0.15s ease;
+}
+
+/* A sheet you can pick up lifts toward the hand. */
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  html:not([data-theme^='high-contrast'], [data-dn-motion='reduced']) [data-dn-visual-system='v2'] :where(main) :where(a, button, [role='button'], .card-hover):where([data-slot='card'], .rounded-xl.border.bg-card):where(:not([data-dn-notebook-card] *, [data-dn-notebook-workspace] *, .dn-workspace-home *)):hover {
+    box-shadow: var(--dn-sheet-shadow-lifted);
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes dn-sheet-settle {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html:not([data-theme^='high-contrast'], [data-dn-motion='reduced']) [data-dn-visual-system='v2'] :where(main) :where([data-slot='card'], .rounded-xl.border.bg-card):where(:not([data-dn-notebook-card] *, [data-dn-notebook-workspace] *, .dn-workspace-home *)) {
+    animation: dn-sheet-settle 420ms var(--dn-ease-glide) backwards;
+  }
+
+  html:not([data-theme^='high-contrast'], [data-dn-motion='reduced']) [data-dn-visual-system='v2'] :where(main) :where([data-slot='card'], .rounded-xl.border.bg-card):where(:nth-child(2)) { animation-delay: 60ms; }
+  html:not([data-theme^='high-contrast'], [data-dn-motion='reduced']) [data-dn-visual-system='v2'] :where(main) :where([data-slot='card'], .rounded-xl.border.bg-card):where(:nth-child(3)) { animation-delay: 120ms; }
+  html:not([data-theme^='high-contrast'], [data-dn-motion='reduced']) [data-dn-visual-system='v2'] :where(main) :where([data-slot='card'], .rounded-xl.border.bg-card):where(:nth-child(n + 4)) { animation-delay: 180ms; }
+}
+
+/* The letterhead: a hairline under the page title, begun by a short stroke of brand ink. */
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] :is([data-dn-folio-page-header], [data-dn-letterhead]) {
+  position: relative;
+  /* Room for the rule, and air between it and the page. */
+  padding-block-end: 1.125rem;
+  margin-block-end: 0.875rem;
+}
+
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] :is([data-dn-folio-page-header], [data-dn-letterhead])::before,
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] :is([data-dn-folio-page-header], [data-dn-letterhead])::after {
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline-start: 0;
+  content: '';
+  pointer-events: none;
+}
+
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] :is([data-dn-folio-page-header], [data-dn-letterhead])::before {
+  inset-inline-end: 0;
+  block-size: 1px;
+  background: var(--border);
+}
+
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] :is([data-dn-folio-page-header], [data-dn-letterhead])::after {
+  inline-size: 2.5rem;
+  block-size: 2px;
+  margin-block-end: -0.5px;
+  border-radius: 1px;
+  background: var(--primary);
+}
+
+/* Index tabs: a tray of dividers; the open one is a raised paper tab with an ink edge. */
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] main [role='tablist'] {
+  border-radius: 8px;
+}
+
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] main [role='tab'] {
+  position: relative;
+  border-radius: 6px;
+  transition:
+    background-color 200ms var(--dn-ease-glide),
+    box-shadow 240ms var(--dn-ease-glide),
+    color 0.15s ease;
+}
+
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] main [role='tab'][data-state='active'] {
+  background-color: var(--card);
+  box-shadow: var(--dn-sheet-shadow);
+}
+
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] main [role='tab'][data-state='inactive'] {
+  box-shadow: none;
+}
+
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] main [role='tab'][data-state='active']::after {
+  position: absolute;
+  inset: 0 0.75rem auto;
+  block-size: 2px;
+  border-radius: 0 0 2px 2px;
+  background: var(--primary);
+  content: '';
+}
+
+/* The rail's scrollbar, when it needs one (the desktop shell adds rows to the rail):
+   a thin stroke in the page's own grey. It was the system's heavy dark bar. */
+[data-dn-visual-system='v2'] .dn-rail,
+.dn-rail {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--muted-foreground) 32%, transparent) transparent;
+}
+
+/* ---------- Sources and Knowledge (2026-10-05) ----------
+   Colour, shadow and absolutely-placed ornament only: the source gallery's sizes
+   are pinned by its own contract (e2e/source-gallery.spec.ts), so nothing here
+   changes a box. */
+
+/* A source is a sheet in a tray, like the panels elsewhere. */
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] .dn-source-gallery__card,
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] .research-core-folio {
+  box-shadow: var(--dn-sheet-shadow);
+}
+
+/* A source with no cover image: the ring sat on top of the first letters of its
+   title. It is a small mark in the far corner now, clear of the text. */
+[data-dn-visual-system='v2'] .dn-source-cover__shape {
+  inset: 0.75rem 0.75rem auto auto;
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+/* "Select …" is a quiet control until it is on; then it carries the brand ink,
+   without the doubled ring it had. */
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] .dn-source-gallery__select {
+  background: transparent;
+  color: var(--muted-foreground);
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] .dn-source-gallery__select[aria-pressed='true'] {
+  outline: none;
+  border-color: var(--primary);
+  background: color-mix(in oklab, var(--primary) 8%, var(--card));
+  color: var(--foreground);
+}
+
+html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] .dn-source-gallery__select:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+}

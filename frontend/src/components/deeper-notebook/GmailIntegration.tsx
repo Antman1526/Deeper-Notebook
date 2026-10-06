@@ -12,6 +12,7 @@
  */
 'use client'
 
+import { useConfirm } from '@/components/common/use-confirm'
 import { useEffect, useRef, useState } from 'react'
 
 import { deeperNotebookFetch } from '@/lib/api/deeper-notebook'
@@ -24,6 +25,7 @@ import { Mail, CheckCircle2, Loader2, ExternalLink } from 'lucide-react'
 
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { formatDateTime } from '@/lib/utils/date-locale'
+import { RichText } from '@/components/common/RichText'
 
 interface GmailStatus {
   connected: boolean
@@ -43,7 +45,9 @@ interface GmailStatus {
 }
 
 export function GmailIntegration() {
-  const { language } = useTranslation()  // v0.7.189 — locale-aware date format
+  const { t, language } = useTranslation()  // v0.7.189 — locale-aware date format
+  // v0.8.130 — Phase 4c: the app's confirm dialog, not the browser's confirm().
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const [status, setStatus] = useState<GmailStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -104,7 +108,7 @@ export function GmailIntegration() {
         const body = await r.json().catch(() => ({}))
         throw new Error(body.detail || `HTTP ${r.status}`)
       }
-      setMessage('Credentials saved. Click "Connect Gmail" to authorize.')
+      setMessage(t('workspace.gmailIntegration.credentialsSavedMessage'))
       setClientId('')
       setClientSecret('')
       await refresh()
@@ -127,15 +131,13 @@ export function GmailIntegration() {
     // v0.6.1 — if popup blocked, fall back to opening in the current window
     // (user will navigate back after OAuth completes).
     if (!popup || popup.closed || typeof popup.closed === 'undefined') {
-      setError(
-        'Popup blocked. Click "Connect Gmail" again with popups enabled, ' +
-        'or open the OAuth URL directly: /api/deeper-notebook/gmail/connect'
-      )
+      setError(t('workspace.gmailIntegration.popupBlocked'))
       return
     }
     // Poll for connection status until we see connected=true. Stops on
     // success, user-closed popup, component unmount, or 90s timeout.
-    setMessage('Waiting for Google sign-in to complete…')
+    const waitingMessage = t('workspace.gmailIntegration.waitingForGoogle')
+    setMessage(waitingMessage)
     const interval = setInterval(async () => {
       // Bail fast if component unmounted between ticks
       if (!mountedRef.current) {
@@ -156,7 +158,7 @@ export function GmailIntegration() {
         setStatus(data)
         if (data.connected) {
           stopOauthPolling()
-          setMessage(`Connected as ${data.email_address}`)
+          setMessage(t('workspace.gmailIntegration.connectedAs', { email: data.email_address }))
         }
       } catch { /* keep polling */ }
     }, 2000)
@@ -164,7 +166,7 @@ export function GmailIntegration() {
     const timeout = setTimeout(() => {
       stopOauthPolling()
       if (mountedRef.current) {
-        setMessage((prev) => (prev?.startsWith('Waiting') ? null : prev))
+        setMessage((prev) => (prev === waitingMessage ? null : prev))
       }
     }, 90_000)
     oauthPollRef.current = { interval, timeout }
@@ -195,7 +197,12 @@ export function GmailIntegration() {
   }
 
   async function disconnect() {
-    if (!confirm('Disconnect Gmail? You can reconnect anytime.')) return
+    if (!(await confirm({
+      title: t('workspace.gmailIntegration.disconnectTitle'),
+      description: t('workspace.gmailIntegration.disconnectDescription'),
+      confirmText: t('workspace.gmailIntegration.disconnect'),
+      destructive: true,
+    }))) return
     setBusy(true)
     setError(null)
     setMessage(null)
@@ -209,7 +216,7 @@ export function GmailIntegration() {
         throw new Error(body.detail || `HTTP ${r.status}`)
       }
       await refresh()
-      if (mountedRef.current) setMessage('Disconnected.')
+      if (mountedRef.current) setMessage(t('workspace.gmailIntegration.disconnected'))
     } catch (e) {
       if (mountedRef.current) setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -221,10 +228,12 @@ export function GmailIntegration() {
   // 'Forget credentials' button toggled `enabled=false`, which was a no-op
   // when credentials existed but the user wasn't connected yet.
   async function forgetCredentials() {
-    if (!confirm(
-      'Forget the saved Google OAuth client_id / client_secret? You\'ll ' +
-      'need to paste them again next time.'
-    )) return
+    if (!(await confirm({
+      title: t('workspace.gmailIntegration.forgetTitle'),
+      description: t('workspace.gmailIntegration.forgetDescription'),
+      confirmText: t('workspace.gmailIntegration.forgetConfirm'),
+      destructive: true,
+    }))) return
     setBusy(true)
     setError(null)
     setMessage(null)
@@ -235,7 +244,7 @@ export function GmailIntegration() {
       )
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
       await refresh()
-      setMessage('OAuth credentials cleared.')
+      setMessage(t('workspace.gmailIntegration.credentialsCleared'))
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -256,7 +265,7 @@ export function GmailIntegration() {
       if (!r.ok || !body.ok) {
         throw new Error(body.message || body.detail || `HTTP ${r.status}`)
       }
-      setMessage(body.message || 'Sent.')
+      setMessage(body.message || t('workspace.gmailIntegration.sentFallback'))
       await refresh()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -269,10 +278,10 @@ export function GmailIntegration() {
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Mail className="h-4 w-4" /> Email Digests</CardTitle>
+          <CardTitle className="flex items-center gap-2"><Mail className="h-4 w-4" /> {t('workspace.gmailIntegration.title')}</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-[var(--muted-foreground)]"><Loader2 className="inline h-3 w-3 animate-spin mr-1" /> Loading…</p>
+          <p className="text-sm text-[var(--muted-foreground)]"><Loader2 className="inline h-3 w-3 animate-spin mr-1" /> {t('workspace.gmailIntegration.loading')}</p>
         </CardContent>
       </Card>
     )
@@ -281,9 +290,9 @@ export function GmailIntegration() {
   if (!status) {
     return (
       <Card>
-        <CardHeader><CardTitle>Email Digests</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t('workspace.gmailIntegration.title')}</CardTitle></CardHeader>
         <CardContent>
-          <p className="text-sm text-[var(--destructive)]">{error || 'Failed to load status.'}</p>
+          <p className="text-sm text-[var(--destructive)]">{error || t('workspace.gmailIntegration.loadFailed')}</p>
         </CardContent>
       </Card>
     )
@@ -291,20 +300,22 @@ export function GmailIntegration() {
 
   return (
     <Card>
+      {confirmDialog}
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Mail className="h-4 w-4" />
-          Email Digests
+          {t('workspace.gmailIntegration.title')}
           {status.connected && (
-            <span className="ml-2 inline-flex items-center gap-1 text-xs text-[var(--dn-success,_#14B870)]">
-              <CheckCircle2 className="h-3 w-3" /> Connected
+            // v0.8.130 — status colours from theme tokens (UI audit Phase 1)
+            <span className="ml-2 inline-flex items-center gap-1 text-xs text-success-ink">
+              <CheckCircle2 className="h-3 w-3" /> {t('workspace.gmailIntegration.connected')}
             </span>
           )}
         </CardTitle>
         <CardDescription>
-          Get a periodic digest of notebook activity sent to your Gmail.
+          {t('workspace.gmailIntegration.description')}
           {status.connected && status.email_address && (
-            <> Sending to <strong>{status.email_address}</strong>.</>
+            <> {t('workspace.gmailIntegration.sendingTo')} <strong>{status.email_address}</strong>.</>
           )}
         </CardDescription>
       </CardHeader>
@@ -315,7 +326,7 @@ export function GmailIntegration() {
           </p>
         )}
         {message && (
-          <p className="text-sm text-[var(--dn-success,_#14B870)] p-2 rounded bg-[var(--dn-success-soft,_rgba(20,184,112,0.1))]">
+          <p className="text-sm text-success-ink p-2 rounded bg-success-soft">
             {message}
           </p>
         )}
@@ -324,42 +335,41 @@ export function GmailIntegration() {
           /* State 1 — paste OAuth credentials */
           <div className="space-y-3">
             <div className="text-sm space-y-2">
-              <p>One-time setup: create a Google Cloud OAuth client.</p>
+              <p>{t('workspace.gmailIntegration.setupIntro')}</p>
               <ol className="ml-5 list-decimal text-xs text-[var(--muted-foreground)] space-y-1">
-                <li>Open <a href="https://console.cloud.google.com/apis/credentials" target="_blank" className="underline inline-flex items-center gap-0.5">Google Cloud Console <ExternalLink className="h-3 w-3" /></a></li>
-                <li>Create an OAuth 2.0 Client ID (type: <em>Desktop app</em>)</li>
-                <li>Add <code>http://localhost</code> to authorized redirect URIs (we&apos;ll match the port dynamically)</li>
-                <li>Enable the <em>Gmail API</em> in your project</li>
-                <li>Paste the Client ID + Secret below</li>
+                <li><RichText text={t('workspace.gmailIntegration.setupStep1')} components={{ link: (children) => <a href="https://console.cloud.google.com/apis/credentials" target="_blank" className="underline inline-flex items-center gap-0.5">{children} <ExternalLink className="h-3 w-3" /></a> }} /></li>
+                <li><RichText text={t('workspace.gmailIntegration.setupStep2')} components={{ em: (children) => <em>{children}</em> }} /></li>
+                <li><RichText text={t('workspace.gmailIntegration.setupStep3')} components={{ url: () => <code>http://localhost</code> }} /></li>
+                <li><RichText text={t('workspace.gmailIntegration.setupStep4')} components={{ api: () => <em>Gmail API</em> }} /></li>
+                <li>{t('workspace.gmailIntegration.setupStep5')}</li>
               </ol>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="gmail-client-id" className="text-xs">Client ID</Label>
+              <Label htmlFor="gmail-client-id" className="text-xs">{t('workspace.gmailIntegration.clientId')}</Label>
               <Input id="gmail-client-id" value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="123…apps.googleusercontent.com" className="h-8 text-xs" />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="gmail-client-secret" className="text-xs">Client Secret</Label>
+              <Label htmlFor="gmail-client-secret" className="text-xs">{t('workspace.gmailIntegration.clientSecret')}</Label>
               <Input id="gmail-client-secret" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} type="password" placeholder="GOCSPX-…" className="h-8 text-xs" />
             </div>
             <Button onClick={saveCredentials} disabled={busy || !clientId || !clientSecret} size="sm">
-              {busy ? <><Loader2 className="h-3 w-3 animate-spin mr-1" /> Saving…</> : 'Save credentials'}
+              {busy ? <><Loader2 className="h-3 w-3 animate-spin mr-1" /> {t('workspace.gmailIntegration.saving')}</> : t('workspace.gmailIntegration.saveCredentials')}
             </Button>
           </div>
         ) : !status.connected ? (
           /* State 2 — credentials saved, not yet OAuth-authorized */
           <div className="space-y-3">
-            <p className="text-sm">OAuth credentials saved. Click below to sign in with Gmail.</p>
+            <p className="text-sm">{t('workspace.gmailIntegration.credentialsSaved')}</p>
             <div className="flex gap-2">
               <Button onClick={connectGmail} disabled={busy} size="sm">
-                <Mail className="h-3 w-3 mr-1" /> Connect Gmail
+                <Mail className="h-3 w-3 mr-1" /> {t('workspace.gmailIntegration.connectGmail')}
               </Button>
               <Button onClick={forgetCredentials} disabled={busy} variant="ghost" size="sm">
-                Forget credentials
+                {t('workspace.gmailIntegration.forgetCredentials')}
               </Button>
             </div>
             <p className="text-xs text-[var(--muted-foreground)]">
-              Opens a Google sign-in window. We request only <code>gmail.send</code>
-              — never read access to your inbox.
+              <RichText text={t('workspace.gmailIntegration.signInNote')} components={{ scope: () => <code>gmail.send</code> }} />
             </p>
           </div>
         ) : (
@@ -369,31 +379,30 @@ export function GmailIntegration() {
               /* v0.8.68 — offline-deferred digest indicator. The scheduler
                  deferred a due digest because the machine is offline; it
                  retries every few minutes and sends once back online. */
-              <p className="text-xs p-2 rounded border border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-400">
-                A digest is queued — it will send automatically when you&apos;re
-                back online.
+              <p className="text-xs p-2 rounded border border-warning/40 bg-warning-soft text-warning-ink">
+                {t('workspace.gmailIntegration.pendingDigest')}
               </p>
             )}
             <div className="grid gap-2">
-              <Label htmlFor="gmail-frequency" className="text-xs">Frequency</Label>
+              <Label htmlFor="gmail-frequency" className="text-xs">{t('workspace.gmailIntegration.frequency')}</Label>
               <Select value={status.frequency} onValueChange={(v) => updateSetting('frequency' as keyof GmailStatus, v as never)}>
                 <SelectTrigger id="gmail-frequency" className="h-8 text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="daily">Daily</SelectItem>
-                  <SelectItem value="weekly">Weekly</SelectItem>
-                  <SelectItem value="manual">Manual only</SelectItem>
+                  <SelectItem value="daily">{t('workspace.gmailIntegration.frequencyDaily')}</SelectItem>
+                  <SelectItem value="weekly">{t('workspace.gmailIntegration.frequencyWeekly')}</SelectItem>
+                  <SelectItem value="manual">{t('workspace.gmailIntegration.frequencyManual')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-1">
-              <Label className="text-xs">Include in digest</Label>
+              <Label className="text-xs">{t('workspace.gmailIntegration.includeInDigest')}</Label>
               {[
-                ['include_notebooks', 'Notebooks created or updated'],
-                ['include_sources', 'New sources (PDFs, links, transcripts)'],
-                ['include_notes', 'New notes'],
-                ['include_podcasts', 'Podcast episodes generated'],
-                ['include_memory', 'Memory facts extracted from chat'],
+                ['include_notebooks', t('workspace.gmailIntegration.includeNotebooks')],
+                ['include_sources', t('workspace.gmailIntegration.includeSources')],
+                ['include_notes', t('workspace.gmailIntegration.includeNotes')],
+                ['include_podcasts', t('workspace.gmailIntegration.includePodcasts')],
+                ['include_memory', t('workspace.gmailIntegration.includeMemory')],
               ].map(([key, label]) => (
                 <label key={key} className="flex items-center gap-2 text-xs">
                   <input
@@ -408,16 +417,16 @@ export function GmailIntegration() {
 
             <div className="flex flex-wrap gap-2 pt-2">
               <Button onClick={sendTest} disabled={busy} size="sm" variant="outline">
-                {busy ? <><Loader2 className="h-3 w-3 animate-spin mr-1" /> Sending…</> : 'Send digest now'}
+                {busy ? <><Loader2 className="h-3 w-3 animate-spin mr-1" /> {t('workspace.gmailIntegration.sending')}</> : t('workspace.gmailIntegration.sendNow')}
               </Button>
               <Button onClick={disconnect} disabled={busy} size="sm" variant="ghost">
-                Disconnect
+                {t('workspace.gmailIntegration.disconnect')}
               </Button>
             </div>
 
             {status.last_sent_at && (
               <p className="text-xs text-[var(--muted-foreground)]">
-                Last sent: {formatDateTime(status.last_sent_at, language)}
+                {t('workspace.gmailIntegration.lastSent')} {formatDateTime(status.last_sent_at, language)}
               </p>
             )}
           </div>

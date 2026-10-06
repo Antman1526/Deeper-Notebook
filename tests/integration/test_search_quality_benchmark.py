@@ -259,7 +259,7 @@ async def test_hnsw_distance_migration_round_trips_all_shipped_indexes(
     migration_rewind,
 ) -> None:
     """The reversible migration changes every search index, not just sources."""
-    assert await migration_rewind(50) == 51
+    assert await migration_rewind(50) >= 51
     indexes = (
         ("source_embedding", "source_embedding_hnsw"),
         ("source_insight", "source_insight_hnsw"),
@@ -272,7 +272,7 @@ async def test_hnsw_distance_migration_round_trips_all_shipped_indexes(
     from deeper_notebook.database.async_migrate import AsyncMigrationManager
 
     manager = AsyncMigrationManager()
-    await manager.run_migration_up()
+    await manager.runner.run_one_up()
     assert await manager.get_current_version() == 51
     for table, index in indexes:
         assert "DIST COSINE" in await _hnsw_definition(table, index)
@@ -282,10 +282,12 @@ async def test_hnsw_distance_migration_round_trips_all_shipped_indexes(
     for table, index in indexes:
         assert "DIST EUCLIDEAN" in await _hnsw_definition(table, index)
 
-    await manager.run_migration_up()
+    await manager.runner.run_one_up()
     assert await manager.get_current_version() == 51
     for table, index in indexes:
         assert "DIST COSINE" in await _hnsw_definition(table, index)
+
+    await manager.run_migration_up()
 
 
 async def test_hnsw_candidate_metric_keeps_the_exact_cosine_winner(

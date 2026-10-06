@@ -68,7 +68,7 @@ describe('CanvasViewer', () => {
       'Plan',
       'external-vault',
     )
-    expect(screen.getByLabelText('Canvas viewer')).toBeInTheDocument()
+    expect(screen.getByLabelText('knowledge.canvasViewer.viewer')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /save|edit|delete/i })).not.toBeInTheDocument()
   })
 
@@ -78,7 +78,7 @@ describe('CanvasViewer', () => {
     render(<CanvasViewer error={new Error('canvas_invalid')} onRetry={onRetry} />)
 
     expect(screen.getByRole('alert')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Retry Canvas' }))
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.canvasViewer.retry' }))
     expect(onRetry).toHaveBeenCalledOnce()
   })
 })

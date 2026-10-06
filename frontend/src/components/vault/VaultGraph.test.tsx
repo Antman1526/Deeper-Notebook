@@ -84,9 +84,9 @@ describe('VaultGraph controlled viewport', () => {
     )
 
     expect(flowProps.viewport).toEqual({ x: 3, y: 6, zoom: 2 })
-    expect(screen.getByRole('region', { name: 'Connection atlas' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Graph legend')).toHaveTextContent('1 connected source')
-    expect(screen.getByLabelText('Graph inspector')).toHaveTextContent('Open a connected note')
+    expect(screen.getByRole('region', { name: 'workspace.graphAtlasFrame.title' })).toBeInTheDocument()
+    expect(screen.getByLabelText('workspace.graphAtlasFrame.legend')).toHaveTextContent('knowledge.vaultGraph.connectedSourceOne')
+    expect(screen.getByLabelText('workspace.graphAtlasFrame.inspector')).toHaveTextContent('knowledge.vaultGraph.openConnectedNote')
     expect(screen.getByText('Move graph').parentElement).toHaveAttribute('data-fit-view', 'false')
     fireEvent.click(screen.getByRole('button', { name: 'Move graph' }))
     expect(onMoveEnd).toHaveBeenCalledWith({ x: 7, y: -2, zoom: 1.5 })
@@ -140,7 +140,7 @@ describe('VaultGraph controlled viewport', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Turn graph into podcast' }))
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.vaultGraph.turnGraphIntoPodcast' }))
 
     expect(usePodcastStudioStore.getState()).toMatchObject({
       isOpen: true,

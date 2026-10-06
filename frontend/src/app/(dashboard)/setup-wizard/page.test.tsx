@@ -167,6 +167,10 @@ describe('SetupWizardPage', () => {
     expect(screen.getByTestId('subsystem-error-worker')).toHaveTextContent('No background worker heartbeat')
     // useTranslation is mocked to echo keys in this file.
     expect(screen.getByTestId('subsystem-hint-worker')).toHaveTextContent('setupWizard.fixes.worker')
+    // T0-7 — the command wraps at spaces. `break-all` split it mid-word ("comman ds").
+    const hintClasses = screen.getByTestId('subsystem-hint-worker').className
+    expect(hintClasses).toContain('break-words')
+    expect(hintClasses).not.toContain('break-all')
   })
 
   it('disables Continue when status is not_ready', () => {
@@ -257,6 +261,38 @@ describe('SetupWizardPage', () => {
     expect(screen.getByTestId('continue-button')).toBeEnabled()
     expect(useDeepHealth).toHaveBeenCalledTimes(1)
     expect(useNotebooks).toHaveBeenCalledTimes(1)
+  })
+
+  // v0.8.130 — Phase 3c: V2 is a "Getting ready" screen; the checks are behind a disclosure.
+  it('V2 says "Getting ready" and keeps the checks behind Show details', () => {
+    process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2 = '1'
+    mockDeepHealth(NOT_READY)
+    render(<SetupWizardPage />)
+
+    expect(screen.getByRole('heading', { level: 1, name: 'setupWizard.firstRun.title' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'setupWizard.firstRun.notReadyTitle' })).toBeInTheDocument()
+    expect(screen.getByText('setupWizard.firstRun.attentionOther')).toBeInTheDocument()
+    expect(screen.getByTestId('continue-button')).toBeDisabled()
+    expect(screen.queryByTestId('subsystem-list')).toBeNull()
+
+    const details = screen.getByRole('button', { name: 'setupWizard.firstRun.showDetails' })
+    expect(details).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(details)
+
+    expect(screen.getByRole('button', { name: 'setupWizard.firstRun.hideDetails' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByTestId('subsystem-list').querySelectorAll('li')).toHaveLength(6)
+    expect(screen.getByTestId('subsystem-hint-worker')).toHaveTextContent('setupWizard.fixes.worker')
+    expect(document.querySelector('[data-slot="badge"]')).toBeNull()
+  })
+
+  it('V2 counts a single failing check in the singular', () => {
+    process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2 = '1'
+    mockDeepHealth({ ...DEGRADED })
+    render(<SetupWizardPage />)
+
+    expect(screen.getByRole('heading', { level: 2, name: 'setupWizard.firstRun.degradedTitle' })).toBeInTheDocument()
+    expect(screen.getByText('setupWizard.firstRun.attentionOne')).toBeInTheDocument()
+    expect(screen.getByTestId('continue-button')).toBeEnabled()
   })
 
   it('marks only the V2 setup content for async geometry reservation', () => {

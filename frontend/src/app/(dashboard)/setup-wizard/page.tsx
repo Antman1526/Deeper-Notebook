@@ -10,7 +10,7 @@
 
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -20,9 +20,10 @@ import {
   RefreshCw,
   ArrowRight,
   Loader2,
+  ChevronRight,
+  Clock,
 } from 'lucide-react'
 
-import { AppShell } from '@/components/layout/AppShell'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -35,10 +36,11 @@ import {
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useDeepHealth } from '@/lib/hooks/use-deep-health'
 import { useNotebooks } from '@/lib/hooks/use-notebooks'
-import type { SubsystemKey, SubsystemCheck } from '@/lib/api/health'
+import type { DeepHealthResponse, SubsystemKey, SubsystemCheck } from '@/lib/api/health'
 import { SystemRouteFrame } from '@/components/deeper-notebook/route-frames/SystemRouteFrames'
 import { WorkspacePage } from '@/components/deeper-notebook/workspace/WorkspacePage'
 import { isVisualSystemV2Enabled } from '@/lib/features'
+import { cn } from '@/lib/utils'
 
 const SUBSYSTEM_ORDER: SubsystemKey[] = [
   'database',
@@ -125,24 +127,26 @@ function SubsystemRow({
   fixHint,
 }: {
   name: SubsystemKey
-  check: SubsystemCheck
+  check?: SubsystemCheck
   label: string
   fixPath?: string
   fixLabel: string
   fixHint?: string
 }) {
+  const isOk = Boolean(check?.ok)
+  const status = check?.status ?? 'unknown'
   return (
     <div className="flex items-start justify-between gap-4 py-3 border-b last:border-b-0">
       <div className="flex items-start gap-3 min-w-0 flex-1">
-        <StatusIcon ok={check.ok} status={check.status} />
+        <StatusIcon ok={isOk} status={status} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-medium">{label}</span>
-            <Badge variant={check.ok ? 'secondary' : 'destructive'}>
-              {check.status}
+            <Badge variant={isOk ? 'secondary' : 'destructive'}>
+              {status}
             </Badge>
           </div>
-          {check.error ? (
+          {check?.error ? (
             <p
               className="text-sm text-muted-foreground mt-1 break-words"
               data-testid={`subsystem-error-${name}`}
@@ -150,9 +154,11 @@ function SubsystemRow({
               {check.error}
             </p>
           ) : null}
-          {!check.ok && fixHint ? (
+          {/* v0.8.130 — `break-all` split the copy-paste command mid-word ("comman / ds"); `break-words`
+              wraps at spaces. */}
+          {!isOk && fixHint ? (
             <p
-              className="text-xs text-muted-foreground mt-1 font-mono break-all"
+              className="text-xs text-muted-foreground mt-1 font-mono break-words"
               data-testid={`subsystem-hint-${name}`}
             >
               {fixHint}
@@ -160,7 +166,7 @@ function SubsystemRow({
           ) : null}
         </div>
       </div>
-      {!check.ok && fixPath ? (
+      {!isOk && fixPath ? (
         <Button variant="outline" size="sm" asChild className="shrink-0">
           <Link href={fixPath}>
             {fixLabel}
@@ -168,6 +174,168 @@ function SubsystemRow({
           </Link>
         </Button>
       ) : null}
+    </div>
+  )
+}
+
+// v0.8.130 — Phase 3c: the V2 first run. A new user used to land on a developer health
+// table (red "offline / error / missing" pills, "Command registry", a raw shell
+// command). Now the screen says what is happening in plain words; the per-check
+// diagnostics are one click away, behind a details disclosure. The legacy route keeps the
+// table. Keys are literal (not built from the status) so the locale tests can see them.
+const FIRST_RUN_COPY = {
+  loading: { title: 'setupWizard.firstRun.loadingTitle', body: 'setupWizard.firstRun.loadingBody' },
+  healthy: { title: 'setupWizard.firstRun.healthyTitle', body: 'setupWizard.firstRun.healthyBody' },
+  degraded: { title: 'setupWizard.firstRun.degradedTitle', body: 'setupWizard.firstRun.degradedBody' },
+  not_ready: { title: 'setupWizard.firstRun.notReadyTitle', body: 'setupWizard.firstRun.notReadyBody' },
+} as const
+
+function FirstRunCheck({
+  name,
+  check,
+  label,
+  fixPath,
+  fixLabel,
+  fixHint,
+}: {
+  name: SubsystemKey
+  check?: SubsystemCheck
+  label: string
+  fixPath?: string
+  fixLabel: string
+  fixHint?: string
+}) {
+  const { t } = useTranslation()
+  const isOk = Boolean(check?.ok)
+  return (
+    <li className="dn-first-run-check">
+      {isOk ? (
+        <CheckCircle2 className="h-4 w-4 shrink-0 text-success" aria-hidden />
+      ) : (
+        <AlertTriangle className="h-4 w-4 shrink-0 text-warning" aria-hidden />
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="flex flex-wrap items-baseline gap-x-2">
+          <span className="font-medium">{label}</span>
+          <span className="text-sm text-muted-foreground">{isOk ? t('setupWizard.firstRun.checkReady') : t('setupWizard.firstRun.checkNeedsAttention')}</span>
+        </p>
+        {check?.error ? (
+          <p className="mt-1 break-words text-sm text-muted-foreground" data-testid={`subsystem-error-${name}`}>
+            {check.error}
+          </p>
+        ) : null}
+        {!isOk && fixHint ? (
+          <code className="dn-first-run-hint break-words" data-testid={`subsystem-hint-${name}`}>
+            {fixHint}
+          </code>
+        ) : null}
+      </div>
+      {!isOk && fixPath ? (
+        <Button variant="outline" size="sm" asChild className="shrink-0">
+          <Link href={fixPath}>
+            {fixLabel}
+            <ArrowRight className="ml-2 h-4 w-4" aria-hidden />
+          </Link>
+        </Button>
+      ) : null}
+    </li>
+  )
+}
+
+function FirstRun({
+  data,
+  isFetching,
+  onRecheck,
+  onContinue,
+  canContinue,
+}: {
+  data?: DeepHealthResponse
+  isFetching: boolean
+  onRecheck: () => void
+  onContinue: () => void
+  canContinue: boolean
+}) {
+  const { t } = useTranslation()
+  const [showDetails, setShowDetails] = useState(false)
+  const detailsId = useId()
+
+  const copy = data ? FIRST_RUN_COPY[data.status] : FIRST_RUN_COPY.loading
+  const failing = data ? SUBSYSTEM_ORDER.filter((name) => !data.checks[name]?.ok).length : 0
+  const attention =
+    failing === 0
+      ? null
+      : t(failing === 1 ? 'setupWizard.firstRun.attentionOne' : 'setupWizard.firstRun.attentionOther', {
+          count: failing,
+          total: SUBSYSTEM_ORDER.length,
+        })
+
+  return (
+    <div className="dn-first-run">
+      <Card>
+        <CardContent className="dn-workspace-setup-card-content dn-first-run-summary">
+          <span className="dn-first-run-icon" aria-hidden>
+            {!data ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : data.status === 'healthy' ? (
+              <CheckCircle2 className="h-5 w-5 text-success" />
+            ) : data.status === 'degraded' ? (
+              <AlertTriangle className="h-5 w-5 text-warning" />
+            ) : (
+              <Clock className="h-5 w-5" />
+            )}
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="dn-first-run-title">{t(copy.title)}</h2>
+            <p className="dn-first-run-body">{t(copy.body)}</p>
+            {/* The line is always laid out, so the card does not grow when the check returns. */}
+            <p className="dn-first-run-attention">{attention ?? ' '}</p>
+            <div className="dn-first-run-actions">
+              <Button onClick={onContinue} disabled={!canContinue} data-testid="continue-button">
+                {t('setupWizard.continueButton')}
+                <ArrowRight className="ml-2 h-4 w-4" aria-hidden />
+              </Button>
+              <Button variant="outline" onClick={onRecheck} disabled={isFetching}>
+                {isFetching ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                ) : (
+                  <RefreshCw className="h-4 w-4" aria-hidden />
+                )}
+                <span className="ml-2">{t('setupWizard.recheckButton')}</span>
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="dn-first-run-disclosure"
+          aria-expanded={showDetails}
+          aria-controls={detailsId}
+          disabled={!data}
+          onClick={() => setShowDetails((open) => !open)}
+        >
+          <ChevronRight className={cn('h-4 w-4 transition-transform', showDetails && 'rotate-90')} aria-hidden />
+          {showDetails ? t('setupWizard.firstRun.hideDetails') : t('setupWizard.firstRun.showDetails')}
+        </Button>
+        {showDetails && data ? (
+          <ul id={detailsId} data-testid="subsystem-list" className="dn-first-run-checks">
+            {SUBSYSTEM_ORDER.map((name) => (
+              <FirstRunCheck
+                key={name}
+                name={name}
+                check={data.checks[name]}
+                label={t(SUBSYSTEM_LABEL_KEYS[name])}
+                fixPath={FIX_PATHS[name]}
+                fixHint={FIX_HINT_KEYS[name] ? t(FIX_HINT_KEYS[name]) : undefined}
+                fixLabel={t('setupWizard.fixButton')}
+              />
+            ))}
+          </ul>
+        ) : null}
+      </div>
     </div>
   )
 }
@@ -260,15 +428,9 @@ export default function SetupWizardPage() {
                 <span className="ml-2">{t('setupWizard.recheckButton')}</span>
               </Button>
             </CardHeader>
-            <CardContent
-              className={
-                isVisualSystemV2Enabled()
-                  ? 'dn-workspace-setup-card-content'
-                  : undefined
-              }
-            >
+            <CardContent>
               {isLoading || !data ? (
-                <div className="py-6 text-center text-muted-foreground">
+                <div className="py-6 min-h-[22rem] flex items-center justify-center text-center text-muted-foreground">
                   {t('common.loading')}
                 </div>
               ) : (
@@ -313,16 +475,21 @@ export default function SetupWizardPage() {
   )
 
   return (
-    <AppShell>
+    <>
       {isVisualSystemV2Enabled() ? (
         <WorkspacePage
-          title={t('setupWizard.title')}
-          eyebrow="Setup"
-          description={t('setupWizard.subtitle')}
+          title={t('setupWizard.firstRun.title')}
+          description={t('setupWizard.firstRun.description')}
           data-testid="visual-system-v2-setup"
           data-dn-visual-system="v2"
         >
-          {wizardContent}
+          <FirstRun
+            data={isLoading ? undefined : data}
+            isFetching={isFetching}
+            onRecheck={() => refetch()}
+            onContinue={handleContinue}
+            canContinue={canContinue}
+          />
         </WorkspacePage>
       ) : (
         <SystemRouteFrame
@@ -333,6 +500,6 @@ export default function SetupWizardPage() {
           {wizardContent}
         </SystemRouteFrame>
       )}
-    </AppShell>
+    </>
   )
 }

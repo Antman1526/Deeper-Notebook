@@ -22,6 +22,7 @@ except ModuleNotFoundError:
 
 from aiohttp import web
 
+from desktop.config import DEFAULT_THEME
 from desktop.data_root import active_data_root
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -65,9 +66,9 @@ def build_app(model_dir: Path, *, config_path: Path | None = None) -> web.Applic
     async def theme(_: web.Request) -> web.Response:
         try:
             raw = tomllib.loads(config_path.read_text())
-            t = raw.get("theme", "research-core-dark")
+            t = raw.get("theme", DEFAULT_THEME)
         except Exception:
-            t = "research-core-dark"
+            t = DEFAULT_THEME
         return web.json_response({"theme": t})
 
     async def installed(_: web.Request) -> web.Response:

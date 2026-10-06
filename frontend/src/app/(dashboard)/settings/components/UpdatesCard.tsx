@@ -34,30 +34,30 @@ export function UpdatesCard() {
 
   const releaseNotice = isError ? (
     <span className="text-sm text-muted-foreground">
-      Release status unavailable.
+      {t('settings.updatesCard.releaseStatusUnavailable')}
     </span>
   ) : !data ? null : data.enabled === false ? (
     <span className="text-sm text-muted-foreground">
-      Automatic update checks are off.
+      {t('settings.updatesCard.autoChecksOff')}
     </span>
   ) : verification === 'verified' && data.update_available && data.release_url ? (
     <span className="flex flex-wrap items-center gap-2 text-sm text-primary">
-      <span>Verified release available (manual review only)</span>
+      <span>{t('settings.updatesCard.verifiedAvailable')}</span>
       <a
         href={data.release_url}
         target="_blank"
         rel="noreferrer"
         className="underline underline-offset-2"
       >
-        Open verified release (manual)
+        {t('settings.updatesCard.openVerifiedRelease')}
       </a>
     </span>
   ) : verification === 'unverified' ? (
     <span className="text-sm text-muted-foreground">
-      Release needs verification before it can be offered.
+      {t('settings.updatesCard.needsVerification')}
     </span>
   ) : verification === 'unknown' ? (
-    <span className="text-sm text-muted-foreground">Release status unavailable.</span>
+    <span className="text-sm text-muted-foreground">{t('settings.updatesCard.releaseStatusUnavailable')}</span>
   ) : data.last_check ? (
     <span className="text-sm text-muted-foreground">
       {t('updates.upToDate', { defaultValue: "You're up to date." })}

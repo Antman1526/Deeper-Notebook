@@ -10,6 +10,8 @@
  * prompt the user reviews and applies. Nothing is applied automatically.
  */
 
+import { getApiErrorMessage } from '@/lib/utils/error-handler'
+import { markErrorReported } from '@/lib/api/client'
 import { useEffect, useRef, useState } from 'react'
 import { Loader2, Sparkles } from 'lucide-react'
 
@@ -134,9 +136,10 @@ export function OptimizePromptDialog({
         }
       }, 5000)
     } catch (e: unknown) {
+      markErrorReported(e) // v0.8.130 — this caller reports the failure itself
       const detail =
         (e as { response?: { data?: { detail?: string } } })?.response?.data
-          ?.detail ?? String(e)
+          ?.detail ?? getApiErrorMessage(e, t)
       setError(detail)
     }
   }
@@ -251,13 +254,14 @@ export function OptimizePromptDialog({
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1">
                   <Label className="text-xs">{t('transformations.optimizeOriginal', { defaultValue: 'Current prompt' })}</Label>
-                  <pre className="rounded border bg-muted/20 p-2 text-[11px] whitespace-pre-wrap">
+                  {/* v0.8.130 — status colours from theme tokens, 12px type floor (UI audit Phase 1) */}
+                  <pre className="rounded border bg-muted/20 p-2 text-xs whitespace-pre-wrap">
                     {transformation.prompt}
                   </pre>
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">{t('transformations.optimizeResult', { defaultValue: 'Optimized prompt' })}</Label>
-                  <pre className="rounded border border-emerald-500/40 bg-emerald-500/5 p-2 text-[11px] whitespace-pre-wrap">
+                  <pre className="rounded border border-success/30 bg-success-soft p-2 text-xs whitespace-pre-wrap">
                     {optimized}
                   </pre>
                 </div>

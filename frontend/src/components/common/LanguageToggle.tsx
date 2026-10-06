@@ -28,6 +28,8 @@ export function LanguageToggle({ iconOnly = false }: LanguageToggleProps) {
           size={iconOnly ? "icon" : "default"} 
           className={iconOnly ? "h-9 w-full sidebar-menu-item" : "w-full justify-start gap-2 sidebar-menu-item"}
           aria-label={t('navigation.language')}
+          // v0.8.130 — Phase 4b: icon-only buttons carry a tooltip.
+          title={iconOnly ? t('navigation.language') : undefined}
         >
           <Languages className="h-[1.2rem] w-[1.2rem]" />
           {!iconOnly && <span>{t('common.language')}</span>}

@@ -3,8 +3,17 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { SourceCoverActions } from './SourceCoverActions'
 
+// Keys come back unchanged; interpolated values are appended so names that
+// embed a source title stay distinguishable.
+vi.mock('@/lib/hooks/use-translation', () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: Record<string, unknown>) =>
+      opts ? `${key} ${Object.values(opts).join(' ')}` : key,
+  }),
+}))
+
 function openActions(): void {
-  fireEvent.click(screen.getByRole('button', { name: 'Actions for First source' }))
+  fireEvent.click(screen.getByRole('button', { name: 'workspace.sourceCoverActions.actionsLabel First source' }))
 }
 
 describe('SourceCoverActions', () => {
@@ -24,14 +33,14 @@ describe('SourceCoverActions', () => {
       />,
     )
 
-    const trigger = screen.getByRole('button', { name: 'Actions for First source' })
+    const trigger = screen.getByRole('button', { name: 'workspace.sourceCoverActions.actionsLabel First source' })
     expect(trigger).toBeVisible()
     openActions()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Refresh visual' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'workspace.sourceCoverActions.refreshVisual' }))
     openActions()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Remove visual' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'workspace.sourceCoverActions.removeVisual' }))
     openActions()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete source' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'workspace.sourceCoverActions.deleteSource' }))
 
     expect(onRefresh).toHaveBeenCalledOnce()
     expect(onRemove).toHaveBeenCalledOnce()
@@ -53,9 +62,9 @@ describe('SourceCoverActions', () => {
     )
 
     openActions()
-    expect(screen.getByRole('menuitem', { name: 'Refresh visual' })).toHaveAttribute('aria-disabled', 'true')
-    expect(screen.getByRole('menuitem', { name: 'Remove visual' })).toHaveAttribute('aria-disabled', 'true')
-    const deleteItem = screen.getByRole('menuitem', { name: 'Delete source' })
+    expect(screen.getByRole('menuitem', { name: 'workspace.sourceCoverActions.refreshVisual' })).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByRole('menuitem', { name: 'workspace.sourceCoverActions.removeVisual' })).toHaveAttribute('aria-disabled', 'true')
+    const deleteItem = screen.getByRole('menuitem', { name: 'workspace.sourceCoverActions.deleteSource' })
     expect(deleteItem).not.toHaveAttribute('aria-disabled', 'true')
     fireEvent.click(deleteItem)
     expect(onDelete).toHaveBeenCalledOnce()
@@ -74,8 +83,8 @@ describe('SourceCoverActions', () => {
     )
 
     openActions()
-    expect(screen.queryByRole('menuitem', { name: 'Refresh visual' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('menuitem', { name: 'Remove visual' })).not.toBeInTheDocument()
-    expect(screen.getByRole('menuitem', { name: 'Delete source' })).toBeVisible()
+    expect(screen.queryByRole('menuitem', { name: 'workspace.sourceCoverActions.refreshVisual' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'workspace.sourceCoverActions.removeVisual' })).not.toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'workspace.sourceCoverActions.deleteSource' })).toBeVisible()
   })
 })

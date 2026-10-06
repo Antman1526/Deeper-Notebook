@@ -25,6 +25,350 @@ focused commit; each ships with regression tests.
 
 ## Unreleased
 
+Frontend UI audit (2026-09-30): the concrete defects behind the "unfinished" feel, each with a regression test, plus the five items first deferred from that pass. The full mocked Playwright suite gives the same results as before (328 pass / 28 fail / 48 skipped, the same 28 failing on untouched `main`).
+
+🐛 **Typography plugin now loads.** Tailwind v4 ignores `tailwind.config.ts`, so every `prose` class (AI answers, the source reader, search, insights) compiled to nothing. `globals.css` now declares `@plugin "@tailwindcss/typography"`, maps the prose colors to theme tokens, and switches off the plugin's inline-code backticks.
+
+🐛 **`dark:` utilities follow the selected theme.** With no `@custom-variant`, all 109 compiled `dark:` rules sat inside `prefers-color-scheme: dark`, so 171 `dark:` classes followed the OS instead of the theme. They are now bound to the `.dark` class the theme script already toggles.
+
+🐛 **Create button shows its icon.** The narrow-dock CSS hid every `span` in the button, including the icon wrapper, leaving an empty square. Only the new `.dn-dock-label` span is hidden.
+
+🐛 **Active navigation link fills its row.** A V2 `a[href]{display:inline-flex}` rule shrank the highlight to the text width; `.dn-navigator-link` is excluded.
+
+🐛 **Phone command bar fits.** The Focus control is icon-only below 80rem and the palette trigger icon-only up to 1023px, so the row no longer runs off a 320px–390px screen.
+
+🎨 **One platform-correct shortcut hint.** The palette chip showed a doubled glyph ("⌘ ⌘K") and the Focus control listed both platforms; `useIsMac` now drives a single hint, hidden on touch devices.
+
+🐛 **Desktop version chip.** The `v—` placeholder no longer renders in a plain browser, and the packaged app's version (injected by pywebview after the page loads) is picked up by a short poll rather than a single read at mount.
+
+✨ **Citations render inline as numbered chips.** The answer was split on every marker and each piece rendered as its own block, putting every pill on its own line with an ID-fragment label. `linkifyCitations` turns markers into numbered links so one markdown pass keeps each chip in its sentence; the markdown component map is module-level so chips no longer remount on every streamed token, and legacy reference links number after the chips so no two sources share a number.
+
+🐛 **Notebook cards are keyboard-accessible.** The default tile was a click-only `div`. A link laid over the card (a direct child of the card root) makes it a real link while the menu and podcast action stay clickable and the title still truncates.
+
+🐛 **Notebook header spacing and wrapping.** "ago •Updated" gets its space back, and `InlineEdit` wraps with `overflow-wrap: anywhere` instead of `break-all` (which split words mid-word) or `break-words` (which overflowed a 320px row).
+
+🐛 **State panels no longer print their raw kind.** `StatePanel` and `FolioState` rendered "LOADING", "EMPTY" and "ERROR" as a kicker.
+
+🐛 **Transformation delete dialog** was titled "Delete Source"; it now uses the generic title.
+
+🐛 **Setup wizard command hint** wrapped mid-word; it now wraps at spaces.
+
+🐛 **Add Source dialog repeats one sentence four times.** A single translation key fed nine slots; it now appears once, in the header, and wizard step descriptions are optional.
+
+🐛 **Studio stacks on phones.** The Evidence Studio variant out-ranked the narrow-width single-column override, crushing the source desk to about 86px and overlapping the output-mode panel.
+
+🎨 **Shadows follow the theme.** Tailwind inlines shadow values, so the dark-mode shadow tokens never reached `shadow-*`. Each theme key now maps to a `var(--elevation-*)` reference and the `.dark` values apply across all variants. The plain tokens are renamed `--elevation-*`.
+
+🎨 **Podcast copy without internal phase labels.** "Phase 2 provenance", "the current Phase-2 gate", "arrives in Phase 3" and "Evidence filters — Phase 3" now read as plain language; the locked-stage teasers stay.
+
+🎨 **Placeholder Context lens no longer mounted in the V2 shell.** It was static copy on every route that reserved an empty rail at 1536px+ and floated a button over content below that. The V2 grid is two columns (including Focus mode); the component and shared rules stay for the rollback shells.
+
+✨ **Notebook grid/list toggle.** The list layout and its stored preference already existed but nothing could change them. A labelled two-button toggle now sits in the page header, with new keys in all 14 locales.
+
+🛠 **Tests.** A 12-test production-build regression spec (`e2e/phase0-defects.spec.ts`) plus a built-app shadow and layout-toggle check, real-browser layout tests for the shell and Studio, and the stale lens parity e2e updated.
+
+**Phase 1 — design system.** Tokens, primitives, a token codemod across 84 files, and lint rules that keep it that way. Brand and type decisions (2026-09-30): indigo (Gemini-Forward) is the one brand, and headings are sans.
+
+🐛 **Status colours are real green, amber and blue.** The shared catalog-theme block set success to each theme's primary and warning/info to its accent, so "warning" was violet in Gemini-Forward Light and pink in Dracula. They are now fixed hues with `-soft` (tint) and `-ink` (text) roles for light, dark and both high-contrast themes; the `--dn-status-*`, `--dn-success` and `--dn-info` names alias them (`--dn-info` was the brand primary). `e2e/theme-contract.spec.ts` measures every pair at 4.5:1 or more in all 27 themes.
+
+🐛 **Hover and selection are a neutral tint.** `--accent`, shadcn's hover/selected fill, was the theme's second brand hue, so a hovered menu row or the selected command-palette item was solid violet or cyan. It is now a foreground tint; brand uses read the new `--brand-accent`.
+
+🐛 **Destructive text is readable on every theme.** It measured 4.42:1 on Solarized Light's card and 3.48:1 on Nord's.
+
+🐛 **Desktop app no longer overrides those fixes.** The pywebview theme injection outranks `globals.css`, so in the packaged app the neutral hover fill became a brand hue again and destructive buttons kept white text over the light pink destructive of dark themes (~2.6:1). `--accent` and `--destructive` are no longer injected.
+
+🎨 **One radius scale, one easing, one focus ring.** Radii are 8/12/16/24/28 plus pill; every transition uses the standard easing; `--font-serif` is defined (it was undefined, so the editor fell back to Palatino). The 3px keyboard ring (v0.7.121) is kept without `!important`, drawn inset in menu rows, options and scroll viewports where it was clipped, and primitives no longer stack a second box-shadow ring on it.
+
+🎨 **Primitives follow the token spec.** 40px pill buttons (32/48 sizes), pill badges with soft success/warning/info variants, matching Alert variants, 40px inputs and selects, 16px menus with 12px rows, neutral tooltips, and solid dialogs instead of frosted glass. No primitive animates every property or scales on hover/press.
+
+✨ **Kbd and Switch.** Kbd replaces five hand-rolled shortcut chips (one 10px, one unstyled); the home tips show only the current platform's shortcut. The Settings "Guided tips" toggle was a button whose accessible name was its own "On"/"Off" text; it is now a switch named by its heading.
+
+🎨 **Colour, type and motion on tokens everywhere.** A codemod moved 334 raw palette colours, 90 sub-12px text sizes (plus 6 in stylesheets), 73 `transition-all`, 44 hover/press scales, 12 hex colours and the hard-coded teal glows onto tokens, 12px type and named transitions; status chips and banners use the Badge/Alert variants. Two fixed palettes stay as data (the intro's night palette, a minimap fallback).
+
+🛠 **Guardrails.** `npm run lint` rejects raw palette colours, sub-12px text, `transition-all`, hover/press scaling and hex colours in `className`/`style`; `src/lib/design-guardrails.test.ts` proves each rule fires and scans stylesheets for the same rules plus `!important` (down to 8, each allowlisted with its reason).
+
+🐛 **Guided tips stay on top.** The tip rendered inside the shell, so its z-index only counted within the navigator; at 1440px the notebook card's actions painted over its "Got it" button. It is portalled to the document root.
+
+🎨 **Indigo is the brand.** Fresh desktop installs start in Gemini-Forward Light (they started in teal Research Core Dark, while the web default was already indigo), and the desktop bridge and API accept the Gemini-Forward pair: before, the bridge reset a Gemini-Forward choice to Research Core Dark on every page load, so the packaged app could not show the brand. The first-run wizard, model manager and memory dashboard follow. Existing installs keep their saved theme. Chart colours now derive from the theme instead of fixed teal/cyan.
+
+🎨 **Sans headings.** Page, hero, card, state-panel and folio titles use the body face, semibold, on the type scale (32/40 display, 24/32 headline); the serif stays only on the note editor's writing surface.
+
+🛠 **Tests.** `e2e/theme-contract.spec.ts` (status contrast in all 27 themes, per-mode status identity, the hover tint, a single 3px focus ring, sans headings, theme charts) and `e2e/phase1-primitives.spec.ts`, plus unit contracts for tokens, primitives, Kbd/Switch and the lint rules, and desktop/API tests for the indigo default.
+
+**Phase 2a — notebook workspace frame.**
+
+🐛 **The notebook page no longer scrolls itself away on load.** The chat's scroll-to-bottom used `scrollIntoView`, which scrolls every scrollable ancestor; with the page's height unbounded it scrolled the whole canvas ~936px on desktop (~2,229px on a phone), past the title. The chat now scrolls only its own viewport and the workspace fills the canvas, so only the columns scroll.
+
+🎨 **A 56px title bar.** The editable notebook title is the page's single heading; Synthesis and Mind map stay one click away (icon-only on phones); the description and dates are under "About this notebook"; Archive, Export and Delete moved into a "Notebook actions" menu (a red Delete pill sat among the primary actions).
+
+🎨 **Sources · Chat · Notes · Studio.** Guided research and the Evidence Studio band, which stacked ~1,000px above the panes, live in a new collapsible Studio column; Notes keeps its own column. From 1024 to 1279px Notes and Studio share a tabbed side panel (four columns clipped their controls there), and phones get four tabs. The Studio contents lay out by the column's width (container queries). Saved widths use a new key so the old three-pane widths don't apply.
+
+🐛 **Starter questions wait for the chat history.** They were fetched as soon as sources arrived, before the saved session loaded, so a chat with history requested them (and could flash them) whenever its sources answered first. The columns also render once the viewport is known, removing a transient mobile mount on desktop loads that duplicated session, note and context requests.
+
+🐛 **A bad MCP response no longer crashes the notebook.** The tool picker filtered the server list; a non-array body sent the whole view to the Recovery Center. It now reads as "no servers".
+
+**Phase 2b — column cards and the Studio column.**
+
+🎨 **Borderless column cards with title-only headers.** Sources, Chat, Notes and Studio are rounded surfaces on the tinted canvas, each header holding just its title and collapse button. The labelled header buttons wrapped onto two or three lines and ran past the card edge in a 20% column; as icons they still squeezed "Sources" to "S" at 1024px. Adding moved to a full-width "+ Add" row at the top of the column (NotebookLM's pattern; the buttons are named "Add Source" and "Add note", which replaces "Write Note"), which also replaces the empty state's duplicate Add button; bulk context and "Embed all sources" share one "Source options" menu beside it. The chat column is titled "Chat", as on the tabs.
+
+🐛 **Header grid track.** The card header's implicit `auto` track sized to its content, so a long title could not shrink and pushed the actions off the card; column headers use a `minmax(0, 1fr)` track.
+
+🎨 **Studio leads with Generate.** Artifact generators are a two-column tile grid under a "Generate" heading, with the source scope beside it and the reason they're disabled (no ready source) above them; saved outputs are a named list; the long explainer moved behind a disclosure button. Guided research follows the generators.
+
+🛠 **Tests.** `e2e/phase2-workspace.spec.ts` checks at 1440, 1280 and 1024px that headers stay one row, nothing clips and every column title and action label reads in full, plus borderless columns and the two-column grid; unit tests cover the Studio layout and warning order, the Source options menu and the vectorize dialog's controlled mode.
+
+**Phase 2c — the chat column.**
+
+🎨 **Run details instead of the Run timeline.** A five-card "Run timeline · idle · Ready · no gate triggered" panel sat above every chat, empty ones included. Nothing shows before the first run now; while a response streams there is one status line; afterwards a collapsed "Run details" button under the latest answer lists the same five facts (context, model route, MCP tools, privacy gate, agent state) and scrolls them into view in the chat.
+
+🎨 **Flat answers.** Answers read as plain text across the column and questions as soft tinted bubbles, without avatars or the saturated gradient. The empty chat is a guide card. The evidence status under each answer ("No evidence review yet") is a small caption; it rendered at body size, larger than the answer.
+
+🎨 **One pill composer.** The model, Debate and Tools controls sit inside the pill with the mic and send buttons, under a full-width textarea (at 1024px the buttons beside it squeezed it to ~95px, three words per line). Debate and the model picker are icon-only when the pill is narrow, so the controls stay on one row.
+
+🐛 **The chat column was padded twice.** The Phase 2b column rule that pads card content is unlayered CSS, so it overrode the chat's own `p-0`; it now skips `.p-0` content.
+
+✨ **Enter sends.** Shift+Enter starts a new line; Ctrl/⌘+Enter still sends; Enter during IME composition never sends.
+
+🛠 **Tests.** `e2e/phase2-workspace.spec.ts` checks the empty chat has no run panel, Run details sits collapsed under the answer, answers are flat and questions tinted, the opened details come into view, the evidence caption is at most 12px, the textarea owns a one-row pill at 1440 and 1024px, and the Enter/Shift+Enter keys; the RunTimeline unit tests keep every fact assertion behind the disclosure.
+
+**Phase 2d — source rows.**
+
+🎨 **Sources are flat rows.** Each source was a bordered, shadowed card ~110px tall whose type, insight count, sharing, origin and topics were separate pills that wrapped in a 20% column. Now a row leads with its context toggle, shows a one-line title (full title on hover) over one quiet line of the same metadata, and tints on hover; the actions button floats over the row's end on hover or focus (inline on touch screens). Warnings, the processing message, Retry and progress stay. With source visuals on, a row shows its cover only when there is an image or a visual status; the bare fallback repeated the title above every row.
+
+🛠 **Tests.** `e2e/phase2-workspace.spec.ts` checks at 1440 and 1024px that rows are borderless and shadowless, at most 72px tall, with one-line titles, no overflow and no pills, and that each row keeps its actions and context toggle; a SourceCard unit test covers the row and its text metadata.
+
+**Phase 2 exit gate.**
+
+🐛 **The notebook's tabs control real panels.** On phones (Sources/Chat/Notes/Studio) and in the 1024–1279px Notes/Studio panel the content was swapped into a plain container, so each tab's `aria-controls` pointed at a panel that did not exist and screen readers could not tie a tab to its content. The columns now sit in tab panels named by their tab; only the active one mounts, so the chat still mounts once.
+
+🛠 **Tests.** `e2e/phase2-workspace.spec.ts` adds the audit's Phase 2 gate: a keyboard pass (every Tab stop in the workspace draws the 3px ring; Add Source, the chat input, Add note and the Report tile are reachable) and a phone pass on all four tabs (no horizontal overflow, every control at least 44px, nothing clipped or off-screen); unit tests check each tab's `aria-controls` names its panel.
+
+🛠 **The Luminous snapshot suites run again, in their own CI job.** `luminous-folio-visual` and `theme-gallery-visual` (21 tests) prove the pre-V2 presentation, which only renders in a build made with `NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2=0`; V2 became the default on 2026-08-14, so they had failed in every default build since. They now form a `rollback-visuals` Playwright project (`npm run test:e2e:rollback-visuals`), the `mocked-browser` project no longer runs them, and a new `rollback-visuals` CI job builds with V2 off inside the Playwright 1.61.1 image. Baselines were regenerated on purpose for macOS and Linux (the Linux set in that same image, so CI pixels match), after the Phase 0–1 token changes. The theme gallery spec opens "Show more themes" before asserting the catalog groups (curated away behind it on 2026-08-20), and the theme fixture models two endpoints added since it was written (`/api/features`, `/api/studio/retention/status`).
+
+**Phase 3a — page anatomy.**
+
+✨ **Each page names itself.** Every route shared the title "Deeper Notebook", so tabs, history and window lists could not tell pages apart. Routes now read "Notebooks · Deeper Notebook", "Ask and Search · Deeper Notebook" and so on (the home keeps the brand alone).
+
+🎨 **Home breathes.** The working-desk hero, the runtime status and the Today section touched (0px apart); they now share the page's spacing. In V2 the runtime status is a neutral card: its Context-lens tint made a healthy status look selected, or like an error.
+
+🎨 **Notebook cards read as one block.** A ~58px blank band sat between a card's title and its description (the hover-only actions button stretched the header row); the button is pinned to the corner. The source and note counts read "1 source", "0 notes" instead of a bare "1" and "0", and the notebook search shows a search icon.
+
+🎨 **Studio sits on the canvas.** In V2 the header is no longer a tinted block and the two columns are no longer tinted or paper panels around their own cards (card-in-card-in-card).
+
+🐛 **A lone source is a card.** The source gallery's `auto-fit` grid stretched a single source across the page as a ~500px-tall tile; it uses `auto-fill`.
+
+🛠 **Tests.** New `e2e/phase3-pages.spec.ts` (titles for 18 routes, home spacing and status surface, notebook card gap, labelled counts and search icon, Studio surfaces, gallery card width).
+
+**Premium pass and notebook layer** (user decisions of 2026-10-01: "not glossy, more modern and premium", then "make it feel like a notebook").
+
+🎨 **No gloss.** The frosted-glass shell (blur + saturate), the hero's radial glow, the cards' springy lift and indigo hover glow, gradient "bezel" borders, inset white highlights and white edge rings are gone; surfaces are solid with hairline borders, and hover only darkens the hairline.
+
+🎨 **Tighter and rectangular.** Corners run 6–16px (buttons and controls 8px, cards 12px, dialogs 16px; cards were 24–28px), and buttons are rectangles instead of pills. Eyebrows ("Index", "Organize", "Runtime status"…) are quiet grey sentence case instead of indigo or brass tracked uppercase; the breadcrumb chip reads "Notebooks" instead of the raw "notebooks". The selected navigator item is the neutral state layer with the indigo indicator, not a lavender block.
+
+🎨 **Paper and ink.** The indigo pair is a notebook: a warm paper desk (#F5F3EE) with a faint dot grid, off-white pages, ink text, warm hairlines, and a deeper indigo as the pen; Gemini-Forward Dark is a warm "night notebook". Answers and note previews are set in the book serif; the Notes column is ruled with an indigo margin rule. The textures drop out in the high-contrast themes. The desktop window and the first-run, model-manager and memory-dashboard themes carry the same values.
+
+🛠 **Tests.** New `e2e/premium-pass.spec.ts` on Home, Notebooks, Sources, Studio and Settings: no blur, gradient (other than the dotted desk and ruled Notes) or inset shine; buttons at most 10px (card-sized choices 12px) and cards at most 12px; grey sentence-case eyebrows; a warm, never blue-cast flagship palette. The token, button and serif contract tests now pin the new decisions; the pre-V2 rollback baselines are regenerated for the new corners and buttons.
+
+**Phase 3b — the shell.**
+
+🎨 **One rail.** A 68px instrument dock beside a 272px "Notebook index" took 340px of chrome at every width; one 240px rail replaces both. It lists eight destinations (Notebooks, Sources, Capture, Knowledge, Ask and Search, Studio, Podcasts, Study) instead of fourteen; Settings sits in the rail footer, and Models, Transformations, MCP Servers, Launch Preferences and Advanced appear under it while you are in Settings. Theme, language, Gmail, model health and the version sit in the footer too. The command bar is a quiet breadcrumb with one keyboard hint (Quick actions); the Focus button keeps its shortcut in the tooltip.
+
+✨ **The shell is mounted once.** Each page mounted its own shell, so the rail (and its scroll) reset on every navigation; `(dashboard)/layout.tsx` now mounts it.
+
+♿ **Sign out asks first, and there is a skip link.** Sign out was one click with no confirmation; it opens a confirm dialog. "Skip to content" is the first Tab stop. Below 1024px the rail is a sheet behind a Menu button, with a scrim; Escape, the scrim or a link closes it. In Focus mode the rail folds to a strip that opens on keyboard focus.
+
+🛠 **Tests.** New `e2e/phase3-shell.spec.ts` (one rail at most 256px wide, eight destinations with the settings family under Settings, the rail persisting across a navigation, one keyboard hint, the skip link, the sign-out confirm, the phone sheet and Escape). The shell unit contracts describe the rail; a layout test pins the single shell. The Luminous and legacy shells keep their dock and navigator.
+
+**Phase 3c — the first run.**
+
+🎨 **"Getting ready" instead of a health table.** A new user landed on a developer table: red "offline / error / missing" pills, "Database migrations", "Command registry" and a raw shell command. The first run now says what is happening in plain words — "Waiting for the database", "Almost ready" (you can start; some features wait on a check) or "Checking your setup" — with how many checks need attention, Continue, and Re-check. The per-check diagnostics sit behind "Show details", as plain "Ready" / "Needs attention" rows with the fix links and the worker command in a code block. The summary card keeps its height when the check returns, so the old 55rem reservation for the table is gone. The pre-V2 route keeps the table.
+
+🎨 **Login names the product once.** The eyebrow "Deeper Notebook", the "Welcome back" heading and a second "Deeper Notebook" heading inside the card repeated the brand; now a brand mark sits above "Welcome back", and the form is embedded in the frame (no inner card or heading). The version and API address moved from a footer ("Version fixture" in the fixture) to a "Connection details" disclosure.
+
+♿ **The password field is labelled.** It has a real label (visible in the frame, screen-reader only on the pre-V2 card) and `autocomplete="current-password"`, so password managers fill it; sign-in errors are announced (`role="alert"`).
+
+🛠 **Tests.** New `e2e/phase3-firstrun.spec.ts`: "Getting ready" with the checks closed by default and no pills; every check behind the disclosure; the degraded count; the summary height across the check at 1440 and 390; no sideways scroll on a phone; the login brand once with one heading, the version behind the disclosure, the labelled field and the announced error. The setup and login unit tests cover the V2 first run and the embedded form; the auth-geometry test uses the embedded form's 190px. The new copy is English until the Phase 4 i18n pass.
+
+**Test repairs — the suites that were red or never ran.**
+
+🐛 **Vault search results never opened from the palette.** The backend sends a vault hash as `sha256:<hex>` and the response decoder requires that form, but the palette's open check required bare hex, so every indexed vault result was dropped and the "Indexed results" group never appeared. It accepts both now; a test runs a backend-shaped response through the real decoder.
+
+🐛 **A source card's cover could not be seen whole in the tabbed notebook.** At compact width the Sources tab is full width, so a card's 16:9 cover grew to 954×537, taller than the panel that scrolls it. Compact covers are capped at 160px.
+
+🛠 **Five failing browser tests, three of them failing on main.** Focus mode at phone and tablet width now reaches the routes through the Menu button (the rail is a sheet below 1024px since Phase 3b). The Study fixture mocks `/api/features`, and its empty state expects the ExamLab attempts request (ExamLab shipped in v0.8.97); with that fixed, the 13 Study states it had been skipping run and pass, with the degraded-model check reading model health from the rail, and the error-retry state waiting for its retried requests before the next width navigates (under load the navigation aborted them). The evidence-receipt test installs the shared notebook fixture (about 20 shell requests answered 500 and a "Server error" toast covered the receipt), fails on any 5xx, and snapshots the receipt itself: the guided-research region sits in a scrolling 274px Studio column, so a capture of the whole region stitched in page chrome. The knowledge fixture sends the backend's hash form.
+
+🛠 **The source-gallery contract runs in CI.** Its 39 enabled-build tests only run when `NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2` and `NEXT_PUBLIC_DN_SOURCE_VISUALS` are set, which the mocked-browser job never did; it sets both (they are the build defaults). Its 44px target check allows 0.01px of sub-pixel error.
+
+**Phase 4a — copy and translation.**
+
+🎨 **Sentence case.** 218 en-US strings (207 distinct) were Title Case ("Create New Notebook", "Sign In", "Save Current As"); they read "Create new notebook", "Sign in", "Save current as", matching the rest of the premium pass. Proper nouns and product names keep their capitals (Deeper Notebook, Evidence Studio, Obsidian, Gmail, Studio…), as do acronyms and keyboard shortcuts. Other locales keep their own rules.
+
+🌐 **The new screens are translated.** The skip link, the Menu button, the rail's landmark labels, the sign-out confirmation, the login frame ("Welcome back", "Connection details") and the whole first-run screen were English in every language; they read from 26 new keys, translated into all 14 locales. Counts use a form that reads correctly for any number in languages with complex plurals.
+
+🛠 **Tests.** New `sentence-case.test.ts` fails on any Title Case en-US value outside an allowlist of proper nouns, acronyms and new-sentence starts. New `ui-audit-copy.test.ts` fails if those components carry the English again or a key goes missing; the locale parity and placeholder tests cover the translations. Unit tests read keys and the browser specs read the new English. The pre-V2 rollback baselines (16 per platform) are regenerated for the recased labels; their diffs were text only.
+
+**Phase 4b — accessibility.**
+
+♿ **A stray heading on every page.** The command palette rendered its screen-reader title ("Quick actions", "Navigation, search, ask, theme") outside its dialog, so the closed palette left a heading at the end of every page; it is inside the dialog now.
+
+♿ **Landmarks, headings and labels.** Knowledge had no main landmark (its header, mode toolbar and drawers sat outside any); the page is the main landmark and its pane workspace a named region. The notebook columns' titles are level-2 headings, so source cards (now h3, were h4) no longer skip a level, and an alert's title is no longer a fixed h5. Labelled groupings (Home's actions, the Knowledge header, source authority, note links, research drawers) carry a group role, which their labels need; a theme card's "Current" badge drops a redundant label; Knowledge's tab strip is a tablist only when it has tabs; source gallery cards are list items in a list instead of articles claiming the listitem role.
+
+♿ **Named controls.** The rail's logo is a link home, and its theme and language buttons have tooltips like the others.
+
+🛠 **The axe gate.** New `e2e/phase4-a11y.spec.ts` runs axe-core 4.10.3 (WCAG 2.1 A/AA and best practices) on 12 routes, light and dark, at 1440 and 390: no violations, and nothing undecided except a closed Radix trigger's `aria-controls`, which axe cannot resolve. The faint paper textures are switched off for the check so axe can measure contrast; where an overlay still hides the background, the test measures contrast itself. `axe-core` becomes a declared dev dependency (it was already installed through the lint plugin).
+
+**Phase 4c — dialogs, toasts, tooltips and route names.**
+
+🎨 **The app's own confirmations.** Deleting a source, an artifact or an MCP server, disconnecting Gmail and forgetting its credentials used the browser's native confirm() box, unstyled and in English; they use the app's confirm dialog (a new `useConfirm()` hook), with a destructive button whose label now takes the destructive foreground (it kept the primary button's, dark on red in dark themes).
+
+🎨 **Toasts follow the theme.** They read the old light/dark setting, so a dark catalog theme could show light toasts; they follow the active theme now. Errors, warnings and notices are styled from the theme's tokens (soft fill, ink text) instead of the library defaults, which 74 error toasts were using.
+
+🎨 **Tooltips wait a moment.** They opened instantly and each made its own provider; the app has one provider with a 400ms delay, so moving along a row of icons does not flash every tooltip.
+
+🌐 **The crumb names the route.** The V2 command bar's crumb printed the URL segment ("Setup wizard", English in every language); it shows the route's name the way the rail does, translated ("Getting ready", "MCP servers", "Home"). The import dialog's 📋 is an icon.
+
+🛠 **Tests.** New `use-confirm.test.tsx` (resolves on confirm and cancel; destructive styling) and `ui-audit-4c.test.tsx`, which fails on any native confirm(), the emoji, a zero tooltip delay or a missing app provider, unstyled toast kinds or a theme mismatch, and an untranslated crumb. The MCP and artifact delete tests confirm through the dialog.
+
+🐛 **Knowledge's utility rail shrank by itself.** The rail saved its measured width as if the user had resized it, but it measured the content box, which is narrower than the rail by its padding; each save triggered another measurement, so an untouched rail could shrink from 320px to 240px on load, at a timing-dependent pace. It measures the border box now. This was the Luminous knowledge snapshot's flake (it failed about one run in three on both platforms); the Linux baseline, captured mid-shrink at 240px, is regenerated.
+
+**One toast per failure.**
+
+🐛 **A failed save showed two error toasts and was sent twice.** The API client toasted every 5xx ("Server error. Check the API log…") and the caller toasted its own message too: 76 mutations and about 15 direct calls report their own failures, so each failure doubled. The generic toast is now a fallback: it waits one task, and whoever reports the error first claims it. Mutations with their own onError claim it automatically (a MutationCache handler; `meta: { reportsErrors: true }` is there for hooks whose callers report instead), and direct callers that catch the error call `markErrorReported(error)`. The local-model benchmark and settings mutations report from the hook rather than per call, since a per-call handler is skipped if the page has unmounted. Adding several sources to a notebook reports a partial failure once instead of once per failed source. Where the caller's toast is now the only one, it reads a readable message (Deep Research, chat-model switch, launch default, prompt optimizer) instead of axios's "Request failed with status code 500". A failure nobody reports still gets the generic toast. Six call sites that toasted again after their hook had already reported (smart routing, MCP recommendations, Studio generate, podcast generate, save to notebooks) skip the repeat with `isErrorReported(error)`.
+
+🐛 **A phone could not see that a model was down.** Model health lives in the rail, and below 1024px the rail is a sheet behind the Menu button, so a down or degraded local model was invisible until you opened the menu. The command bar now shows it there, only when something needs attention ("Some local models need attention" / "Local models are unavailable", an amber or red dot), and it links to Local models, which explains and fixes it; a healthy phone bar is unchanged, and on desktop the rail keeps the full list. To make room, the V2 phone bar uses compact spacing, square Quick actions and Focus buttons, and the product name at 16px: the name stays whole beside the alert at 360px and up, and a healthy bar now fits it even at 320px. (Tests: `e2e/phase4-model-health.spec.ts`; the Study degraded-model check now finds health in the phone bar without opening the menu. A matrix contract test that read a request count before the page's own request had landed now polls for it.)
+
+🌐 **The whole app speaks the selected language.** Hard-coded English sat in 176 component files outside the locale system, so a Japanese or German workspace still showed English panels, toasts, labels and aria-labels across Study, Podcasts, Knowledge, Settings, the Studio rail and the shell. Over 2,000 strings (1,938 from components plus 73 status labels, theme names and model roles) now come from translation keys. They are translated into all 13 other locales, along with the 141–168 strings per locale that had still been English. Each locale keeps the words it already used (e.g. Tresor, 保管庫, 知識庫 for "vault"). Some things were deliberately left as written: product and theme names (Tokyo Night, Luminous Folio), the browser-tab titles that Next.js renders on the server, code samples, and API validation messages users never see. Status words that came straight from the API (plan states, model readiness, route roles, source kinds) now have labels, with the raw value as the fallback for unknown ones. Copy fixes found on the way:
+- English is in sentence case, so "Deep Research Synthesis" became "Deep research synthesis" and "Podcast Intelligence Studio" became "Podcast intelligence studio".
+- The notebook tooltips said "1 sources" and now say "1 source".
+- "1 contradiction need review" and "1 slot have no eligible model" are now grammatical.
+- The Gmail note gained the space before its dash.
+- Generic theme names now read "High contrast dark" and "Light blue".
+
+The command-bar Focus button now speaks the selected language too; it was the one literal the scan missed. `<html lang>` now follows the UI language (it stayed "en"), so screen readers use the right voice and German long words hyphenate inside the Knowledge rail buttons instead of spilling out. The podcast folio's margin note is now "Production review notes": it shared the name "Production review" with the review section in the production gate, which only casing had told apart. `ModelFleetBadge` had its `'use client'` directive after an import, so it no longer applied; it is the first statement again. Tests that had compared English text now compare keys, or resolve the real en-US strings where counts and names matter. No assertion was dropped. (Tests: `src/lib/locales/*`: parity, placeholders, every key exists, sentence case; `e2e/i18n-locales.spec.ts`: German and Japanese shell, document language, German rail fit. The rollback screenshots that show the changed copy were regenerated on mac and linux.)
+
+🌐 **Translation follow-ups.**
+- **Browser tab titles** now name the route in the selected language ("Notizbücher · Deeper Notebook"). Next.js rendered them on the server in English, so the 17 metadata-only route layouts are gone, and `DocumentTitle` sets the title from the navigation keys.
+- **Inline elements.** Sentences that wrapped a link, a shortcut or a code value had been split into "lead" and "tail" keys, which forced English word order on every language. They are now one string with tags (`Tip: hit <key/> from anywhere…`), rendered by a small `RichText` component, and a new test keeps the tags intact in every locale.
+- **Status values.** The local model inventory's health badge and the podcast studio's default outline (Introduction, Findings, Takeaway) now translate. Citation pills keep the insight type as written, because it is the user's own transformation name.
+- **Review pass.** An independent review of every locale made 448 corrections, plus 83 terminology fixes:
+  - German now uses formal "Sie" throughout (it had mixed in "du").
+  - Each language uses its own menu word for Study, never Studio. Portuguese had left "Study" in English, and Spanish used "Estudio" for both.
+  - Italian says "quaderno" consistently, and "Course Pack" stays a product name.
+  - Mistranslations are fixed: "Language" as a human language instead of a model type, "Brief" as slide deck in Traditional Chinese, and a Turkish word that clashed with "episode".
+  - These are model reviews, not native-speaker reviews.
+- **Tests and tooling:**
+  - The `KnowledgePodcastPane` test waits for the lazily loaded studio module itself instead of a 10-second clock.
+  - `npm run lint` now covers `e2e/` too, and its one error (a Playwright fixture callback named `use`) is fixed.
+  - The locale docs (`src/lib/locales/CLAUDE.md`) describe the 14 locales and the conventions above.
+
+(Tests: `src/components/common/RichText.test.tsx`, `src/components/providers/DocumentTitle.test.tsx`, `src/lib/locales/markup.test.ts`, `e2e/i18n-locales.spec.ts` (tab title in German), `e2e/phase3-pages.spec.ts` (titles match the navigation labels).)
+
+⚡ **Only the active language loads.** Every page shipped all 14 languages in one 2.8 MB chunk. English is now bundled; any other language is fetched when it is selected, as its own 160–330 KB chunk. An English page now downloads 2.7 MB less script (about 40%). The page stays hidden until the active language has arrived, so it never flashes English first; if loading fails, English shows after 3 seconds rather than a blank window.
+
+🌐 **Numbers and dates follow the app language.**
+- 33 places formatted numbers and dates with the OS locale. A German UI on an English Mac showed "1,234.5" and US dates; they now use the selected language ("1.234,5").
+- The existing date helper had no entry for German, Catalan, Polish or Turkish, so those fell back to US formatting even where it was used. Any valid language tag now works.
+
+🛠 **A screenshot flake under load.** Two rollback screenshot tests could capture a tall page before a slow mocked response re-rendered it. They now wait for a quiet network and loaded fonts first. (The flake reproduced only under heavy load; 84 consecutive linux runs passed both before and after.)
+
+(Tests: `e2e/i18n-locales.spec.ts`: an English page downloads no other language, a German page only German; `src/lib/utils/format.test.ts` and `date-locale.test.ts`: de-DE and en-US numbers and dates.)
+
+🛠 **CI matches the desktop.** The pull request's first CI run failed in the same three jobs as `main`. The fixes:
+- **Frontend Tests:** now installs the Chromium that the shell, folio and workspace layout tests measure with.
+- **Backend Tests:** installs ffmpeg for the Study Workbench verifier, and gives git an identity through environment variables. `tests/conftest.py` points `HOME` at a temp dir, so global git config is invisible; macOS git invents an identity from the host, a Linux runner refuses.
+- **The phone command bar** uses 8px side padding instead of 12px, because on Linux the product name rendered 3px wider and was cut off at 360px.
+- **The evidence-receipt screenshot** gained its missing Linux baseline.
+- **Restored date-helper table:** the locale formatting change had replaced the date helper's `LOCALE_BCP47_MAP` table, which a source guard test requires. The table is back, now listing all 14 languages.
+
+🔒 **Overlay notes: a swapped file is caught on Linux too.** Replacing an overlay note checks that the file it displaces is the one it hashed, to catch a file swapped in mid-edit. That check compared device and inode only, and Linux reuses a freed inode number at once, so a delete-and-recreate looked identical and the substitute was silently replaced. macOS assigns a new inode, which is why the existing test passed on the desktop and failed in CI and on `main`. The replace now also re-reads the displaced file and requires the bytes that were snapshotted; a mismatch rolls the exchange back. (Tests: `tests/test_overlay_storage.py`: the original substitution test now passes on Linux, and a new test simulates inode reuse on any platform. Both fail without the fix.)
+
+🛡️ **Services no longer outlive a dead launcher, and a default install is not "Degraded".**
+- **Orphan guard.** Every service the launcher starts runs in its own session, so if the launcher was killed or crashed, nothing stopped SurrealDB, the API, the worker, the web server and the model servers: they kept running and holding their ports until the next launch swept some of them. Seen in a packaged run on 2026-10-05 (the launcher vanished without a log line; seven services were still up an hour later). A small guard process (`desktop/orphan_guard.py`) now holds one end of a pipe from the launcher and stops every registered service when that pipe closes, which happens however the launcher goes: politely first, then firmly. Process numbers are checked against their start time, so a reused number is never touched. It writes `logs/orphan-guard.log` when it has to act. macOS and Linux; Windows is unchanged.
+- **"Degraded" on every default install.** Home's runtime panel read "Degraded" with "Knowledge status is unavailable" on every install, because the knowledge engine is off by default and "off" was reported as a fault. Switched off is now simply not a problem. The flag being on with the engine missing is still reported.
+- **"Local backup is stale" right after launch.** The launcher writes a backup ten minutes after every launch, but for those ten minutes (a new install, or the first launch after a few days away) the panel called the missing or old backup a fault. For the first 30 minutes after the app starts, a backup that is merely not yet due is not a fault; after that the old rules apply. Real anomalies (an unreadable file, a date in the future) are never excused.
+- **The tour tip no longer covers the page heading.** It sat on top of the title on Home and Notebooks; it moves below the heading when the two would collide.
+- **Knowledge: no blank band.** With no recent sources, a 12rem space reserved for them stayed empty above the page for good. It is given back once it is known there is nothing to show.
+- **Sources.** A source with no cover image had a decorative ring drawn over the first letters of its title; it is a small mark in the far corner. The "Select" control is quiet until it is on. Source cards and the Knowledge workspace rest on the desk like the other panels.
+- **No more capital-letter labels.** 61 labels in 31 files were forced to capitals (STUDY WORKBENCH), against the sentence-case rule; all now read as written. A test fails if one comes back.
+- **Progress window.** It wears the theme just chosen in the wizard, and the setup and progress windows' title bars follow the translated page title.
+- **A second net at the next launch.** The launcher writes down what it starts, under its own identity. The next launch stops whatever a launcher that is no longer running left recorded: the whole group, politely then firmly, where the old sweep sent one polite signal to one process and never followed up. A record belonging to a launcher that is still running is another copy of the app and is never touched.
+- **Windows.** Restarting a model service crashed: the restart path called process-group functions that do not exist on Windows, and the error was not one it caught. It now stops the service's tree with `taskkill`, as quitting already did. The orphan guard and the launch-time net use the same protocol there with Windows tools. Neither Windows path has been run on a real Windows machine; both are covered by tests with stand-ins, and if a process's identity cannot be read, nothing is stopped.
+- **Each data folder has its own backups.** Automatic exports and pre-repair copies all went to `~/onp-backups` whatever data folder the app was using, so a second install or a test data folder read, pruned and reported on the main one's backups. A default install is unchanged. A redirected data folder (`DEEPER_NOTEBOOK_DATA_DIR`) now gets `<folder>-backups` beside it: beside, not inside, so backups still survive the folder being deleted. Backups a redirected install wrote earlier stay in `~/onp-backups`.
+- **Backups nobody is scheduled to take are not a fault.** A server deployment without the desktop launcher, or one with exports switched off, read "Degraded" for good. The panel now reports a missing or old backup only where the launcher is there to take one.
+- **The progress window adds no second Dock icon.**
+- **`make build-mac-install`** only stops this app's own processes. It used to kill every `llama_cpp.server`, SurrealDB and worker on the machine by bare name.
+
+(Tests: `desktop/tests/test_orphan_guard.py` kills real stand-in services, including one that ignores the polite signal and one with a child of its own; `tests/test_runtime_snapshot_not_a_fault.py` (35 cases; the existing snapshot tests pass unchanged); `GuidedTipsProvider.test.tsx` placement cases; `src/lib/no-uppercase-labels.test.ts`; `knowledge/page.test.tsx`; `desktop/tests/test_setup_progress_window.py`; `desktop/tests/test_restart_sidecar_windows.py`; `desktop/tests/test_backup_directory.py`. Three snapshot tests whose names said the opposite of what they assert were renamed; no assertion changed.)
+
+⏳ **First-launch setup shows its progress.** The setup wizard has a "Setting up" screen with a live list of startup steps, but nobody ever saw it: the wizard window closed the instant settings were saved, and startup only began after that. A first launch takes minutes (a Python environment, dependencies, model servers), and for all of that time there was no window at all. Found by watching a real packaged first run on 2026-10-05.
+- **A progress window stays up until the app opens.** When the wizard closes, the launcher opens a small window showing that screen, in the system language, with each step as it starts and finishes. It closes when the main window appears.
+- **Startup itself is unchanged.** The window is a separate helper process (`desktop/setup_progress_window.py`, the app started with a flag). Startup stays on the launcher's main thread, because that is where it installs the signal handlers that stop the child services on quit and where its native dialogs must run. The helper only displays: it starts no services and takes no lock.
+- **It cannot be left behind.** The launcher closes it when the main window opens and on every failure path; if the launcher itself dies, the helper notices within a second and closes. If the helper cannot start, the launch carries on without it.
+- A second Dock icon is visible while it is open. The window uses the default light theme, not the theme just chosen.
+
+(Tests: `desktop/tests/test_setup_progress_window.py`: the helper's command, start, stop and parent watch; the wizard's server still streaming progress after its window closes; the launcher opening the helper on first run only and closing it exactly once.)
+
+🗣️ **The last English on the desktop side.**
+- **Wizard messages with live values.** Launcher messages that carry a path, a port or an exit code are translated by pattern, with the values left exactly as sent: no chat or embedding model found, a service that exited or never came up, and two that used to be developer shorthand (`available=True` now reads "OpenChronicle found"; a bare path now reads "Memory commands registered: …"). Free-form exception text is still shown as received.
+- **Failure text that cannot be translated.** When a setup step fails with the launcher's own exception text, the wizard frames it in the reader's language and names the step ("Database could not start. Technical detail: …"), keeping the original text for support. A failed save reports a sentence instead of a bare `HTTP 500`.
+- **Microphone and speaker controls.** Their tooltips and pop-up messages are in all 14 languages and follow the interface language; both buttons now have accessible names (they had none).
+- **Health words.** Turkish and Bengali used words for broken things and for people's health ("corrupted", "sick", "healthful") for service states. Both now say operational, partially operational or low-performing, and unavailable, consistently across the status labels. Italian uses the app's own terms for speech recognition and synthesis in the wizard. These are second-pass corrections, not a native-speaker review; Bengali is the least certain.
+
+(Tests: `desktop/tests/test_wizard_i18n.py` renders the launcher's real message formats from its source and requires each pattern to match them, so a reworded backend sentence fails; `desktop/tests/test_desktop_injections.py` checks the voice strings for parity and for leftover English.)
+
+🧹 **Leftovers from the stationery pass.**
+- **Setup wizard progress.** The 17 launcher steps have names ("Database", "Chat model server", "Speech-to-text") in all 14 languages; they showed raw codes such as `supervisor › surreal`. Four fixed launcher messages and the "invalid provider" save error are translated too. Messages that carry a path, a port or an exception are still shown as received.
+- **Translations second-checked.** The new wizard and label strings in the 13 non-English languages were reviewed by a second, independent pass, and its corrections applied. This is not a native-speaker review.
+- **Desktop Memory link.** It is a rail link like the app's own, with a drawn icon and a translated label. It was a bordered box with a brain emoji, and it was found through the English label "Settings", so it never appeared in any other language.
+- **Desktop microphone button.** A rounded button with a drawn microphone in the theme's own colours, red while recording. It was an emoji on a circle and asked for a colour token the app does not define. Its toasts follow the theme (they were white in dark themes), and the speaker button on answers is a drawn icon.
+- **Rail scrollbar.** When the rail needs one, it is a thin stroke in the page's grey, not the system's heavy bar.
+- **Home names the real data folder.** The tip said `~/.deeper-notebook/` whatever folder the install used. `/api/config` now reports the folder (`dataPath`, home shown as `~`), and Home shows it; the default wording stays if the backend does not answer.
+- **Studio** has the same letterhead rule under its title as every other page.
+
+(Tests: `desktop/tests/test_wizard_i18n.py` (every launcher step has a label; mapped messages still exist verbatim in the launcher), `desktop/tests/test_desktop_injections.py`, `tests/test_config_data_path.py`, `src/app/(dashboard)/page.data-path.test.tsx`, one new case in `e2e/stationery-pages.spec.ts`.)
+
+📄 **Stationery reaches every page, and three shelf defects are fixed.** Found by looking at the shelf in all 26 themes, at phone and tablet widths, in list view, archived and empty (2026-10-05).
+- **Every page is a desk of paper.** Panels are sheets resting on the desk with a soft layered shadow, and they settle into place in sequence. Each page title sits on a letterhead rule begun by a short stroke of brand ink. Tabs are index tabs: the open one is a raised paper tab with an ink edge. Flat colour and outer shadow only, so the no-gradient, no-glass rules still hold on these pages. High-contrast themes keep plain panels; nothing moves under reduced motion.
+- **Phone.** One book now fills the shelf's width, and the toolbar uses the full page width (it had shrunk to its widest button, with refresh as a full-width bar of its own). The stacked header's actions stretch on every page that uses it.
+- **List view.** A long notebook name ends in an ellipsis. It was cut mid-letter: links are flex boxes in the new visual system, and a flex box draws no ellipsis.
+- **Empty notebook.** On a book with nothing in it yet, the note explaining why "Turn into podcast" is off is set in the cover's ink on its own line. It was faint grey on the cloth and cut off at the foot of the book (seen in the packaged app on a new notebook).
+- **Empty shelf.** It says "Your shelf is empty" beside a blank book, in all 14 languages. It said "No results".
+- **First-run wizard translated.** The desktop setup wizard was English only, with no translation mechanism. It now follows the system language in all 14 locales, including the six generic theme names (the proper-noun themes keep their names). Launcher progress messages and backend error text are still shown as received.
+- **Local service names translated.** "Memory (local)", "Whisper (local)" and the other auto-registered services are named in English in the database and cannot be renamed there, so they are translated where they are shown. The overall local-model health badge (healthy, degraded, down) is translated too; it showed the raw value.
+- **Housekeeping.** Playwright's `test-results/` is ignored; one of its files was tracked and changed on every run.
+
+(Tests: `e2e/stationery-pages.spec.ts` (sheets, letterhead, index tabs, motion, high contrast); three new cases in `e2e/notebook-stationery.spec.ts` (phone width, list ellipsis, empty shelf); `desktop/tests/test_wizard_i18n.py` (key parity, placeholders, markup, every key used exists, theme names agree with the app); `src/lib/local-credential-label.test.ts`.)
+
+📓 **Stationery: the app is a desk of bound notebooks.** A design pass on your direction ("premium, in a notebook way… modern, motion flow… spectacular", with approval to change the earlier no-gradient rule where the design needs it).
+- **Notebooks are books.** On the shelf each notebook stands upright in linen cloth with a shaded spine, an elastic band, a ribbon marker, leaves at the fore-edge, a paper label for its name and its initial blind-stamped into the cover. The cloth (ink, forest, oxblood, ochre, slate or plum) comes from the notebook's id, so it is the same on every visit and device, and it follows the notebook into the list view, Home and the open workspace.
+- **Motion.** A book lifts, leans toward the pointer under a soft moving light, and opens on its hinge to show a ruled first page. A click swings the cover wide before the notebook opens; modified clicks go straight through. Books arrive on the shelf in sequence, pages settle into place on navigation, the rail has one marker that glides between pages, and controls answer a press.
+- **Reduced motion and high contrast.** All motion is transform and opacity only, and none of it runs under the OS reduced-motion setting or the app's own. High-contrast themes and the rollback shell keep plain cards: one frame around the name, the date, the counts and the actions.
+- **Still one click target.** A click anywhere on a book opens it, on the date and counts too; only the podcast button and the menu act on their own.
+- **Type.** Page titles, section headings and notebook names are set in the editorial serif (Newsreader). Controls, body text and status readouts stay sans.
+- **Home leads with your books.** An open ruled page for the hero, then a shelf of your recent notebooks, then the ways to start as index cards. The runtime readout moves to the foot of the page.
+- **The open notebook wears its cover.** Its book sits beside its name, and each column is a page with a cloth tab at its head.
+- **Rules revised.** `e2e/premium-pass.spec.ts` now allows drawn materials (weave, ruling, light, soft shadow) on stationery surfaces only. Glass blur stays banned everywhere, and the rest of the interface keeps the flat rules.
+
+(Tests: `e2e/notebook-stationery.spec.ts`: the book and its parts, the hinge under pointer and keyboard focus, reduced motion, the opening swing, modified clicks, serif headings, Home's order, the rail marker, dark and high-contrast themes; `src/lib/notebook-cover.test.ts`; `NotebookCard.test.tsx`. Card title and order tests were updated to the new design on purpose: a label wraps a name to three lines before it truncates, and Home's sections changed order. The two tests that pinned "headings are sans" (`globals-css.contract.test.ts`, `e2e/theme-contract.spec.ts`) now pin the 2026-10-04 decision instead: serif on titles, set only by the stationery layer in the new visual system. The rollback notebook-index baselines were regenerated for the plain card.)
+
+🐛 **Checkboxes were 44px squares.** V2 gives every control a 44px target, and checkboxes and radios filled it: the Checkbox component rendered as a 44px filled square (Advanced, Settings, Ask and search), and a source candidate's native checkbox also stretched to its label's height. They keep the 44px target but draw a 16px box in its middle (with a 16px footprint, so they line up with the text around them), with the focus ring on the box; the candidate's box sits on its title's first line. Rows that spaced a checkbox from its label with `space-x-*` use `gap`, which the new margins don't override. The pre-V2 screens are unchanged.
+
+🐛 **The evidence receipt had no room in the Studio column.** Studio is narrow (274px at 1440 with four columns), and five nested paddings (the card, the research band, the approval panel, the candidate row, the receipt) left the receipt 148px at 1440, 109px at 1280 and 93px at 1024: fingerprints broke mid-value, the source title wrapped one word per line, and at 1280 and 1024 the receipt overflowed the column. In a narrow column the research band now bleeds to the card edges, the approval panel drops its own frame, and rows and the receipt tighten (container queries; full-width layouts are unchanged): 218px at 1440, 179px at 1280, 163px at 1024, no overflow. Studio can no longer be dragged below 22% of the workspace (was 18%), nor the shared Notes/Studio panel at 1024–1279 below 28% (was 22%); at the old minimums the receipt still overflowed. Default widths are unchanged.
+
+🐛 **Errors say what happened.** The local-model benchmark's Cancel and Reset said "This desktop runtime cannot…" for any failure, including a server error or a lost connection; that wording is now kept for a missing endpoint (404, 405, 501, which is what the bundled API returns) and anything else reads "Could not cancel the running benchmark." / "Could not reset benchmark history." with the reason. App-wide, an error with no detail from the server showed axios's own "Request failed with status code 500"; `getApiErrorMessage` now falls back to the translated message ("An unexpected error occurred", or the caller's fallback) instead.
+
+🐛 **Mutations no longer repeat writes.** Every mutation was retried once on any 5xx or network error, so a failed POST was sent twice (and could apply twice), and the user saw the generic toast before the caller's. A mutation is retried only when no response arrived and its method is safe to repeat (GET, HEAD, OPTIONS, PUT, DELETE); POST and PATCH never. Mutations that carry an idempotency key in their variables (source-visual refresh, Anki publish, study progress decisions, unique overlay notes) may repeat a lost request once. A study card review generated a new request id on each attempt, so the old retry could record one review twice; it is no longer retried.
+
+🛠 **Tests.** New `error-toasts.test.tsx` drives a real 500 through the API client and React Query: an unreported failure shows the generic toast once; a caller, a mutation's onError, or `meta.reportsErrors` shows only its own; a caller skips its toast when the mutation already reported; a partly failed batch reports once. `query-client.test.ts` pins the new retry policy (it replaced the case that expected a retried 5xx); `idempotent-retry.test.tsx` covers the keyed mutations. Checked in the built app: a failed MCP server delete now sends one request and shows one toast.
+
+## v0.8.129 — 2026-09-12 — SurrealDB live integration suite, live service verification & test setting hardening
+
+🛠 **SurrealDB live integration test suite (132 passed).** Resolved a schema migration head stepping issue in `tests/integration/test_search_quality_benchmark.py`: migration 51 round-trip stepping now uses `runner.run_one_up()` against the migration 52 head. Full suite passed 100% against real SurrealDB 2.6.5.
+
+✨ **Live services & background worker observability verified.** Verified live API `/healthz/deep` worker status transitions from offline to online with active worker counts and sub-second heartbeats. Verified notebook ID scoping in Quick podcast dialog and Settings worker observability card.
+
+🛠 **Latent test setting hardening.** Hardened 5 key test suites against ambient alias pollution using the `unset_setting` fixture and dynamic precedence resolution: `test_phase3_smart_routing.py`, `test_evidence_studio_foundation.py`, `test_v0_8_40b_hot_swap.py`, `test_ask_result_caps.py`, and `test_chat_history_cap.py`. Full backend test suite passing 100% (5,110 passed, 0 failures).
+
 ## v0.8.128 — 2026-09-11 — The five v0.8.127 open items, plus the first full backend run
 
 Four workers were dispatched for these and all were killed by a usage
@@ -64,6 +408,12 @@ mirror canonical settings into their legacy alias names at import
 `delenv` on the canonical name alone leaves the mirror visible to
 `resolve_env`. A `unset_setting` conftest fixture now clears every alias
 of a setting; the six tests use it.
+
+🛠 **Standing `make test-backend` target & test suite import hygiene.** Added a
+dedicated `test-backend` Makefile target for standing backend gate execution.
+Fixed all 12 pre-existing ruff `I001` un-sorted import blocks across 11 test suites
+(`ruff check .` 100% clean). Synced Inno Setup installer script (`deeper-notebook.iss`)
+to v0.8.128 and updated version smoke assertions (`test_smoke.py`, `test_release_manifest.py`).
 
 ## v0.8.127 — 2026-09-11 — The five v0.8.126 open items
 

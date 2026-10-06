@@ -187,7 +187,7 @@ export function SpeakerProfileFormDialog({
 
           <div className="space-y-4">
             <div>
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              <h3 className="text-sm font-semibold text-muted-foreground">
                 {t('podcasts.voiceModel')}
               </h3>
               <Separator className="mt-2" />
@@ -217,7 +217,7 @@ export function SpeakerProfileFormDialog({
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                <h3 className="text-sm font-semibold text-muted-foreground">
                   {t('podcasts.speakers')}
                 </h3>
                 <p className="text-xs text-muted-foreground">

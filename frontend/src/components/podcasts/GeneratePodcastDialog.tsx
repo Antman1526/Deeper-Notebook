@@ -1,5 +1,6 @@
 'use client'
 
+import { markErrorReported, isErrorReported } from '@/lib/api/client'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, Sparkles } from 'lucide-react'
 import { useQueries, useQueryClient } from '@tanstack/react-query'
@@ -16,6 +17,7 @@ import { PodcastGenerationRequest, PodcastOverviewMode } from '@/lib/types/podca
 import { QUERY_KEYS } from '@/lib/api/query-client'
 import { useToast } from '@/lib/hooks/use-toast'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatDecimal, formatNumber } from '@/lib/utils/format'
 // v0.7.196 —
 //  - getApiErrorMessage: sanitize the raw `error.message` previously
 //    shown as the toast description on podcast-generation failure.
@@ -51,14 +53,14 @@ interface NotebookSelection {
 }
 
 // Helper function to format large numbers with K/M suffixes
-function formatNumber(num: number): string {
+function formatCompactCount(num: number, language: string): string {
   if (num >= 1000000) {
-    return `${(num / 1000000).toFixed(1)}M`
+    return `${formatDecimal(num / 1000000, language, 1)}M`
   }
   if (num >= 1000) {
-    return `${(num / 1000).toFixed(1)}K`
+    return `${formatDecimal(num / 1000, language, 1)}K`
   }
-  return num.toString()
+  return formatNumber(num, language)
 }
 
 function hasSelections(selection?: NotebookSelection): boolean {
@@ -161,7 +163,7 @@ function ContentSelectionPanel({
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          <h3 className="text-sm font-semibold text-muted-foreground">
             {tr.content}
           </h3>
           <p className="text-xs text-muted-foreground">
@@ -180,9 +182,9 @@ function ContentSelectionPanel({
           </Badge>
           {(tokenCount > 0 || charCount > 0) && (
             <span className="text-xs text-muted-foreground">
-              {tokenCount > 0 && tr.tokens.replace('{count}', formatNumber(tokenCount))}
+              {tokenCount > 0 && tr.tokens.replace('{count}', formatCompactCount(tokenCount, language))}
               {tokenCount > 0 && charCount > 0 && ' / '}
-              {charCount > 0 && tr.chars.replace('{count}', formatNumber(charCount))}
+              {charCount > 0 && tr.chars.replace('{count}', formatCompactCount(charCount, language))}
             </span>
           )}
         </div>
@@ -261,7 +263,7 @@ function ContentSelectionPanel({
                       <div className="space-y-4 px-4 pb-4">
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
-                            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            <h4 className="text-xs font-semibold text-muted-foreground">
                               {tr.sources}
                             </h4>
                             {fetchingNotebookIds.has(notebook.id) && (
@@ -344,7 +346,7 @@ function ContentSelectionPanel({
                         <Separator />
 
                         <div className="space-y-2">
-                          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          <h4 className="text-xs font-semibold text-muted-foreground">
                             {tr.notes}
                           </h4>
                           {notes.length === 0 ? (
@@ -679,9 +681,8 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
 
     if (sourceIds.length === 0 && activeNbIds.length === 0) {
       toast({
-        title: 'Nothing selected',
-        description:
-          'Pick at least one source or notebook before auto-filling.',
+        title: t('podcasts.generatePodcastDialog.nothingSelected'),
+        description: t('podcasts.generatePodcastDialog.nothingSelectedDesc'),
       })
       return
     }
@@ -713,24 +714,25 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
         )
       }
       toast({
-        title: 'Auto-fill applied',
+        title: t('podcasts.generatePodcastDialog.autoFillApplied'),
         description: suggestion.reasoning,
       })
     } catch (err) {
+      markErrorReported(err) // v0.8.130 — this caller reports the failure itself
       const msg =
         (err as { response?: { data?: { detail?: string } }; message?: string })
           ?.response?.data?.detail ||
         (err as Error)?.message ||
-        'Auto-fill failed.'
+        t('podcasts.generatePodcastDialog.autoFillFailedMessage')
       toast({
-        title: 'Auto-fill failed',
+        title: t('podcasts.generatePodcastDialog.autoFillFailed'),
         description: msg,
         variant: 'destructive',
       })
     } finally {
       setAutoFilling(false)
     }
-  }, [selections, episodeProfiles, toast])
+  }, [selections, episodeProfiles, toast, t])
 
   const selectedNotebookSummaries = useMemo(() => {
     return notebooks.map((notebook) => {
@@ -944,6 +946,8 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
       }, 500)
     } catch (error) {
       console.error('Failed to generate podcast', error)
+      // v0.8.130 — the mutation's own onError already told the user; don't toast twice.
+      if (isErrorReported(error)) return
       // v0.7.196 — was `error.message` raw, leaked axios + FastAPI
       // stack-text. Route through ERROR_MAP first, fall back to
       // `common.refreshPage` for unknown errors. Same sibling-pattern
@@ -1016,7 +1020,7 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
           <div className="space-y-6">
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                <h3 className="text-sm font-semibold text-muted-foreground">
                   {t('podcasts.episodeSettings')}
                 </h3>
                 {/* v0.7.31 — heuristic auto-fill button. Calls
@@ -1029,14 +1033,14 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
                   onClick={handleAutoFill}
                   disabled={autoFilling || episodeProfiles.length === 0}
                   className="h-8"
-                  title="Suggest profile, title, and briefing based on selected sources"
+                  title={t('podcasts.generatePodcastDialog.autoFillTitle')}
                 >
                   {autoFilling ? (
                     <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                   ) : (
                     <Sparkles className="mr-1.5 h-3.5 w-3.5" />
                   )}
-                  Auto-fill from sources
+                  {t('podcasts.generatePodcastDialog.autoFillFromSources')}
                 </Button>
               </div>
               {episodeProfilesQuery.isLoading ? (
@@ -1095,14 +1099,14 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
                       value={overviewMode}
                       onValueChange={(value) => setOverviewMode(value as PodcastOverviewMode)}
                     >
-                      <SelectTrigger id="overview_mode" aria-label="Audio overview format">
+                      <SelectTrigger id="overview_mode" aria-label={t('podcasts.overviewFormat')}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="deep_dive">Deep Dive</SelectItem>
-                        <SelectItem value="brief">Brief</SelectItem>
-                        <SelectItem value="critique">Critique</SelectItem>
-                        <SelectItem value="debate">Debate</SelectItem>
+                        <SelectItem value="deep_dive">{t('podcasts.generatePodcastDialog.modeDeepDive')}</SelectItem>
+                        <SelectItem value="brief">{t('podcasts.generatePodcastDialog.modeBrief')}</SelectItem>
+                        <SelectItem value="critique">{t('podcasts.generatePodcastDialog.modeCritique')}</SelectItem>
+                        <SelectItem value="debate">{t('podcasts.generatePodcastDialog.modeDebate')}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -1166,7 +1170,8 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
                           defaultValue: 'Review outline before generating audio',
                         })}
                       </Label>
-                      <span className="text-[11px] text-muted-foreground">
+                      {/* v0.8.130 — 12px type floor (UI audit Phase 1) */}
+                      <span className="text-xs text-muted-foreground">
                         {t('podcasts.reviewOutlineFirstDesc', {
                           defaultValue:
                             'Generation pauses after the outline so you can edit it; audio is created after you approve.',

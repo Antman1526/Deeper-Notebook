@@ -2,13 +2,14 @@
 
 import { useRouter } from 'next/navigation'
 
-import { AppShell } from '@/components/layout/AppShell'
 import { PodcastStudio } from '@/components/podcasts/PodcastStudio'
 import { Button } from '@/components/ui/button'
+import { useTranslation } from '@/lib/hooks/use-translation'
 import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
 
 /** Route counterpart to the Knowledge-pane Studio; selections remain transient. */
 export default function PodcastStudioPage() {
+  const { t } = useTranslation()
   const router = useRouter()
   const selections = usePodcastStudioStore((state) => state.selections)
   // v0.8.127 — carries through to submitStudioPodcast so a Studio session
@@ -22,7 +23,7 @@ export default function PodcastStudioPage() {
   ))
 
   return (
-    <AppShell>
+    <>
       <main className="flex-1 overflow-y-auto px-6 py-10 sm:px-8">
         <div className="mb-4 flex justify-end">
           <Button
@@ -33,11 +34,11 @@ export default function PodcastStudioPage() {
               router.back()
             }}
           >
-            Close Studio without producing
+            {t('podcasts.studioPage.closeStudio')}
           </Button>
         </div>
         <PodcastStudio headingLevel={1} seedDocumentIds={[...new Set(seedDocumentIds)]} selections={selections} notebookId={notebookId} />
       </main>
-    </AppShell>
+    </>
   )
 }

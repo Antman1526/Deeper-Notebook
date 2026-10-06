@@ -44,7 +44,7 @@ export function NotebookList({
     // v0.8.70 — skeleton cards instead of a centered spinner: the layout
     // settles instantly (no jump when data lands) and reads as faster.
     return (
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 2xl:grid-cols-3">
+      <div data-dn-notebook-shelf="" className="grid grid-cols-1 gap-4 xl:grid-cols-2 2xl:grid-cols-3">
         {Array.from({ length: 6 }).map((_, i) => (
           <div key={i} className="space-y-3 rounded-lg border bg-card p-4">
             <div className="flex items-center gap-3">
@@ -64,7 +64,9 @@ export function NotebookList({
     return (
       <EmptyState
         icon={Book}
-        title={emptyTitle ?? t('common.noResults')}
+        // v0.8.130 — an empty shelf is not a search with no results.
+        title={emptyTitle ?? t('notebooks.emptyShelfTitle')}
+        blankBook={!emptyTitle}
         description={emptyDescription ?? t('chat.startByCreating')}
         action={(onAction && actionLabel) || extraAction ? (
           <div className="mt-4 flex flex-col items-center gap-2">
@@ -88,7 +90,7 @@ export function NotebookList({
           <Button
             variant="ghost"
             size="sm"
-            aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${title}`}
+            aria-label={isExpanded ? t('notebooks.notebookList.collapseTitle', { title }) : t('notebooks.notebookList.expandTitle', { title })}
             onClick={() => setIsExpanded(!isExpanded)}
           >
             {isExpanded ? (
@@ -110,9 +112,9 @@ export function NotebookList({
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 2xl:grid-cols-3">
-            {notebooks.map((notebook) => (
-              <NotebookCard key={notebook.id} notebook={notebook} />
+          <div data-dn-notebook-shelf="" className="grid grid-cols-1 gap-4 xl:grid-cols-2 2xl:grid-cols-3">
+            {notebooks.map((notebook, index) => (
+              <NotebookCard key={notebook.id} notebook={notebook} index={index} />
             ))}
           </div>
         )

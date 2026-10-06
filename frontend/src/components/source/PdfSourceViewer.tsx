@@ -17,6 +17,7 @@ import 'react-pdf/dist/Page/AnnotationLayer.css'
 import { Loader2 } from 'lucide-react'
 
 import { sourcesApi } from '@/lib/api/sources'
+import { useTranslation } from '@/lib/hooks/use-translation'
 
 // Local, offline worker — matched to the pdfjs-dist version react-pdf bundles.
 pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
@@ -28,6 +29,7 @@ interface PdfSourceViewerProps {
 }
 
 export default function PdfSourceViewer({ sourceId, onUnavailable }: PdfSourceViewerProps) {
+  const { t } = useTranslation()
   const [url, setUrl] = useState<string | null>(null)
   const [numPages, setNumPages] = useState(0)
   const [failed, setFailed] = useState(false)
@@ -78,11 +80,11 @@ export default function PdfSourceViewer({ sourceId, onUnavailable }: PdfSourceVi
           onUnavailable?.()
         }}
         loading={
-          <div className="py-10 text-center text-xs text-muted-foreground">Loading PDF…</div>
+          <div className="py-10 text-center text-xs text-muted-foreground">{t('sources.pdfSourceViewer.loading')}</div>
         }
         error={
           <div className="py-10 text-center text-xs text-muted-foreground">
-            Couldn’t render the PDF — showing the extracted text instead.
+            {t('sources.pdfSourceViewer.renderFailed')}
           </div>
         }
       >

@@ -103,7 +103,7 @@ describe('AppSidebar', () => {
     expect(
       screen.getByRole('img', { name: 'Deeper Notebook' }),
     ).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Switch theme' })).toHaveClass('h-9', 'w-full')
+    expect(screen.getByRole('button', { name: 'workspace.themeSwitcher.switchTheme' })).toHaveClass('h-9', 'w-full')
     expect(screen.getByRole('button', { name: 'navigation.language' })).toHaveClass('h-9', 'w-full')
   })
 })

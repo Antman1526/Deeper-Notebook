@@ -27,7 +27,7 @@ describe('EpisodeLab', () => {
   it('moves a completed local episode into the route-persistent player', () => {
     render(<EpisodeLab episode={episode} onClose={vi.fn()} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Play in global player' }))
+    fireEvent.click(screen.getByRole('button', { name: 'podcasts.episodeLab.playInGlobalPlayer' }))
 
     expect(useAudioPlayerStore.getState().episode).toMatchObject({
       id: 'episode:local-review',
@@ -41,61 +41,63 @@ describe('EpisodeLab', () => {
     render(<EpisodeLab episode={{ ...episode, job_status: 'failed' }} onClose={vi.fn()} onRetry={onRetry} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'citation:one' }))
-    expect(screen.getByText('Source citation — claim evidence mapping arrives in Phase 3')).toBeVisible()
+    expect(screen.getByText('podcasts.episodeLab.claimCitationUnavailable')).toBeVisible()
+    // Internal roadmap labels are not user-facing copy.
+    expect(document.body).not.toHaveTextContent(/Phase[- ]\d/)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Retry episode' }))
+    fireEvent.click(screen.getByRole('button', { name: 'podcasts.episodeLab.retry' }))
     expect(onRetry).toHaveBeenCalledWith('episode:local-review')
-    expect(screen.queryByRole('button', { name: 'Cancel episode' })).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Download audio' })).toHaveAttribute('download')
+    expect(screen.queryByRole('button', { name: 'podcasts.episodeLab.cancel' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'podcasts.episodeLab.downloadAudio' })).toHaveAttribute('download')
   })
 
   it('renders the read-only current outline and persisted stage history with locked Phase 3 stages', () => {
     const completed = { ...episode, job_status: 'completed' as const, generation_stage: null, audio_file: '/private/audio.mp3' }
     render(<EpisodeLab episode={completed} onClose={vi.fn()} />)
 
-    expect(screen.getByRole('heading', { name: 'Current Outline' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'podcasts.episodeLab.currentOutline' })).toBeVisible()
     expect(screen.getByText('Opening finding')).toBeVisible()
     expect(screen.getByText('Frame the evidence.')).toBeVisible()
     expect(screen.getByText('short')).toBeVisible()
-    expect(screen.getByText('Outline present')).toBeVisible()
-    expect(screen.getByText('Transcript present')).toBeVisible()
-    expect(screen.getByText('Audio present')).toBeVisible()
-    expect(screen.getByText('Completed')).toBeVisible()
-    expect(screen.getAllByText('Available after intellectual engine upgrade')).toHaveLength(2)
+    expect(screen.getByText('podcasts.episodeLab.stage.outlinePresent')).toBeVisible()
+    expect(screen.getByText('podcasts.episodeLab.stage.transcriptPresent')).toBeVisible()
+    expect(screen.getByText('podcasts.episodeLab.stage.audioPresent')).toBeVisible()
+    expect(screen.getByText('podcasts.episodeLab.stage.completed')).toBeVisible()
+    expect(screen.getAllByText('podcasts.episodeLab.lockedStageCopy')).toHaveLength(2)
 
-    expect(getEpisodeStageHistory(completed).map(item => item.label)).toEqual([
-      'Created',
-      'Outline present',
-      'Transcript present',
-      'Audio present',
-      'Completed',
+    expect(getEpisodeStageHistory(completed).map(item => item.labelKey)).toEqual([
+      'podcasts.episodeLab.stage.created',
+      'podcasts.episodeLab.stage.outlinePresent',
+      'podcasts.episodeLab.stage.transcriptPresent',
+      'podcasts.episodeLab.stage.audioPresent',
+      'podcasts.episodeLab.stage.completed',
     ])
   })
 
   it('shows an honest outline empty state and cancelled current stage', () => {
     render(<EpisodeLab episode={{ ...episode, outline: null, transcript_segments: [], audio_url: null, audio_file: null, job_status: 'completed', generation_stage: 'cancelled' }} onClose={vi.fn()} />)
 
-    expect(screen.getByText('No outline is available for this episode yet.')).toBeVisible()
-    expect(screen.getByText('Cancelled')).toBeVisible()
-    expect(screen.queryByText('Transcript present')).not.toBeInTheDocument()
-    expect(screen.queryByText('Audio present')).not.toBeInTheDocument()
+    expect(screen.getByText('podcasts.episodeLab.noOutline')).toBeVisible()
+    expect(screen.getByText('podcasts.episodeLab.stage.cancelled')).toBeVisible()
+    expect(screen.queryByText('podcasts.episodeLab.stage.transcriptPresent')).not.toBeInTheDocument()
+    expect(screen.queryByText('podcasts.episodeLab.stage.audioPresent')).not.toBeInTheDocument()
   })
 
   it('marks exactly one persisted stage as current and gives failures precedence', () => {
     const review = getEpisodeStageHistory({ ...episode, job_status: 'completed', generation_stage: 'awaiting_review' })
-    expect(review.filter(item => item.current).map(item => item.label)).toEqual(['Awaiting outline review'])
-    expect(review.map(item => item.label)).not.toContain('Completed')
+    expect(review.filter(item => item.current).map(item => item.labelKey)).toEqual(['podcasts.episodeLab.stage.awaitingOutlineReview'])
+    expect(review.map(item => item.labelKey)).not.toContain('podcasts.episodeLab.stage.completed')
 
     const failed = getEpisodeStageHistory({ ...episode, job_status: 'failed', generation_stage: 'generating_audio' })
-    expect(failed.filter(item => item.current).map(item => item.label)).toEqual(['Failed'])
+    expect(failed.filter(item => item.current).map(item => item.labelKey)).toEqual(['podcasts.episodeLab.stage.failed'])
 
     const onlyCreated = getEpisodeStageHistory({ ...episode, outline: null, transcript_segments: [], audio_url: null, audio_file: null, job_status: null, generation_stage: null })
-    expect(onlyCreated.filter(item => item.current).map(item => item.label)).toEqual(['Created'])
+    expect(onlyCreated.filter(item => item.current).map(item => item.labelKey)).toEqual(['podcasts.episodeLab.stage.created'])
 
     const { container } = render(<EpisodeLab episode={{ ...episode, job_status: 'completed', generation_stage: 'awaiting_review' }} onClose={vi.fn()} />)
     expect(container.querySelectorAll('[aria-current="step"]')).toHaveLength(1)
-    expect(screen.getByText('Awaiting outline review')).toBeVisible()
-    expect(screen.queryByText('Completed')).not.toBeInTheDocument()
+    expect(screen.getByText('podcasts.episodeLab.stage.awaitingOutlineReview')).toBeVisible()
+    expect(screen.queryByText('podcasts.episodeLab.stage.completed')).not.toBeInTheDocument()
   })
 
   it('subscribes to the shared playback position and seeks through the shared store', () => {
@@ -113,7 +115,7 @@ describe('EpisodeLab', () => {
     expect(useAudioPlayerStore.getState().positionByEpisode['episode:local-review']).toBe(15)
   })
 
-  it('routes only bounded source citations to the optional callback and uses the Phase 3 fallback otherwise', () => {
+  it('routes only bounded source citations to the optional callback and uses the not-yet-available notice otherwise', () => {
     const onCitationClick = vi.fn()
     const sourceEpisode = {
       ...episode,
@@ -123,12 +125,12 @@ describe('EpisodeLab', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'source:source-123' }))
     expect(onCitationClick).toHaveBeenCalledWith('source:source-123')
-    expect(screen.queryByText('Source citation — claim evidence mapping arrives in Phase 3')).not.toBeInTheDocument()
+    expect(screen.queryByText('podcasts.episodeLab.claimCitationUnavailable')).not.toBeInTheDocument()
 
     rerender(<EpisodeLab episode={episode} onClose={vi.fn()} onCitationClick={onCitationClick} />)
     fireEvent.click(screen.getByRole('button', { name: 'citation:one' }))
     expect(onCitationClick).toHaveBeenCalledTimes(1)
-    expect(screen.getByText('Source citation — claim evidence mapping arrives in Phase 3')).toBeVisible()
+    expect(screen.getByText('podcasts.episodeLab.claimCitationUnavailable')).toBeVisible()
   })
 
   it('accepts only the bounded SourceId citation contract', () => {
@@ -140,7 +142,7 @@ describe('EpisodeLab', () => {
 
   it('downloads only contained API-relative audio URLs', () => {
     const { rerender } = render(<EpisodeLab episode={episode} onClose={vi.fn()} />)
-    expect(screen.getByRole('link', { name: 'Download audio' })).toHaveAttribute('href', '/api/podcasts/episodes/episode:local-review/audio')
+    expect(screen.getByRole('link', { name: 'podcasts.episodeLab.downloadAudio' })).toHaveAttribute('href', '/api/podcasts/episodes/episode:local-review/audio')
 
     for (const audio of [
       '/Users/Antman/private.mp3',
@@ -151,25 +153,25 @@ describe('EpisodeLab', () => {
       '/api/podcasts/episodes/episode:local-review/audio?download=1',
     ]) {
       rerender(<EpisodeLab episode={{ ...episode, audio_url: audio }} onClose={vi.fn()} />)
-      expect(screen.getByRole('button', { name: 'Download audio' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'podcasts.episodeLab.downloadAudio' })).toBeDisabled()
     }
 
     rerender(<EpisodeLab episode={{ ...episode, audio_url: null, audio_file: '/private/audio.mp3' }} onClose={vi.fn()} />)
-    expect(screen.getByRole('button', { name: 'Download audio' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'podcasts.episodeLab.downloadAudio' })).toBeDisabled()
   })
 
   it('does not bypass the card confirmation path for completed episodes', () => {
     render(<EpisodeLab episode={{ ...episode, job_status: 'completed' }} onClose={vi.fn()} onRetry={vi.fn()} onCancel={vi.fn()} />)
 
-    expect(screen.queryByRole('button', { name: 'Retry episode' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Cancel episode' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'podcasts.episodeLab.retry' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'podcasts.episodeLab.cancel' })).not.toBeInTheDocument()
   })
 
   it('only exposes cancellation while a generation is active', () => {
     const onCancel = vi.fn()
     render(<EpisodeLab episode={{ ...episode, job_status: 'running' }} onClose={vi.fn()} onCancel={onCancel} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel episode' }))
+    fireEvent.click(screen.getByRole('button', { name: 'podcasts.episodeLab.cancel' }))
     expect(onCancel).toHaveBeenCalledWith('episode:local-review')
   })
 
@@ -178,15 +180,15 @@ describe('EpisodeLab', () => {
     const onRetry = vi.fn(() => new Promise<void>((resolve) => { resolveRetry = resolve }))
     render(<EpisodeLab episode={{ ...episode, job_status: 'failed' }} onClose={vi.fn()} onRetry={onRetry} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Retry episode' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Retrying episode…' }))
+    fireEvent.click(screen.getByRole('button', { name: 'podcasts.episodeLab.retry' }))
+    fireEvent.click(screen.getByRole('button', { name: 'podcasts.episodeLab.retrying' }))
 
     expect(onRetry).toHaveBeenCalledTimes(1)
-    expect(screen.getByRole('button', { name: 'Retrying episode…' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Retrying episode…' })).toHaveAttribute('aria-busy', 'true')
+    expect(screen.getByRole('button', { name: 'podcasts.episodeLab.retrying' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'podcasts.episodeLab.retrying' })).toHaveAttribute('aria-busy', 'true')
 
     await act(async () => { resolveRetry?.() })
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Retry episode' })).toBeEnabled())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'podcasts.episodeLab.retry' })).toBeEnabled())
   })
 
   it('fences repeated cancellations while the asynchronous cancellation is pending', async () => {
@@ -194,14 +196,14 @@ describe('EpisodeLab', () => {
     const onCancel = vi.fn(() => new Promise<void>((resolve) => { resolveCancel = resolve }))
     render(<EpisodeLab episode={{ ...episode, job_status: 'running' }} onClose={vi.fn()} onCancel={onCancel} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel episode' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Cancelling episode…' }))
+    fireEvent.click(screen.getByRole('button', { name: 'podcasts.episodeLab.cancel' }))
+    fireEvent.click(screen.getByRole('button', { name: 'podcasts.episodeLab.cancelling' }))
 
     expect(onCancel).toHaveBeenCalledTimes(1)
-    expect(screen.getByRole('button', { name: 'Cancelling episode…' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Cancelling episode…' })).toHaveAttribute('aria-busy', 'true')
+    expect(screen.getByRole('button', { name: 'podcasts.episodeLab.cancelling' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'podcasts.episodeLab.cancelling' })).toHaveAttribute('aria-busy', 'true')
 
     await act(async () => { resolveCancel?.() })
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel episode' })).toBeEnabled())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'podcasts.episodeLab.cancel' })).toBeEnabled())
   })
 })

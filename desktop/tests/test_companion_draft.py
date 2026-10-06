@@ -1,7 +1,8 @@
 """Unit tests for companion draft model auto-discovery in LlamaCppProvider."""
 
 from pathlib import Path
-from desktop.providers.llamacpp import find_companion_draft_model, MIN_GGUF_BYTES
+
+from desktop.providers.llamacpp import MIN_GGUF_BYTES, find_companion_draft_model
 
 
 def test_find_companion_draft_model_pairs_correctly(tmp_path: Path):

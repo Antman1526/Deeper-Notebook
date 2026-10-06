@@ -1,11 +1,12 @@
 """Unit tests for git-backed vault snapshot and versioning."""
 
 from pathlib import Path
+
 from deeper_notebook.vault.git_sync import (
-    is_git_repo,
-    init_vault_git,
     create_vault_snapshot,
     get_vault_history,
+    init_vault_git,
+    is_git_repo,
 )
 
 
@@ -67,11 +68,12 @@ def test_auto_snapshot_vault_debouncing(tmp_path: Path):
 
 def test_vault_git_remote_and_sync(tmp_path: Path):
     import subprocess
+
     from deeper_notebook.vault.git_sync import (
         get_vault_remotes,
-        set_vault_remote,
-        push_vault_git,
         pull_vault_git,
+        push_vault_git,
+        set_vault_remote,
     )
 
     vault = tmp_path / "RemoteVault"

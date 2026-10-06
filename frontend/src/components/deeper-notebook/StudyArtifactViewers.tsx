@@ -7,6 +7,7 @@ import ReactMarkdown from 'react-markdown'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/lib/hooks/use-translation'
 import { MindMapArtifactViewer, type MindMapArtifactNode } from './MindMapArtifactViewer'
 
 interface Flashcard {
@@ -306,7 +307,7 @@ function moduleSummary(section: string[]): string {
         && !/^duration\s*:/i.test(line)
         && !/^(facilitator|instructor)\s+notes?\s*:/i.test(line)
     })
-  return summary ?? 'Module details and activities'
+  return summary ?? ''
 }
 
 export function parseCoursePackModules(markdown: string): CoursePackModule[] {
@@ -367,6 +368,7 @@ export function CoursePackViewer({
   progress?: CoursePackProgress
   onProgressChange?: (progress: CoursePackProgress) => void
 }) {
+  const { t } = useTranslation()
   const modules = useMemo(() => parseCoursePackModules(markdown), [markdown])
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [mode, setMode] = useState<'learner' | 'facilitator'>('learner')
@@ -429,29 +431,32 @@ export function CoursePackViewer({
     <section className="rounded-md border bg-background p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="text-sm font-medium">Course Pack workspace</div>
+          <div className="text-sm font-medium">{t('artifacts.studyArtifactViewers.coursePackWorkspace')}</div>
           <div className="mt-1 text-xs text-muted-foreground">
-            Navigate modules, track progress, and switch between learner and facilitator views.
+            {t('artifacts.studyArtifactViewers.coursePackIntro')}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline" className="text-[0.68rem]">
-            {modules.length} {modules.length === 1 ? 'module' : 'modules'}
+          {/* v0.8.130 — 12px type floor (UI audit Phase 1) */}
+          <Badge variant="outline" className="text-xs">
+            {modules.length === 1
+              ? t('artifacts.studyArtifactViewers.moduleCountOne', { count: modules.length })
+              : t('artifacts.studyArtifactViewers.moduleCountOther', { count: modules.length })}
           </Badge>
-          <Badge variant="secondary" className="text-[0.68rem]">
-            {completedCount} complete
+          <Badge variant="secondary" className="text-xs">
+            {t('artifacts.studyArtifactViewers.completeCount', { count: completedCount })}
           </Badge>
         </div>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-2" role="group" aria-label="Course Pack view mode">
+      <div className="mt-4 flex flex-wrap items-center gap-2" role="group" aria-label={t('artifacts.studyArtifactViewers.viewModeLabel')}>
         <Button
           type="button"
           size="sm"
           variant={mode === 'learner' ? 'default' : 'outline'}
           onClick={() => changeMode('learner')}
         >
-          Learner view
+          {t('artifacts.studyArtifactViewers.learnerView')}
         </Button>
         <Button
           type="button"
@@ -459,13 +464,13 @@ export function CoursePackViewer({
           variant={mode === 'facilitator' ? 'default' : 'outline'}
           onClick={() => changeMode('facilitator')}
         >
-          Facilitator notes
+          {t('artifacts.studyArtifactViewers.facilitatorNotes')}
         </Button>
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[16rem_minmax(0,1fr)]">
         <aside className="rounded-md border bg-muted/30 p-3">
-          <div className="text-sm font-medium">Module checklist</div>
+          <div className="text-sm font-medium">{t('artifacts.studyArtifactViewers.moduleChecklist')}</div>
           <div className="mt-3 space-y-2">
             {modules.map((module, index) => {
               const checkboxId = `course-pack-module-${index}`
@@ -482,7 +487,7 @@ export function CoursePackViewer({
                       id={checkboxId}
                       type="checkbox"
                       checked={checkedModules[module.title] === true}
-                      aria-label={`Mark ${module.title} complete`}
+                      aria-label={t('artifacts.studyArtifactViewers.markModuleComplete', { title: module.title })}
                       onChange={(event) => toggleModule(module.title, event.target.checked)}
                       className="mt-1 h-4 w-4 rounded border-border"
                     />
@@ -494,13 +499,13 @@ export function CoursePackViewer({
                     >
                       <span className="block text-sm font-medium">{module.title}</span>
                       <span className="mt-1 line-clamp-2 block text-xs leading-5 text-muted-foreground">
-                        {module.summary}
+                        {module.summary || t('artifacts.studyArtifactViewers.moduleSummaryFallback')}
                       </span>
                     </button>
                   </div>
                   {module.hasFacilitatorNotes && (
-                    <Badge variant="outline" className="mt-2 text-[0.68rem]">
-                      Facilitator ready
+                    <Badge variant="outline" className="mt-2 text-xs">
+                      {t('artifacts.studyArtifactViewers.facilitatorReady')}
                     </Badge>
                   )}
                 </div>
@@ -515,12 +520,12 @@ export function CoursePackViewer({
               <div className="text-sm font-medium">{selectedModule.title}</div>
               <div className="mt-1 text-xs text-muted-foreground">
                 {mode === 'facilitator'
-                  ? 'Instructor notes and delivery guidance are visible.'
-                  : 'Facilitator-only notes are hidden for learner handouts.'}
+                  ? t('artifacts.studyArtifactViewers.facilitatorVisibleHint')
+                  : t('artifacts.studyArtifactViewers.facilitatorHiddenHint')}
               </div>
             </div>
-            <Badge variant="outline" className="text-[0.68rem]">
-              Module {Math.min(selectedIndex, modules.length - 1) + 1}
+            <Badge variant="outline" className="text-xs">
+              {t('artifacts.studyArtifactViewers.moduleNumber', { number: Math.min(selectedIndex, modules.length - 1) + 1 })}
             </Badge>
           </div>
           <div className="prose prose-sm prose-neutral dark:prose-invert mt-4 max-w-none break-words prose-headings:font-semibold prose-p:leading-7">
@@ -539,6 +544,7 @@ export function DataTableViewer({
   markdown: string
   rows?: unknown
 }) {
+  const { t } = useTranslation()
   const normalizedRows = useMemo(() => normalizeDataTableRows(rows), [rows])
   const parsedRows = useMemo(() => parseDataTableRows(markdown), [markdown])
   const tableRows = normalizedRows.length > 0 ? normalizedRows : parsedRows
@@ -563,9 +569,11 @@ export function DataTableViewer({
   return (
     <div className="space-y-3">
       <div>
-        <div className="text-sm font-semibold">Data table</div>
+        <div className="text-sm font-semibold">{t('artifacts.studyArtifactViewers.dataTableTitle')}</div>
         <div className="text-xs text-muted-foreground">
-          {tableRows.length} {tableRows.length === 1 ? 'row' : 'rows'} extracted from source-grounded output.
+          {tableRows.length === 1
+            ? t('artifacts.studyArtifactViewers.rowsExtractedOne', { count: tableRows.length })
+            : t('artifacts.studyArtifactViewers.rowsExtractedOther', { count: tableRows.length })}
         </div>
       </div>
       <div className="overflow-x-auto rounded-md border">
@@ -576,7 +584,7 @@ export function DataTableViewer({
                 <th
                   key={header}
                   scope="col"
-                  className="border-b px-3 py-2 text-xs font-semibold uppercase tracking-normal text-muted-foreground"
+                  className="border-b px-3 py-2 text-xs font-semibold tracking-normal text-muted-foreground"
                 >
                   {header}
                 </th>
@@ -609,6 +617,7 @@ export function MindMapViewer({
   artifactId?: string
   notebookId?: string
 }) {
+  const { t } = useTranslation()
   const nodes = useMemo(() => parseMindMap(markdown), [markdown])
   const nodeCount = useMemo(() => {
     const countNodes = (items: MindMapNode[]): number =>
@@ -628,13 +637,17 @@ export function MindMapViewer({
     <section className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold">Mind map</div>
+          <div className="text-sm font-semibold">{t('artifacts.studyArtifactViewers.mindMapTitle')}</div>
           <div className="text-xs text-muted-foreground">
-            {nodeCount} {nodeCount === 1 ? 'node' : 'nodes'} arranged from the source-grounded outline.
+            {nodeCount === 1
+              ? t('artifacts.studyArtifactViewers.nodesArrangedOne', { count: nodeCount })
+              : t('artifacts.studyArtifactViewers.nodesArrangedOther', { count: nodeCount })}
           </div>
         </div>
-        <Badge variant="outline" className="text-[0.68rem]">
-          {nodes.length} {nodes.length === 1 ? 'root' : 'roots'}
+        <Badge variant="outline" className="text-xs">
+          {nodes.length === 1
+            ? t('artifacts.studyArtifactViewers.rootCountOne', { count: nodes.length })
+            : t('artifacts.studyArtifactViewers.rootCountOther', { count: nodes.length })}
         </Badge>
       </div>
       <MindMapArtifactViewer nodes={nodes} artifactId={artifactId} notebookId={notebookId} />
@@ -651,6 +664,7 @@ export function FlashcardDeck({
   progress?: FlashcardProgress
   onProgressChange?: (progress: FlashcardProgress) => void
 }) {
+  const { t } = useTranslation()
   const cards = useMemo(() => parseFlashcards(markdown), [markdown])
   const [index, setIndex] = useState(0)
   const [revealed, setRevealed] = useState(false)
@@ -684,25 +698,25 @@ export function FlashcardDeck({
     <section className="rounded-md border bg-background p-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <div className="text-sm font-medium">Flashcard review</div>
+          <div className="text-sm font-medium">{t('artifacts.studyArtifactViewers.flashcardReview')}</div>
           <div className="text-xs text-muted-foreground">
-            Card {index + 1} of {cards.length}
+            {t('artifacts.studyArtifactViewers.cardPosition', { current: index + 1, total: cards.length })}
           </div>
         </div>
-        <Badge variant="outline" className="text-[0.68rem]">
-          {cards.length} cards
+        <Badge variant="outline" className="text-xs">
+          {t('artifacts.studyArtifactViewers.cardCount', { count: cards.length })}
         </Badge>
       </div>
 
       <div className="mt-4 rounded-md border bg-muted/30 p-4">
-        <div className="text-xs font-medium uppercase text-muted-foreground">Prompt</div>
+        <div className="text-xs font-medium text-muted-foreground">{t('artifacts.studyArtifactViewers.prompt')}</div>
         <div className="mt-2 text-base font-medium leading-7">{card.front}</div>
         {revealed && (
           <div className="mt-4 border-t pt-4">
-            <div className="text-xs font-medium uppercase text-muted-foreground">Answer</div>
+            <div className="text-xs font-medium text-muted-foreground">{t('artifacts.studyArtifactViewers.answer')}</div>
             <div className="mt-2 text-sm leading-6">{card.back}</div>
             {card.source && (
-              <div className="mt-3 text-xs text-muted-foreground">Source: {card.source}</div>
+              <div className="mt-3 text-xs text-muted-foreground">{t('artifacts.studyArtifactViewers.sourceLine', { source: card.source })}</div>
             )}
           </div>
         )}
@@ -717,7 +731,7 @@ export function FlashcardDeck({
           onClick={() => move(index - 1)}
         >
           <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-          Previous card
+          {t('artifacts.studyArtifactViewers.previousCard')}
         </Button>
         <Button
           type="button"
@@ -725,7 +739,7 @@ export function FlashcardDeck({
           onClick={toggleReveal}
         >
           <RotateCcw className="h-4 w-4" aria-hidden="true" />
-          {revealed ? 'Hide answer' : 'Reveal answer'}
+          {revealed ? t('artifacts.studyArtifactViewers.hideAnswer') : t('artifacts.studyArtifactViewers.revealAnswer')}
         </Button>
         <Button
           type="button"
@@ -734,7 +748,7 @@ export function FlashcardDeck({
           disabled={!hasNext}
           onClick={() => move(index + 1)}
         >
-          Next card
+          {t('artifacts.studyArtifactViewers.nextCard')}
           <ChevronRight className="h-4 w-4" aria-hidden="true" />
         </Button>
       </div>
@@ -749,17 +763,18 @@ export function ResearchRunViewer({
   markdown: string
   stages?: unknown
 }) {
-  const { sections, stageSourceLabel } = useMemo(() => {
+  const { t } = useTranslation()
+  const { sections, stageSourceKey } = useMemo(() => {
     const structuredSections = normalizeResearchRunStages(stages)
     if (structuredSections.length > 0) {
       return {
         sections: structuredSections,
-        stageSourceLabel: 'Structured metadata',
+        stageSourceKey: 'artifacts.studyArtifactViewers.stageSourceStructured',
       }
     }
     return {
       sections: parseResearchRunSections(markdown),
-      stageSourceLabel: 'Parsed markdown',
+      stageSourceKey: 'artifacts.studyArtifactViewers.stageSourceParsed',
     }
   }, [markdown, stages])
 
@@ -775,17 +790,19 @@ export function ResearchRunViewer({
     <section className="rounded-md border bg-background p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="text-sm font-medium">Research run workspace</div>
+          <div className="text-sm font-medium">{t('artifacts.studyArtifactViewers.researchRunWorkspace')}</div>
           <div className="mt-1 text-xs text-muted-foreground">
-            Staged investigation summary from the generated artifact.
+            {t('artifacts.studyArtifactViewers.researchRunIntro')}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline" className="text-[0.68rem]">
-            {sections.length} {sections.length === 1 ? 'stage' : 'stages'}
+          <Badge variant="outline" className="text-xs">
+            {sections.length === 1
+              ? t('artifacts.studyArtifactViewers.stageCountOne', { count: sections.length })
+              : t('artifacts.studyArtifactViewers.stageCountOther', { count: sections.length })}
           </Badge>
-          <Badge variant="secondary" className="text-[0.68rem]">
-            {stageSourceLabel}
+          <Badge variant="secondary" className="text-xs">
+            {t(stageSourceKey)}
           </Badge>
         </div>
       </div>
@@ -815,6 +832,7 @@ export function QuizRunner({
   progress?: QuizProgress
   onProgressChange?: (progress: QuizProgress) => void
 }) {
+  const { t } = useTranslation()
   const questions = useMemo(() => parseQuizQuestions(markdown), [markdown])
   const [index, setIndex] = useState(0)
   const [answers, setAnswers] = useState<Record<number, string>>({})
@@ -867,13 +885,13 @@ export function QuizRunner({
     <section className="rounded-md border bg-background p-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <div className="text-sm font-medium">Quiz runner</div>
+          <div className="text-sm font-medium">{t('artifacts.studyArtifactViewers.quizRunner')}</div>
           <div className="text-xs text-muted-foreground">
-            Question {index + 1} of {questions.length}
+            {t('artifacts.studyArtifactViewers.questionPosition', { current: index + 1, total: questions.length })}
           </div>
         </div>
-        <Badge variant="outline" className="text-[0.68rem]">
-          Score: {score} / {answeredCount || questions.length}
+        <Badge variant="outline" className="text-xs">
+          {t('artifacts.studyArtifactViewers.score', { score, total: answeredCount || questions.length })}
         </Badge>
       </div>
 
@@ -907,13 +925,15 @@ export function QuizRunner({
       {selected && (
         <div className="mt-4 rounded-md border bg-muted/30 p-3 text-sm">
           <div className="font-medium">
-            {selected === question.answerKey ? 'Correct' : `Correct answer: ${question.answerKey}`}
+            {selected === question.answerKey
+              ? t('artifacts.studyArtifactViewers.correct')
+              : t('artifacts.studyArtifactViewers.correctAnswer', { answer: question.answerKey })}
           </div>
           {question.explanation && (
             <div className="mt-2 leading-6 text-muted-foreground">{question.explanation}</div>
           )}
           {question.source && (
-            <div className="mt-2 text-xs text-muted-foreground">Source: {question.source}</div>
+            <div className="mt-2 text-xs text-muted-foreground">{t('artifacts.studyArtifactViewers.sourceLine', { source: question.source })}</div>
           )}
         </div>
       )}
@@ -928,7 +948,7 @@ export function QuizRunner({
             onClick={() => moveQuestion(index - 1)}
           >
             <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-            Previous question
+            {t('artifacts.studyArtifactViewers.previousQuestion')}
           </Button>
           <Button
             type="button"
@@ -937,7 +957,7 @@ export function QuizRunner({
             disabled={index === questions.length - 1}
             onClick={() => moveQuestion(index + 1)}
           >
-            Next question
+            {t('artifacts.studyArtifactViewers.nextQuestion')}
             <ChevronRight className="h-4 w-4" aria-hidden="true" />
           </Button>
         </div>

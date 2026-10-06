@@ -20,6 +20,8 @@ vi.mock('@/components/guided-tips', () => ({ GuidedTipsProvider: () => <div data
 vi.mock('@/components/podcasts/GlobalAudioPlayer', () => ({ GlobalAudioPlayer: () => <div data-testid="legacy-audio" /> }))
 vi.mock('@/components/deeper-notebook/shell/shell.css', () => ({}))
 vi.mock('@/components/chat/LocalModelHealthBadges', () => ({ LocalModelHealthBadges: () => null }))
+// The phone-bar model-health link reads the same health query; stubbed like the rail's badges.
+vi.mock('@/components/deeper-notebook/shell/ModelHealthIndicator', () => ({ ModelHealthIndicator: () => null }))
 vi.mock('@/components/deeper-notebook/ThemeSwitcher', () => ({ ThemeSwitcher: () => <button type="button">Theme</button> }))
 vi.mock('@/components/deeper-notebook/GmailSidebarButton', () => ({ GmailSidebarButton: () => <button type="button">Gmail</button> }))
 vi.mock('@/components/common/LanguageToggle', () => ({ LanguageToggle: () => <button type="button">Language</button> }))
@@ -49,7 +51,7 @@ describe('AppShell feature switch', () => {
     process.env.NEXT_PUBLIC_DN_LUMINOUS_FOLIO = '1'
     render(<AppShell><div data-testid="luminous-page">Luminous page</div></AppShell>)
 
-    expect(screen.getByRole('navigation', { name: 'Primary tools' })).toBeInTheDocument()
+    expect(screen.getByRole('navigation', { name: 'workspace.instrumentDock.ariaLabel' })).toBeInTheDocument()
     expect(screen.getByTestId('luminous-page')).toBeInTheDocument()
     expect(screen.queryByTestId('visual-system-v2-shell')).not.toBeInTheDocument()
   })
@@ -62,8 +64,8 @@ describe('AppShell feature switch', () => {
     expect(screen.getByTestId('legacy-sidebar')).toBeInTheDocument()
     expect(screen.getByTestId('legacy-page')).toBeInTheDocument()
     expect(screen.queryByRole('main')).toBeNull()
-    expect(screen.queryByRole('navigation', { name: 'Primary tools' })).toBeNull()
-    expect(screen.getByRole('button', { name: 'Enter Focus mode' })).toBeInTheDocument()
+    expect(screen.queryByRole('navigation', { name: 'workspace.instrumentDock.ariaLabel' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'workspace.displayPreferencesPanel.enterFocusMode' })).toBeInTheDocument()
   })
 
   it('keeps the legacy utility route mounted when Focus mode is active', () => {
@@ -71,19 +73,22 @@ describe('AppShell feature switch', () => {
     process.env.NEXT_PUBLIC_DN_LUMINOUS_FOLIO = '0'
     render(<AppShell><div data-testid="legacy-page">Legacy page</div></AppShell>)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Enter Focus mode' }))
+    fireEvent.click(screen.getByRole('button', { name: 'workspace.displayPreferencesPanel.enterFocusMode' }))
 
     expect(screen.getByTestId('legacy-sidebar')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Exit Focus mode' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'workspace.displayPreferencesPanel.exitFocusMode' })).toBeInTheDocument()
   })
 
   it('renders only the Luminous shell when the flag is on', () => {
     process.env.NEXT_PUBLIC_DN_LUMINOUS_FOLIO = '1'
+    // v0.8.130 — V2 wins when enabled (the default), so this case needs V2 off. It only
+    // passed before because the V2 shell also rendered the "Primary tools" dock.
+    process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2 = '0'
     render(<AppShell><div data-testid="luminous-page">Luminous page</div></AppShell>)
 
-    expect(screen.getByRole('navigation', { name: 'Primary tools' })).toBeInTheDocument()
+    expect(screen.getByRole('navigation', { name: 'workspace.instrumentDock.ariaLabel' })).toBeInTheDocument()
     expect(screen.getByTestId('luminous-page')).toBeInTheDocument()
     expect(screen.queryByTestId('legacy-sidebar')).toBeNull()
-    expect(screen.getByRole('button', { name: 'Enter Focus mode' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'workspace.displayPreferencesPanel.enterFocusMode' })).toBeInTheDocument()
   })
 })

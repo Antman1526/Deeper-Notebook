@@ -99,7 +99,7 @@ vi.mock('@/lib/hooks/use-local-models', () => ({
   useModelRoutePlan: () => testState.routePlans.shift() ?? ({ data: undefined, isError: false, isLoading: false }),
 }))
 
-vi.mock('@/lib/api/client', () => ({ default: testState.api }))
+vi.mock('@/lib/api/client', () => ({ default: testState.api, markErrorReported: () => undefined }))
 
 vi.mock('@tanstack/react-query', () => ({
   // React may render the workspace more than once in development; retain the
@@ -158,11 +158,12 @@ beforeEach(resetState)
 
 describe('LocalModelsPage', () => {
   it('composes the role workspace from inventory, benchmarks, and local-only receipts', () => {
-    render(<LocalModelsPage />)
+    const { container } = render(<LocalModelsPage />)
 
-    expect(screen.getByTestId('app-shell')).toHaveTextContent('Local model roles')
+    // v0.8.130 — Phase 3b: the shell is mounted by (dashboard)/layout.tsx, not the page.
+    expect(container).toHaveTextContent('settings.localModelsPage.title')
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
-    expect(screen.getByRole('heading', { level: 2, name: 'Local model roles' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'settings.localModelsPage.title' })).toBeInTheDocument()
     expect(screen.getByTestId('model-inventory')).toHaveAttribute('data-models', '1')
     expect(screen.getByTestId('role-benchmark-panel')).toHaveAttribute('data-routes', '0')
     expect(screen.getByTestId('role-benchmark-panel')).toHaveAttribute('data-benchmark', 'benchmark-1')
@@ -184,7 +185,7 @@ describe('LocalModelsPage', () => {
 
     render(<LocalModelsPage />)
 
-    expect(screen.getByText('Refreshing')).toBeInTheDocument()
+    expect(screen.getByText('settings.localModelsPage.refreshing')).toBeInTheDocument()
     expect(screen.getByTestId('model-inventory')).toHaveAttribute('data-loading', 'true')
     expect(screen.getByTestId('route-receipt-panel')).toHaveAttribute('data-loading', 'true')
   })
@@ -197,7 +198,7 @@ describe('LocalModelsPage', () => {
 
     render(<LocalModelsPage />)
 
-    expect(screen.getByText('Local readiness is unavailable')).toBeInTheDocument()
+    expect(screen.getByText('settings.localModelsPage.readinessUnavailableTitle')).toBeInTheDocument()
     expect(screen.getByTestId('model-inventory')).toHaveAttribute('data-error', 'true')
     expect(screen.getByTestId('route-receipt-panel')).toHaveAttribute('data-error', 'true')
     expect(screen.getByRole('button', { name: 'Benchmark every role' })).toBeDisabled()
@@ -230,8 +231,8 @@ describe('LocalModelsPage', () => {
   it('keeps a degraded library visible but blocks automatic routes', () => {
     testState.queries.readiness = { data: { available: true, models: [{ model_id: 'planned', format: 'mlx', modality: 'text', readiness: 'planned', readiness_reason: 'not installed', measured_tier: null, accepted_roles: [], route_eligible: false }] } }
     render(<LocalModelsPage />)
-    expect(screen.getByText('planned: 1')).toBeInTheDocument()
-    expect(screen.getByText('No verified local route is currently available.')).toBeInTheDocument()
+    expect(screen.getByText('settings.modelReadiness.planned: 1')).toBeInTheDocument()
+    expect(screen.getByText('settings.localModelsPage.noVerifiedRoute')).toBeInTheDocument()
   })
 
   it('offers the pending cloud fallback only after saved Local Preferred receives an approval-required route', () => {
@@ -241,6 +242,6 @@ describe('LocalModelsPage', () => {
       { data: undefined, isError: false, isLoading: false },
     ]
     render(<LocalModelsPage />)
-    expect(screen.getByRole('button', { name: 'Review pending cloud fallback' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'settings.localExecutionPolicyPanel.reviewPendingCloudFallback' })).toBeInTheDocument()
   })
 })

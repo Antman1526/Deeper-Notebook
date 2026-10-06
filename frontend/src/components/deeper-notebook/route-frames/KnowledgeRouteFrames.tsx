@@ -1,13 +1,15 @@
 import type { ReactNode } from 'react'
 
+import { useTranslation } from '@/lib/hooks/use-translation'
+
 import { FolioRouteFrame } from '../folio/FolioRouteFrame'
 
 export const knowledgeRouteFolioMetadata = {
-  '/sources': { title: 'Sources', eyebrow: 'Collect' },
-  '/capture': { title: 'Capture', eyebrow: 'Collect' },
-  '/notebooks': { title: 'Notebooks', eyebrow: 'Organize' },
-  '/search': { title: 'Ask & Search', eyebrow: 'Discover' },
-  '/study': { title: 'Study', eyebrow: 'Discover' },
+  '/sources': { titleKey: 'navigation.sources', eyebrowKey: 'navigation.collect' },
+  '/capture': { titleKey: 'knowledge.knowledgeRouteFrames.capture', eyebrowKey: 'navigation.collect' },
+  '/notebooks': { titleKey: 'navigation.notebooks', eyebrowKey: 'knowledge.knowledgeRouteFrames.organize' },
+  '/search': { titleKey: 'knowledge.knowledgeRouteFrames.askAndSearch', eyebrowKey: 'knowledge.knowledgeRouteFrames.discover' },
+  '/study': { titleKey: 'navigation.study', eyebrowKey: 'knowledge.knowledgeRouteFrames.discover' },
 } as const
 
 export type KnowledgeRoutePath = keyof typeof knowledgeRouteFolioMetadata
@@ -27,11 +29,12 @@ export function KnowledgeRouteFrame({
   context?: ReactNode
   title?: string
 }) {
+  const { t } = useTranslation()
   const metadata = knowledgeRouteFolioMetadata[route]
   return (
     <FolioRouteFrame
-      section={metadata.eyebrow}
-      title={title ?? metadata.title}
+      section={t(metadata.eyebrowKey)}
+      title={title ?? t(metadata.titleKey)}
       description={description}
       actions={actions}
       context={context}

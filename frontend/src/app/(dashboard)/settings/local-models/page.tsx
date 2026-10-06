@@ -1,5 +1,10 @@
 'use client'
 
+import { benchmarkActionError } from './benchmark-errors'
+import { MODEL_OVERALL_HEALTH_KEYS, MODEL_READINESS_KEYS, enumLabel, spacedEnum } from '@/lib/enum-labels'
+import { useTranslation } from '@/lib/hooks/use-translation'
+import { localCredentialLabel } from '@/lib/local-credential-label'
+import { getApiErrorMessage } from '@/lib/utils/error-handler'
 import React from 'react'
 import { AlertCircle, Cpu, Loader2 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -16,7 +21,6 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { AppShell } from '@/components/layout/AppShell'
 import type {
   BenchmarkJob,
   BenchmarkListResponse,
@@ -33,13 +37,15 @@ import {
   getRouteReceipts,
   updateLocalModelSettings,
 } from '@/lib/api/local-models'
-import apiClient from '@/lib/api/client'
+import apiClient, { markErrorReported } from '@/lib/api/client'
 import { useLocalModelsHealth, useModelRoutePlan } from '@/lib/hooks/use-local-models'
 import { SystemRouteFrame } from '@/components/deeper-notebook/route-frames/SystemRouteFrames'
 
+const UNMEASURED_TIER = 'unmeasured'
 const BENCHMARK_ROLES = ['chat', 'source_synthesis', 'coding_research', 'study_fast']
 
 function ConnectionChecks() {
+  const { t } = useTranslation()
   const health = useLocalModelsHealth()
   const checks = health.data?.models ?? []
   if (!checks.length) return null
@@ -47,14 +53,14 @@ function ConnectionChecks() {
   return (
     <Card data-testid="local-model-connection-checks">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">Connection checks</CardTitle>
-        <CardDescription>Live status from registered local runtimes.</CardDescription>
+        <CardTitle className="text-base">{t('settings.localModelsPage.connectionChecksTitle')}</CardTitle>
+        <CardDescription>{t('settings.localModelsPage.connectionChecksDescription')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-2">
-        <Badge variant={health.data?.overall === 'healthy' ? 'secondary' : 'outline'}>{health.data?.overall ?? 'checking'}</Badge>
+        <Badge variant={health.data?.overall === 'healthy' ? 'secondary' : 'outline'}>{health.data?.overall ? enumLabel(t, MODEL_OVERALL_HEALTH_KEYS, health.data.overall, spacedEnum(health.data.overall)) : t('settings.localModelsPage.checking')}</Badge>
         {checks.map(check => <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-2 text-xs" key={`${check.runtime}-${check.name}`}>
-          <div><span className="font-medium">{check.name}</span>{check.runtime && <span className="ml-2 text-muted-foreground">{check.runtime}</span>}<div className="mt-1 break-all text-muted-foreground">{check.endpoint} {check.probe_path}</div>{check.detail && <div className="mt-1 text-muted-foreground">{check.detail}</div>}</div>
-          {check.status !== 'healthy' && sidecarKindFromName(check.name) && <SidecarLogPopover kind={sidecarKindFromName(check.name)!}><Button aria-label={`View log and restart ${check.name}`} size="sm" variant="outline">View log / Restart</Button></SidecarLogPopover>}
+          <div><span className="font-medium">{localCredentialLabel(check.name, t)}</span>{check.runtime && <span className="ml-2 text-muted-foreground">{check.runtime}</span>}<div className="mt-1 break-all text-muted-foreground">{check.endpoint} {check.probe_path}</div>{check.detail && <div className="mt-1 text-muted-foreground">{check.detail}</div>}</div>
+          {check.status !== 'healthy' && sidecarKindFromName(check.name) && <SidecarLogPopover kind={sidecarKindFromName(check.name)!}><Button aria-label={t('settings.localModelsPage.viewLogRestartAria', { name: localCredentialLabel(check.name, t) })} size="sm" variant="outline">{t('settings.localModelsPage.viewLogRestart')}</Button></SidecarLogPopover>}
         </div>)}
       </CardContent>
     </Card>
@@ -63,6 +69,7 @@ function ConnectionChecks() {
 
 function LocalModelsWorkspace() {
   const queryClient = useQueryClient()
+  const { t } = useTranslation()
   const inventory = useQuery<InventoryResponse>({
     queryKey: ['local-models', 'inventory'],
     queryFn: getLocalModelInventory,
@@ -84,9 +91,9 @@ function LocalModelsWorkspace() {
   const [approvedCloudContinuation, setApprovedCloudContinuation] = React.useState<string | null>(null)
   const cloudFallback = settings.data?.execution_policy === 'local_preferred'
     ? researchChatPlan.data?.outcome === 'approval_required'
-      ? { stage: 'Research Chat', contentClass: 'Selected knowledge' }
+      ? { stage: t('settings.localModelsPage.stageResearchChat'), contentClass: t('settings.localModelsPage.contentSelectedKnowledge') }
       : embeddingPlan.data?.outcome === 'approval_required'
-        ? { stage: 'Embedding Retrieval', contentClass: 'Knowledge index' }
+        ? { stage: t('settings.localModelsPage.stageEmbeddingRetrieval'), contentClass: t('settings.localModelsPage.contentKnowledgeIndex') }
         : null
     : null
   const cloudFallbackKey = cloudFallback ? `${cloudFallback.stage}:${cloudFallback.contentClass}` : null
@@ -107,14 +114,29 @@ function LocalModelsWorkspace() {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['local-models', 'benchmarks'] }),
   })
   const cancel = useMutation({
+    // v0.8.130 — reported here, not per call: a per-call onError is skipped if the page
+    // has unmounted by the time the request fails, and the error would go unreported.
+    onError: (error) => {
+      const { title, description } = benchmarkActionError('cancel', error, t)
+      toast.error(title, { description })
+    },
     mutationFn: async (jobId: string) => (await apiClient.post<BenchmarkJob>(`/local-models/benchmarks/${jobId}/cancel`)).data,
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['local-models', 'benchmarks'] }),
   })
   const reset = useMutation({
+    // v0.8.130 — reported here, not per call: a per-call onError is skipped if the page
+    // has unmounted by the time the request fails, and the error would go unreported.
+    onError: (error) => {
+      const { title, description } = benchmarkActionError('reset', error, t)
+      toast.error(title, { description })
+    },
     mutationFn: async () => apiClient.delete('/local-models/benchmarks'),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['local-models', 'benchmarks'] }),
   })
   const saveSettings = useMutation({
+    // v0.8.130 — reported here, not per call: a per-call onError is skipped if the page
+    // has unmounted by the time the request fails, and the error would go unreported.
+    onError: () => toast.error(t('settings.localModelsPage.saveSettingsError')),
     mutationFn: updateLocalModelSettings,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['local-models', 'settings'] })
@@ -131,11 +153,12 @@ function LocalModelsWorkspace() {
     try {
       const response = await apiClient.post<{ ok: boolean; detail: string }>('/local-models/set-active', { path: model.path })
       if (response.data.ok) {
-        toast.success(`Active chat model switched: ${response.data.detail}`)
+        toast.success(t('settings.localModelsPage.activeModelSwitched', { detail: response.data.detail }))
         await inventory.refetch()
-      } else toast.error(`Could not switch chat model: ${response.data.detail}`)
+      } else toast.error(t('settings.localModelsPage.switchModelFailedDetail', { detail: response.data.detail }))
     } catch (error) {
-      toast.error(`Could not switch chat model: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      markErrorReported(error) // v0.8.130 — this caller reports the failure itself
+      toast.error(t('settings.localModelsPage.switchModelFailed'), { description: getApiErrorMessage(error, t) })
     } finally {
       setActivatingPath(null)
     }
@@ -147,11 +170,12 @@ function LocalModelsWorkspace() {
     try {
       const response = await apiClient.post<{ ok: boolean; detail: string }>('/local-models/launch-default', { launcher_model_ref: model.launcher_model_ref })
       if (response.data.ok) {
-        toast.success('Native launcher default saved. Restart Deeper Notebook to apply it.')
+        toast.success(t('settings.localModelsPage.launchDefaultSaved'))
         await inventory.refetch()
       } else toast.error(response.data.detail)
     } catch (error) {
-      toast.error(`Could not set launch default: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      markErrorReported(error) // v0.8.130 — this caller reports the failure itself
+      toast.error(t('settings.localModelsPage.launchDefaultFailed'), { description: getApiErrorMessage(error, t) })
     } finally {
       setLaunchDefaultRef(null)
     }
@@ -159,12 +183,12 @@ function LocalModelsWorkspace() {
 
   return <div className="mx-auto max-w-6xl space-y-6 px-6 py-8 sm:px-8">
     <header className="flex flex-wrap items-start justify-between gap-4">
-      <div className="max-w-3xl space-y-2"><h2 className="flex items-center gap-3 text-3xl font-semibold"><Cpu className="h-7 w-7" />Local model roles</h2><p className="text-muted-foreground">Inspect installed models, measure them for the work they do, and keep every routing decision local and explainable.</p></div>
-      {inventory.isFetching && <span className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Refreshing</span>}
+      <div className="max-w-3xl space-y-2"><h2 className="flex items-center gap-3 text-3xl font-semibold"><Cpu className="h-7 w-7" />{t('settings.localModelsPage.title')}</h2><p className="text-muted-foreground">{t('settings.localModelsPage.subtitle')}</p></div>
+      {inventory.isFetching && <span className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />{t('settings.localModelsPage.refreshing')}</span>}
     </header>
 
     <ConnectionChecks />
-    {readiness.isError && <Alert><AlertCircle className="h-4 w-4" /><AlertTitle>Local readiness is unavailable</AlertTitle><AlertDescription>The inventory remains available. Automatic routing stays fail-closed until readiness can be read.</AlertDescription></Alert>}
+    {readiness.isError && <Alert><AlertCircle className="h-4 w-4" /><AlertTitle>{t('settings.localModelsPage.readinessUnavailableTitle')}</AlertTitle><AlertDescription>{t('settings.localModelsPage.readinessUnavailableDescription')}</AlertDescription></Alert>}
     <SettingsReadinessPanels
       inventory={inventory.data}
       readiness={readiness.data}
@@ -172,7 +196,7 @@ function LocalModelsWorkspace() {
       settings={settings.data}
       settingsError={settings.isError}
       onRescan={() => { void inventory.refetch(); void readiness.refetch() }}
-      onSave={next => settings.data && saveSettings.mutate({ ...settings.data, ...next }, { onError: () => toast.error('Could not save local execution settings.') })}
+      onSave={next => settings.data && saveSettings.mutate({ ...settings.data, ...next })}
       isSaving={saveSettings.isPending}
       researchPlan={researchChatPlan.data}
       embeddingPlan={embeddingPlan.data}
@@ -188,8 +212,8 @@ function LocalModelsWorkspace() {
       isStarting={benchmark.isPending}
       onBenchmarkAll={() => benchmark.mutate(BENCHMARK_ROLES)}
       onBenchmarkRole={role => benchmark.mutate([role])}
-      onCancel={() => currentBenchmark && cancel.mutate(currentBenchmark.job_id, { onError: () => toast.error('This desktop runtime cannot cancel the running benchmark.') })}
-      onReset={() => reset.mutate(undefined, { onError: () => toast.error('This desktop runtime cannot reset benchmark history.') })}
+      onCancel={() => currentBenchmark && cancel.mutate(currentBenchmark.job_id)}
+      onReset={() => reset.mutate(undefined)}
       routes={[]}
     />
     <RouteReceiptPanel isError={receipts.isError} isLoading={receipts.isLoading} receipts={receipts.data?.receipts ?? []} />
@@ -214,23 +238,24 @@ function SettingsReadinessPanels({ inventory, readiness, readinessError, setting
   researchPlan?: import('@/lib/api/local-models').ModelRoutePlan; embeddingPlan?: import('@/lib/api/local-models').ModelRoutePlan; routePlansError: boolean
   pendingCloudRoute: { stage: string; contentClass: string } | null; cloudContinuationRecorded: boolean; onConfirmCloudRoute: (route: { stage: string; contentClass: string }) => void
 }) {
+  const { t } = useTranslation()
   const models = readiness?.models ?? []
   const grouped = models.reduce<Record<string, number>>((result, model) => ({ ...result, [model.readiness]: (result[model.readiness] ?? 0) + 1 }), {})
   const accepted = models.filter(model => model.route_eligible)
-  const tiers = accepted.reduce<Record<string, number>>((result, model) => ({ ...result, [model.measured_tier ?? 'unmeasured']: (result[model.measured_tier ?? 'unmeasured'] ?? 0) + 1 }), {})
+  const tiers = accepted.reduce<Record<string, number>>((result, model) => ({ ...result, [model.measured_tier ?? UNMEASURED_TIER]: (result[model.measured_tier ?? UNMEASURED_TIER] ?? 0) + 1 }), {})
   return <>
-    <Card data-testid="local-model-library"><CardHeader className="pb-3"><CardTitle className="text-base">Model library and rescan</CardTitle><CardDescription>Inventory is read-only. Canonical paths are shown only in the dedicated inventory below.</CardDescription></CardHeader><CardContent className="space-y-2 text-sm"><p>{inventory?.available ? 'Library available' : 'Library unavailable'}</p><Button onClick={onRescan} size="sm" type="button" variant="outline">Rescan local library</Button></CardContent></Card>
+    <Card data-testid="local-model-library"><CardHeader className="pb-3"><CardTitle className="text-base">{t('settings.localModelsPage.libraryTitle')}</CardTitle><CardDescription>{t('settings.localModelsPage.libraryDescription')}</CardDescription></CardHeader><CardContent className="space-y-2 text-sm"><p>{inventory?.available ? t('settings.localModelsPage.libraryAvailable') : t('settings.localModelsPage.libraryUnavailable')}</p><Button onClick={onRescan} size="sm" type="button" variant="outline">{t('settings.localModelsPage.rescanLibrary')}</Button></CardContent></Card>
     <div className="grid gap-4 lg:grid-cols-2">
-      <Card data-testid="local-model-readiness"><CardHeader className="pb-3"><CardTitle className="text-base">Readiness and runtime compatibility</CardTitle><CardDescription>Only ready verified models are eligible for automatic routes.</CardDescription></CardHeader><CardContent>{readinessError ? <p role="status">Readiness unavailable — automatic routing is blocked.</p> : models.length ? <ul className="space-y-1 text-sm">{Object.entries(grouped).map(([state, count]) => <li key={state}>{state.replace(/_/g, ' ')}: {count}</li>)}</ul> : <p className="text-sm text-muted-foreground">No route-safe readiness facts are available.</p>}</CardContent></Card>
-      <Card data-testid="local-model-route-overrides"><CardHeader className="pb-3"><CardTitle className="text-base">Role routes and overrides</CardTitle><CardDescription>Overrides are explicit and rejected when a model fails readiness, quality, context, or memory gates.</CardDescription></CardHeader><CardContent className="space-y-2 text-sm"><p>{Object.keys(settings?.role_overrides ?? {}).length} configured role override(s)</p>{accepted.length ? <ul>{accepted.slice(0, 8).map(model => <li key={model.model_id}><code>{model.model_id}</code> · {model.accepted_roles.join(', ') || 'no accepted role'}</li>)}</ul> : <p className="text-muted-foreground">No verified local route is currently available.</p>}</CardContent></Card>
-      <Card data-testid="local-model-tiers"><CardHeader className="pb-3"><CardTitle className="text-base">Measured tiers and memory</CardTitle><CardDescription>Balanced selects the smallest accepted model that clears all gates.</CardDescription></CardHeader><CardContent className="text-sm">{Object.entries(tiers).length ? Object.entries(tiers).map(([tier, count]) => <p key={tier}>{tier}: {count}</p>) : <p className="text-muted-foreground">No accepted benchmark tier yet.</p>}</CardContent></Card>
-      <ModelRoutePlanPanel title="Research Chat route" plan={researchPlan} isError={readinessError || settingsError || routePlansError} />
-      <ModelRoutePlanPanel title="Embedding route" plan={embeddingPlan} isError={readinessError || settingsError || routePlansError} />
+      <Card data-testid="local-model-readiness"><CardHeader className="pb-3"><CardTitle className="text-base">{t('settings.localModelsPage.readinessTitle')}</CardTitle><CardDescription>{t('settings.localModelsPage.readinessDescription')}</CardDescription></CardHeader><CardContent>{readinessError ? <p role="status">{t('settings.localModelsPage.readinessBlocked')}</p> : models.length ? <ul className="space-y-1 text-sm">{Object.entries(grouped).map(([state, count]) => <li key={state}>{enumLabel(t, MODEL_READINESS_KEYS, state, spacedEnum(state))}: {count}</li>)}</ul> : <p className="text-sm text-muted-foreground">{t('settings.localModelsPage.noReadinessFacts')}</p>}</CardContent></Card>
+      <Card data-testid="local-model-route-overrides"><CardHeader className="pb-3"><CardTitle className="text-base">{t('settings.localModelsPage.roleRoutesTitle')}</CardTitle><CardDescription>{t('settings.localModelsPage.roleRoutesDescription')}</CardDescription></CardHeader><CardContent className="space-y-2 text-sm"><p>{t('settings.localModelsPage.configuredOverrides', { count: Object.keys(settings?.role_overrides ?? {}).length })}</p>{accepted.length ? <ul>{accepted.slice(0, 8).map(model => <li key={model.model_id}><code>{model.model_id}</code> · {model.accepted_roles.join(', ') || t('settings.localModelsPage.noAcceptedRole')}</li>)}</ul> : <p className="text-muted-foreground">{t('settings.localModelsPage.noVerifiedRoute')}</p>}</CardContent></Card>
+      <Card data-testid="local-model-tiers"><CardHeader className="pb-3"><CardTitle className="text-base">{t('settings.localModelsPage.tiersTitle')}</CardTitle><CardDescription>{t('settings.localModelsPage.tiersDescription')}</CardDescription></CardHeader><CardContent className="text-sm">{Object.entries(tiers).length ? Object.entries(tiers).map(([tier, count]) => <p key={tier}>{tier === UNMEASURED_TIER ? t('settings.localModelsPage.unmeasured') : tier}: {count}</p>) : <p className="text-muted-foreground">{t('settings.localModelsPage.noAcceptedTier')}</p>}</CardContent></Card>
+      <ModelRoutePlanPanel routeId="research-chat-route" title={t('settings.localModelsPage.researchChatRoute')} plan={researchPlan} isError={readinessError || settingsError || routePlansError} />
+      <ModelRoutePlanPanel routeId="embedding-route" title={t('settings.localModelsPage.embeddingRoute')} plan={embeddingPlan} isError={readinessError || settingsError || routePlansError} />
     </div>
-    {settings ? <><LocalExecutionPolicyPanel policy={settings.execution_policy} computeProfile={settings.compute_profile} memoryLimitBytes={settings.local_model_memory_limit_bytes} pendingCloudRoute={pendingCloudRoute} onConfirmCloudRoute={onConfirmCloudRoute} isSaving={isSaving} onSave={onSave} />{cloudContinuationRecorded && <p role="status" className="text-sm text-muted-foreground">Cloud continuation recorded for this exact route. No task has been executed.</p>}</> : <Card><CardContent className="py-5 text-sm text-muted-foreground">Loading local execution settings…</CardContent></Card>}
+    {settings ? <><LocalExecutionPolicyPanel policy={settings.execution_policy} computeProfile={settings.compute_profile} memoryLimitBytes={settings.local_model_memory_limit_bytes} pendingCloudRoute={pendingCloudRoute} onConfirmCloudRoute={onConfirmCloudRoute} isSaving={isSaving} onSave={onSave} />{cloudContinuationRecorded && <p role="status" className="text-sm text-muted-foreground">{t('settings.localModelsPage.cloudContinuationRecorded')}</p>}</> : <Card><CardContent className="py-5 text-sm text-muted-foreground">{t('settings.localModelsPage.loadingSettings')}</CardContent></Card>}
   </>
 }
 
 export default function LocalModelsPage() {
-  return <AppShell><SystemRouteFrame route="/settings/local-models"><LocalModelsWorkspace /></SystemRouteFrame></AppShell>
+  return <><SystemRouteFrame route="/settings/local-models"><LocalModelsWorkspace /></SystemRouteFrame></>
 }

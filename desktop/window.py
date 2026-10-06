@@ -19,6 +19,8 @@ import time
 from pathlib import Path
 from typing import Callable
 
+from desktop.config import DEFAULT_THEME
+
 
 def _voice_injection_js() -> str:
     """Read the voice-injection JS file content (bundled as data)."""
@@ -50,6 +52,40 @@ def _memory_injection_js() -> str:
 # upstream's defaults bleed through; that produced unreadable labels in the
 # dark themes (the issue visible in the v0.4 screenshot).
 _THEMES = {
+    # v0.8.130 — the indigo brand pair, first. Without them the bridge below reset
+    # a Gemini-Forward choice to the fallback theme on every page load, so the
+    # packaged app could not show the brand at all. Values are the ones
+    # frontend globals.css computes for these themes (read from the built app).
+    # v0.8.130 — paper and ink (premium pass + notebook layer, 2026-10-01); read from
+    # the built app like the values below.
+    "gemini-forward-light": {
+        "is_dark": False,
+        "bg": "#F5F3EE",
+        "fg": "#1E1C19",
+        "card": "#FFFEFB",
+        "muted": "#FCFBF8",
+        "muted_fg": "#575551",
+        "primary": "#3F4FC9",
+        "primary_fg": "#FFFFFF",
+        "accent": "#7B5BD6",
+        "accent_fg": "#FFFFFF",
+        "border": "#E6E1D7",
+        "destructive": "#D00016",
+    },
+    "gemini-forward-dark": {
+        "is_dark": True,
+        "bg": "#12110F",
+        "fg": "#F3F1EC",
+        "card": "#1B1A17",
+        "muted": "#191815",
+        "muted_fg": "#A7A6A2",
+        "primary": "#9AA5FF",
+        "primary_fg": "#000000",
+        "accent": "#C59BFF",
+        "accent_fg": "#000000",
+        "border": "#2F2D29",
+        "destructive": "#FF9492",
+    },
     # --- Research Core OS palettes ---
     "research-core-dark": {
         "is_dark": True,
@@ -418,12 +454,12 @@ def _theme_tokens(theme_id: str) -> dict:
     Sidebar tokens get a slightly contrasted treatment so the left nav reads
     as a distinct region rather than blending into the body.
     """
-    t = _THEMES.get(theme_id, _THEMES["research-core-dark"])
+    t = _THEMES.get(theme_id, _THEMES[DEFAULT_THEME])
     bg, fg = t["bg"], t["fg"]
     card, muted, muted_fg = t["card"], t["muted"], t["muted_fg"]
     primary, primary_fg = t["primary"], t["primary_fg"]
-    accent, accent_fg = t["accent"], t["accent_fg"]
-    border, destructive = t["border"], t["destructive"]
+    accent = t["accent"]
+    border = t["border"]
     is_dark = t["is_dark"]
 
     # Sidebar slightly offset from the body. Light → a touch grayer.
@@ -460,16 +496,19 @@ def _theme_tokens(theme_id: str) -> dict:
         # Brand
         "--primary": primary,
         "--primary-foreground": primary_fg,
-        # Secondary / muted / accent (used for chip + label colors)
+        # Secondary / muted
         "--secondary": muted,
         "--secondary-foreground": fg,
         "--muted": muted,
         "--muted-foreground": muted_fg,
-        "--accent": accent,
-        "--accent-foreground": accent_fg,
-        # Status
-        "--destructive": destructive,
-        "--destructive-foreground": "#FFFFFF",
+        # v0.8.130 — --accent/--accent-foreground and --destructive/-foreground are
+        # no longer injected. This block's `:root[data-theme="X"]` selector outranks
+        # frontend globals.css, so injecting them overrode two web fixes in the
+        # packaged app only: --accent is now a neutral hover/selected fill (it was a
+        # solid brand hue), and the destructive pair is contrast-measured per theme
+        # there (this file sent #FFFFFF text over the light pink destructive of the
+        # dark themes, ~2.6:1). The per-theme "accent_fg"/"destructive" values in
+        # _THEMES are now unused.
         # Lines + focus
         "--border": border,
         "--input": border,
@@ -509,7 +548,7 @@ def _theme_injection_js(
         decls = "\n          ".join(f"{k}: {v};" for k, v in tokens.items())
         # The default block (no data-theme attribute) uses the Research Core
         # palette so the page never flashes unstyled.
-        if tid == "research-core-dark":
+        if tid == DEFAULT_THEME:
             blocks.append(
                 f':root, :root[data-theme="{tid}"] {{\n          {decls}\n        }}'
             )
@@ -518,7 +557,7 @@ def _theme_injection_js(
                 f':root[data-theme="{tid}"] {{\n          {decls}\n        }}'
             )
     all_themes_css = "\n        ".join(blocks)
-    initial = theme_id if theme_id in _THEMES else "research-core-dark"
+    initial = theme_id if theme_id in _THEMES else DEFAULT_THEME
     is_dark_map = {
         tid: ("true" if _THEMES[tid]["is_dark"] else "false") for tid in _THEMES
     }
@@ -561,7 +600,7 @@ def _theme_injection_js(
       // Apply a theme: sets dataset.theme + .dark class. Internal — called
       // by both the initial-load path and window.DN.setTheme.
       function applyTheme(theme) {{
-        if (!IS_DARK.hasOwnProperty(theme)) theme = "research-core-dark";
+        if (!IS_DARK.hasOwnProperty(theme)) theme = "{DEFAULT_THEME}";
         document.documentElement.dataset.theme = theme;
         document.documentElement.classList.toggle('dark', IS_DARK[theme]);
       }}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useId, useMemo } from 'react'
+import { createContext, useContext, useState, useRef, useEffect, useId, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { SourceDialog } from './SourceDialog'
-import { Bot, User, Send, Loader2, FileText, Lightbulb, StickyNote, Clock, Square, Swords, X, ChevronDown, Sparkles } from 'lucide-react'
+import { Bot, MessageSquare, Send, Loader2, FileText, Lightbulb, StickyNote, Clock, Square, Swords, X, ChevronDown, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -25,8 +25,8 @@ import { ContextIndicator } from '@/components/common/ContextIndicator'
 import { SessionManager } from '@/components/source/SessionManager'
 import { MessageActions } from '@/components/source/MessageActions'
 import { MessageCopyEditActions } from '@/components/chat/MessageCopyEditActions'
-import { convertReferencesToCompactMarkdown, createCompactReferenceLinkComponent } from '@/lib/utils/source-references'
-import { splitCitations } from '@/lib/utils/citations'
+import { CompactReferenceLink, convertReferencesToCompactMarkdown } from '@/lib/utils/source-references'
+import { linkifyCitations, parseCitationHref, type LinkedCitation } from '@/lib/utils/citations'
 import { CitationPill } from '@/components/chat/CitationPill'
 import { AudioDictateButton } from '@/components/common/AudioDictateButton'
 // v0.8.35c — small "local"/"cloud" chip next to AI messages, lit when
@@ -252,10 +252,15 @@ export function ChatPanel({
     return () => viewport.removeEventListener('scroll', onScroll)
   }, [])
 
+  // v0.8.130 — Phase 2a: scroll the chat's own viewport. `scrollIntoView` on the end
+  // sentinel also scrolled every scrollable ancestor, which on the notebook page
+  // scrolled the whole canvas ~936px on load, past the title bar.
   useEffect(() => {
-    if (stickToBottomRef.current) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
-    }
+    if (!stickToBottomRef.current) return
+    const viewport = scrollAreaRef.current?.querySelector<HTMLElement>(
+      '[data-radix-scroll-area-viewport]',
+    )
+    if (viewport) viewport.scrollTop = viewport.scrollHeight
   }, [messages])
 
   const handleSend = () => {
@@ -268,29 +273,25 @@ export function ChatPanel({
     }
   }
 
+  // v0.8.130 — Phase 2c: Enter sends and Shift+Enter starts a new line (Ctrl/⌘+Enter
+  // still sends). An IME composition's Enter confirms the candidate, so it never sends.
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    // Detect platform for correct modifier key
-    const isMac = typeof navigator !== 'undefined' && navigator.userAgent.toUpperCase().indexOf('MAC') >= 0
-    const isModifierPressed = isMac ? e.metaKey : e.ctrlKey
-
-    if (e.key === 'Enter' && isModifierPressed) {
-      e.preventDefault()
-      handleSend()
-    }
+    if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return
+    e.preventDefault()
+    handleSend()
   }
-
-  // Detect platform for placeholder text
-  const isMac = typeof navigator !== 'undefined' && navigator.userAgent.toUpperCase().indexOf('MAC') >= 0
-  const keyHint = isMac ? '⌘+Enter' : 'Ctrl+Enter'
 
   return (
     <>
-    <Card className="flex flex-col h-full flex-1 overflow-hidden">
+    <Card data-dn-column="" className="flex flex-col h-full flex-1 overflow-hidden">
       <CardHeader className="pb-3 flex-shrink-0">
         <div className="flex min-w-0 items-center justify-between gap-2">
           <CardTitle className="flex min-w-0 flex-1 items-center gap-2">
-            <Bot className="h-5 w-5" />
-            {title || (contextType === 'source' ? t('chat.chatWith').replace('{name}', t('navigation.sources')) : t('chat.chatWith').replace('{name}', t('common.notebook')))}
+            <Bot className="h-5 w-5 flex-none" />
+            {/* v0.8.130 — truncates rather than wrapping the header onto two lines. */}
+            <span className="min-w-0 truncate">
+              {title || (contextType === 'source' ? t('chat.chatWith').replace('{name}', t('navigation.sources')) : t('chat.chatWith').replace('{name}', t('common.notebook')))}
+            </span>
           </CardTitle>
           {onSelectSession && onCreateSession && onDeleteSession && (
             <Dialog open={sessionManagerOpen} onOpenChange={setSessionManagerOpen}>
@@ -324,22 +325,18 @@ export function ChatPanel({
         </div>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col min-h-0 p-0">
-        <RunTimeline
-          messages={messages}
-          isStreaming={isStreaming}
-          contextStats={notebookContextStats}
-          currentModel={modelOverride}
-          disabledMcpServers={disabledMcpServers}
-        />
         <ScrollArea className="flex-1 min-h-0 px-4" ref={scrollAreaRef}>
           <div className="space-y-4 py-4">
             {messages.length === 0 ? (
-              <div className="text-center text-muted-foreground py-8">
-                <Bot className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p className="text-sm">
+              // v0.8.130 — Phase 2c: a guide card in place of the faded robot.
+              <div className="mx-auto max-w-md py-10 text-center">
+                <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                  <MessageSquare className="h-6 w-6" aria-hidden="true" />
+                </div>
+                <p className="text-base font-medium text-foreground">
                   {t('chat.startConversation').replace('{type}', contextType === 'source' ? t('navigation.sources') : t('common.notebook'))}
                 </p>
-                <p className="text-xs mt-2">{t('chat.askQuestions')}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{t('chat.askQuestions')}</p>
                 {/* v0.8.74 — corpus-grounded starter questions (roadmap Batch 1).
                     Removes the blank-slate problem; clicking a chip sends it. */}
                 {suggestedQuestions && suggestedQuestions.length > 0 && (
@@ -367,24 +364,20 @@ export function ChatPanel({
               messages.map((message, idx) => (
                 <div
                   key={message.id}
-                  className={`flex gap-3 ${
+                  className={`flex ${
                     message.type === 'human' ? 'justify-end' : 'justify-start'
                   }`}
                 >
-                  {message.type === 'ai' && (
-                    <div className="flex-shrink-0">
-                      <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
-                        <Bot className="h-4 w-4" />
-                      </div>
-                    </div>
-                  )}
-                  <div className="flex flex-col gap-2 max-w-[80%]">
+                  {/* v0.8.130 — Phase 2c: answers read as flat text across the column and
+                      questions as soft tinted bubbles (no avatars, no saturated gradient). */}
+                  <div className={`flex min-w-0 flex-col gap-2 ${message.type === 'human' ? 'max-w-[85%]' : 'w-full'}`}>
                     <div
-                      className={`rounded-2xl px-4 py-3 shadow-xs transition-all duration-200 ${
+                      data-dn-message={message.type}
+                      className={
                         message.type === 'human'
-                          ? 'bg-gradient-to-br from-primary via-primary/95 to-primary/85 text-primary-foreground shadow-sm ring-1 ring-primary/30'
-                          : 'border border-border/60 bg-card/95 ring-1 ring-border/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)] dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.03)]'
-                      }`}
+                          ? 'rounded-2xl rounded-br-md bg-primary/10 px-4 py-2.5 text-foreground'
+                          : 'py-1 text-foreground'
+                      }
                     >
                       {message.type === 'ai' ? (
                         <AIMessageContent
@@ -481,6 +474,8 @@ export function ChatPanel({
                         )}
                         {contextType === 'notebook' && notebookId && evaluationMessageIdSet.has(message.id) && (
                           <EvidenceReview
+                            // v0.8.130 — a caption; unstyled it inherited body size under every answer.
+                            className="text-xs text-muted-foreground"
                             notebookId={notebookId}
                             messageId={message.id}
                             evaluation={messageEvaluations.data
@@ -493,34 +488,26 @@ export function ChatPanel({
                       </div>
                     )}
                   </div>
-                  {message.type === 'human' && (
-                    <div className="flex-shrink-0">
-                      <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center">
-                        <User className="h-4 w-4 text-primary-foreground" />
-                      </div>
-                    </div>
-                  )}
                 </div>
               ))
             )}
             {isStreaming && (
-              <div className="flex gap-3 justify-start">
-                <div className="flex-shrink-0">
-                  <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
-                    <Bot className="h-4 w-4" />
-                  </div>
-                </div>
-                {/* v0.8.70 — a "typing" dot wave reads more alive than a
-                    spinner; the global reduced-motion rule freezes it. */}
-                <div className="rounded-2xl border border-border/60 bg-card px-4 py-3 shadow-sm">
-                  <div className="flex gap-1">
-                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/70 [animation-delay:-0.3s]" />
-                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/70 [animation-delay:-0.15s]" />
-                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/70" />
-                  </div>
-                </div>
+              // v0.8.70 — a "typing" dot wave reads more alive than a
+              // spinner; the global reduced-motion rule freezes it.
+              <div className="flex gap-1 py-2">
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/70 [animation-delay:-0.3s]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/70 [animation-delay:-0.15s]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/70" />
               </div>
             )}
+            {/* v0.8.130 — Phase 2c: run facts under the latest answer (a status line while streaming). */}
+            <RunTimeline
+              messages={messages}
+              isStreaming={isStreaming}
+              contextStats={notebookContextStats}
+              currentModel={modelOverride}
+              disabledMcpServers={disabledMcpServers}
+            />
             <div ref={messagesEndRef} />
           </div>
         </ScrollArea>
@@ -565,65 +552,32 @@ export function ChatPanel({
         )}
 
         {/* Input Area */}
-        <div className="flex-shrink-0 p-4 space-y-3 border-t">
+        <div className="flex-shrink-0 space-y-2 px-4 pb-4 pt-2">
           {mindMapContext && (
             <div data-testid="mind-map-context-chip" className="flex items-start justify-between gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs">
               <div className="min-w-0">
-                <div className="font-medium">Mind-map context: {mindMapContext.label}</div>
+                <div className="font-medium">{t('sources.chatPanel.mindMapContext', { label: mindMapContext.label })}</div>
                 <div className="mt-0.5 break-words text-muted-foreground">
-                  {mindMapContext.relationship || 'No relationship specified'} · {mindMapContext.citations.join(' ') || 'No citations'} · artifact {mindMapContext.artifact_id}
+                  {t('sources.chatPanel.mindMapDetail', {
+                    relationship: mindMapContext.relationship || t('sources.chatPanel.noRelationship'),
+                    citations: mindMapContext.citations.join(' ') || t('sources.chatPanel.noCitations'),
+                    artifactId: mindMapContext.artifact_id,
+                  })}
                 </div>
               </div>
-              <Button type="button" variant="ghost" size="icon" className="h-6 w-6 shrink-0" aria-label="Remove mind-map context" onClick={() => setMindMapContext(null)}>
+              <Button type="button" variant="ghost" size="icon" className="h-6 w-6 shrink-0" aria-label={t('sources.chatPanel.removeMindMapContext')} onClick={() => setMindMapContext(null)}>
                 <X className="h-3.5 w-3.5" />
               </Button>
             </div>
           )}
-          {/* Model selector + v0.8.46 MCP tool picker on one row.
-              The picker self-hides when there are no enabled MCP
-              servers, so the row collapses to just the model selector
-              for users without MCP configured. */}
-          {(onModelChange || onToggleMcpServer || onToggleDebateMode) && (
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">{t('chat.model')}</span>
-                {onModelChange && (
-                  <ModelSelector
-                    currentModel={modelOverride}
-                    onModelChange={onModelChange}
-                    disabled={isStreaming}
-                  />
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                {/* v0.8.97 — Debate mode: argue the other side from the sources. */}
-                {onToggleDebateMode && (
-                  <Button
-                    type="button"
-                    variant={debateMode ? 'secondary' : 'ghost'}
-                    size="sm"
-                    aria-pressed={debateMode}
-                    aria-label={debateMode ? 'Leave Debate mode' : 'Enter Debate mode'}
-                    title="Debate mode — the assistant argues the opposing case, grounded in your sources"
-                    onClick={onToggleDebateMode}
-                    className="h-7 gap-1.5 px-2 text-xs"
-                    data-testid="debate-mode-toggle"
-                  >
-                    <Swords className="h-3.5 w-3.5" aria-hidden="true" />
-                    Debate
-                  </Button>
-                )}
-                {onToggleMcpServer && (
-                  <McpToolPicker
-                    disabled={disabledMcpServers ?? []}
-                    onToggle={onToggleMcpServer}
-                  />
-                )}
-              </div>
-            </div>
-          )}
-
-          <div className="flex gap-2 items-end min-w-0">
+          {/* v0.8.130 — Phase 2c: one pill composer. The textarea takes the full row (at
+              1024px the mic and send buttons beside it squeezed it to ~95px); the model,
+              Debate and v0.8.46 MCP tool picker sit on a row inside the pill with the
+              mic and send buttons. The picker self-hides without enabled MCP servers. */}
+          <div
+            data-dn-composer=""
+            className="@container rounded-3xl border bg-card px-2 py-1.5 shadow-xs transition-shadow focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/20"
+          >
             <Textarea
               id={chatInputId}
               ref={textareaRef}
@@ -632,42 +586,82 @@ export function ChatPanel({
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={`${t('chat.sendPlaceholder')} (${t('chat.pressToSend').replace('{key}', keyHint)})`}
+              placeholder={t('chat.sendPlaceholder')}
               disabled={isStreaming}
-              className="flex-1 min-h-[40px] max-h-[100px] resize-none py-2 px-3 min-w-0"
+              className="min-h-[44px] max-h-[160px] w-full resize-none border-0 bg-transparent px-3 py-2 shadow-none focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent"
               rows={1}
             />
-            <AudioDictateButton
-              onTranscribed={(text) => setInput((prev) => (prev ? `${prev} ${text}` : text))}
-              disabled={isStreaming}
-              className="h-[40px] w-[40px] flex-shrink-0"
-            />
-            {isStreaming && onCancelStreaming && (
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                aria-label="Stop generating"
-                title="Stop generating"
-                onClick={onCancelStreaming}
-                className="h-[40px] w-[40px] flex-shrink-0"
-              >
-                <Square className="h-4 w-4" />
-              </Button>
-            )}
-            <Button
-              onClick={handleSend}
-              disabled={!input.trim() || isStreaming}
-              size="icon"
-              aria-label={t('chat.send', { defaultValue: 'Send message' })}
-              className="h-[40px] w-[40px] flex-shrink-0"
-            >
-              {isStreaming ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="h-4 w-4" />
+            <div className="flex flex-wrap items-center gap-1">
+              {onModelChange && (
+                <div className="flex items-center">
+                  <span className="sr-only">{t('chat.model')}</span>
+                  <ModelSelector
+                    currentModel={modelOverride}
+                    onModelChange={onModelChange}
+                    disabled={isStreaming}
+                    // v0.8.130 — icon-only in a narrow pill (the name stays for screen readers).
+                    labelClassName="@max-[18rem]:sr-only"
+                  />
+                </div>
               )}
-            </Button>
+              {/* v0.8.97 — Debate mode: argue the other side from the sources. */}
+              {onToggleDebateMode && (
+                <Button
+                  type="button"
+                  variant={debateMode ? 'secondary' : 'ghost'}
+                  size="sm"
+                  aria-pressed={debateMode}
+                  aria-label={debateMode ? t('sources.chatPanel.leaveDebateMode') : t('sources.chatPanel.enterDebateMode')}
+                  title={t('sources.chatPanel.debateModeTitle')}
+                  onClick={onToggleDebateMode}
+                  className="h-8 gap-1.5 rounded-md px-2.5 text-xs"
+                  data-testid="debate-mode-toggle"
+                >
+                  <Swords className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span className="hidden @[18rem]:inline">{t('sources.chatPanel.debate')}</span>
+                </Button>
+              )}
+              {onToggleMcpServer && (
+                <McpToolPicker
+                  disabled={disabledMcpServers ?? []}
+                  onToggle={onToggleMcpServer}
+                />
+              )}
+              <div className="ml-auto flex items-center gap-1">
+                <AudioDictateButton
+                  onTranscribed={(text) => setInput((prev) => (prev ? `${prev} ${text}` : text))}
+                  disabled={isStreaming}
+                  className="h-9 w-9 flex-shrink-0 rounded-full"
+                />
+                {isStreaming && onCancelStreaming && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    aria-label={t('sources.chatPanel.stopGenerating')}
+                    title={t('sources.chatPanel.stopGenerating')}
+                    onClick={onCancelStreaming}
+                    className="h-9 w-9 flex-shrink-0 rounded-md"
+                  >
+                    <Square className="h-4 w-4" />
+                  </Button>
+                )}
+                <Button
+                  onClick={handleSend}
+                  disabled={!input.trim() || isStreaming}
+                  size="icon"
+                  aria-label={t('chat.send', { defaultValue: 'Send message' })}
+                  title={t('chat.pressToSend').replace('{key}', 'Enter')}
+                  className="h-9 w-9 flex-shrink-0 rounded-md"
+                >
+                  {isStreaming ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       </CardContent>
@@ -739,6 +733,7 @@ function ThoughtAccordion({
   thinking: string
   isThinkingActive: boolean
 }) {
+  const { t } = useTranslation()
   const [isOpen, setIsOpen] = useState(isThinkingActive)
 
   const wasActiveRef = useRef(isThinkingActive)
@@ -752,7 +747,7 @@ function ThoughtAccordion({
   if (!thinking) return null
 
   return (
-    <div className="not-prose mb-3 overflow-hidden rounded-xl border border-primary/20 bg-primary/[0.03] transition-all duration-200">
+    <div className="not-prose mb-3 overflow-hidden rounded-xl border border-primary/20 bg-primary/[0.03]">
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
@@ -761,8 +756,8 @@ function ThoughtAccordion({
       >
         <div className="flex items-center gap-2">
           <Sparkles className={cn('h-3.5 w-3.5 transition-colors', isThinkingActive ? 'text-primary animate-pulse' : 'text-muted-foreground')} />
-          <span className="font-mono text-[11px] uppercase tracking-wider">
-            {isThinkingActive ? 'Thinking…' : 'Thought process'}
+          <span className="font-mono text-xs">
+            {isThinkingActive ? t('sources.chatPanel.thinking') : t('sources.chatPanel.thoughtProcess')}
           </span>
           {isThinkingActive && (
             <span className="relative flex h-1.5 w-1.5">
@@ -787,6 +782,103 @@ function ThoughtAccordion({
   )
 }
 
+// v0.8.130 — Everything inside an answer that is a link: numbered citation chips (kept in
+// the flow of their sentence), compact [n] references, and ordinary links.
+//
+// The markdown component map below lives at module level on purpose. Defining
+// it inside AIMessageContent gave React a fresh component type for every <p>,
+// <li> and link on each render, so every streamed token remounted them — which
+// would also reset an open citation popover. Per-message data reaches the
+// anchor through context instead of a closure.
+interface AnswerLinkContextValue {
+  citations: LinkedCitation[]
+  messageId?: string
+  onViewSource?: (sourceId: string, query: string) => void
+  onReferenceClick: (type: string, id: string) => void
+}
+
+const AnswerLinkContext = createContext<AnswerLinkContextValue | null>(null)
+
+function AnswerLink({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
+  const context = useContext(AnswerLinkContext)
+
+  const index = parseCitationHref(href)
+  const citation = context && index !== null ? context.citations[index] : undefined
+  if (context && citation) {
+    // v0.8.1 Item 3 — messageId lets MCP pills look up tool-call payloads from
+    // the TanStack Query cache.
+    // v0.8.79 — "View source" opens the reading view highlighting the cited
+    // passage; the citing sentence is the last sentence before the marker.
+    return (
+      <CitationPill
+        kind={citation.kind}
+        value={citation.value}
+        label={citation.number === null ? undefined : String(citation.number)}
+        messageId={context.messageId}
+        onViewSource={
+          citation.kind === 'source' && context.onViewSource
+            ? () => context.onViewSource?.(`source:${citation.value}`, lastSentence(citation.precedingText))
+            : undefined
+        }
+      />
+    )
+  }
+
+  return (
+    <CompactReferenceLink
+      href={href}
+      {...props}
+      onReferenceClick={(type, id) => context?.onReferenceClick(type, id)}
+    >
+      {children}
+    </CompactReferenceLink>
+  )
+}
+
+const answerMarkdownComponents = {
+  a: AnswerLink,
+  p: ({ children }: { children?: React.ReactNode }) => <p className="mb-4">{children}</p>,
+  h1: ({ children }: { children?: React.ReactNode }) => <h1 className="mb-4 mt-6">{children}</h1>,
+  h2: ({ children }: { children?: React.ReactNode }) => <h2 className="mb-3 mt-5">{children}</h2>,
+  h3: ({ children }: { children?: React.ReactNode }) => <h3 className="mb-3 mt-4">{children}</h3>,
+  h4: ({ children }: { children?: React.ReactNode }) => <h4 className="mb-2 mt-4">{children}</h4>,
+  h5: ({ children }: { children?: React.ReactNode }) => <h5 className="mb-2 mt-3">{children}</h5>,
+  h6: ({ children }: { children?: React.ReactNode }) => <h6 className="mb-2 mt-3">{children}</h6>,
+  li: ({ children }: { children?: React.ReactNode }) => <li className="mb-1">{children}</li>,
+  ul: ({ children }: { children?: React.ReactNode }) => <ul className="mb-4 space-y-1">{children}</ul>,
+  ol: ({ children }: { children?: React.ReactNode }) => <ol className="mb-4 space-y-1">{children}</ol>,
+  table: ({ children }: { children?: React.ReactNode }) => (
+    <div className="my-4 overflow-x-auto">
+      <table className="min-w-full border-collapse border border-border">{children}</table>
+    </div>
+  ),
+  thead: ({ children }: { children?: React.ReactNode }) => <thead className="bg-muted">{children}</thead>,
+  tbody: ({ children }: { children?: React.ReactNode }) => <tbody>{children}</tbody>,
+  tr: ({ children }: { children?: React.ReactNode }) => <tr className="border-b border-border">{children}</tr>,
+  th: ({ children }: { children?: React.ReactNode }) => <th className="border border-border px-3 py-2 text-left font-semibold">{children}</th>,
+  td: ({ children }: { children?: React.ReactNode }) => <td className="border border-border px-3 py-2">{children}</td>,
+  pre: ({ children }: { children?: React.ReactNode }) => (
+    <div className="my-3 overflow-hidden rounded-lg border bg-muted/40 font-mono text-xs shadow-xs">
+      <pre className="overflow-x-auto p-3.5 leading-relaxed">{children}</pre>
+    </div>
+  ),
+  code: ({ className, children, ...props }: React.ComponentPropsWithoutRef<'code'>) => {
+    const isInline = !className && typeof children === 'string' && !children.includes('\n')
+    if (isInline) {
+      return (
+        <code className="rounded bg-muted/70 px-1.5 py-0.5 font-mono text-xs font-medium text-foreground" {...props}>
+          {children}
+        </code>
+      )
+    }
+    return (
+      <code className={className} {...props}>
+        {children}
+      </code>
+    )
+  },
+}
+
 function AIMessageContent({
   content,
   onReferenceClick,
@@ -803,108 +895,37 @@ function AIMessageContent({
   const { t } = useTranslation()
   const { thinking, isThinkingActive, answer } = parseThinking(content)
 
-  // Create custom link component for compact references
-  const LinkComponent = createCompactReferenceLinkComponent(onReferenceClick)
+  // v0.8.130 — Citation markers ([mcp:N], [source:ID], …) become numbered markdown links so
+  // the WHOLE answer goes through one markdown pass and each chip stays inside
+  // the sentence it supports. Rendering the answer piecewise put every chip on
+  // its own line. Remaining reference shapes go through the compact-reference
+  // conversion afterwards, as before.
+  const { markdown, citations } = useMemo(() => linkifyCitations(answer), [answer])
+  const firstLegacyNumber = citations.reduce((highest, citation) => Math.max(highest, citation.number ?? 0), 0) + 1
+  const markdownWithCompactRefs = convertReferencesToCompactMarkdown(markdown, t('common.references'), firstLegacyNumber)
+  const linkContext = useMemo(
+    () => ({ citations, messageId, onViewSource, onReferenceClick }),
+    [citations, messageId, onViewSource, onReferenceClick],
+  )
 
-  // Shared ReactMarkdown component overrides — reused per text segment.
-  const mdComponents = {
-    a: LinkComponent,
-    p: ({ children }: { children?: React.ReactNode }) => <p className="mb-4">{children}</p>,
-    h1: ({ children }: { children?: React.ReactNode }) => <h1 className="mb-4 mt-6">{children}</h1>,
-    h2: ({ children }: { children?: React.ReactNode }) => <h2 className="mb-3 mt-5">{children}</h2>,
-    h3: ({ children }: { children?: React.ReactNode }) => <h3 className="mb-3 mt-4">{children}</h3>,
-    h4: ({ children }: { children?: React.ReactNode }) => <h4 className="mb-2 mt-4">{children}</h4>,
-    h5: ({ children }: { children?: React.ReactNode }) => <h5 className="mb-2 mt-3">{children}</h5>,
-    h6: ({ children }: { children?: React.ReactNode }) => <h6 className="mb-2 mt-3">{children}</h6>,
-    li: ({ children }: { children?: React.ReactNode }) => <li className="mb-1">{children}</li>,
-    ul: ({ children }: { children?: React.ReactNode }) => <ul className="mb-4 space-y-1">{children}</ul>,
-    ol: ({ children }: { children?: React.ReactNode }) => <ol className="mb-4 space-y-1">{children}</ol>,
-    table: ({ children }: { children?: React.ReactNode }) => (
-      <div className="my-4 overflow-x-auto">
-        <table className="min-w-full border-collapse border border-border">{children}</table>
-      </div>
-    ),
-    thead: ({ children }: { children?: React.ReactNode }) => <thead className="bg-muted">{children}</thead>,
-    tbody: ({ children }: { children?: React.ReactNode }) => <tbody>{children}</tbody>,
-    tr: ({ children }: { children?: React.ReactNode }) => <tr className="border-b border-border">{children}</tr>,
-    th: ({ children }: { children?: React.ReactNode }) => <th className="border border-border px-3 py-2 text-left font-semibold">{children}</th>,
-    td: ({ children }: { children?: React.ReactNode }) => <td className="border border-border px-3 py-2">{children}</td>,
-    pre: ({ children }: { children?: React.ReactNode }) => (
-      <div className="my-3 overflow-hidden rounded-lg border bg-muted/40 font-mono text-xs shadow-xs">
-        <pre className="overflow-x-auto p-3.5 leading-relaxed">{children}</pre>
-      </div>
-    ),
-    code: ({ className, children, ...props }: React.ComponentPropsWithoutRef<'code'>) => {
-      const isInline = !className && typeof children === 'string' && !children.includes('\n')
-      if (isInline) {
-        return (
-          <code className="rounded bg-muted/70 px-1.5 py-0.5 font-mono text-xs font-medium text-foreground" {...props}>
-            {children}
-          </code>
-        )
-      }
-      return (
-        <code className={className} {...props}>
-          {children}
-        </code>
-      )
-    },
-  }
-
-  // Split the answer on ALL citation markers ([mcp:N], [source:ID], etc.).
-  // Text segments are rendered via ReactMarkdown (with compact-reference conversion).
-  // Citation segments are rendered as CitationPill components inline.
-  const segments = splitCitations(answer)
-
-  // v0.7.25 — was `prose-a:text-blue-600 prose-a:break-all`. The
-  // hardcoded blue-600 fails WCAG AA against the dark muted
-  // background in dark themes (~3.2:1), and break-all hyphenates
-  // URLs mid-character. Theme-aware token + break-words.
+  // v0.7.25 — was a hard-coded blue link colour plus `prose-a:break-all`. The
+  // raw blue fails WCAG AA against the dark muted background in dark themes
+  // (~3.2:1), and break-all hyphenates URLs mid-character. Theme-aware
+  // token + break-words (v0.8.130 dropped the leftover dark: blue twin).
   return (
-    <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none break-words prose-headings:font-semibold prose-a:text-primary dark:prose-a:text-blue-400 prose-a:underline prose-a:break-words prose-p:mb-4 prose-p:leading-7 prose-li:mb-2">
+    <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none break-words prose-headings:font-semibold prose-a:text-primary prose-a:underline prose-a:break-words prose-p:mb-4 prose-p:leading-7 prose-li:mb-2">
       {thinking && (
         <ThoughtAccordion thinking={thinking} isThinkingActive={isThinkingActive} />
       )}
-      {segments.map((seg, idx) => {
-        if (seg.kind === 'text') {
-          // Pass text segments through the existing compact-reference pipeline.
-          const markdownWithCompactRefs = convertReferencesToCompactMarkdown(
-            seg.value,
-            t('common.references')
-          )
-          return (
-            <ReactMarkdown
-              key={idx}
-              remarkPlugins={[remarkGfm, remarkMath]}
-              rehypePlugins={[rehypeKatex]}
-              components={mdComponents}
-            >
-              {markdownWithCompactRefs}
-            </ReactMarkdown>
-          )
-        }
-        // Citation segment → render as an inline pill.
-        // v0.8.1 Item 3 — pass messageId so MCP pills can look up
-        // tool-call payloads from the TanStack Query cache.
-        // v0.8.79 — for source citations, wire "View source" to open the
-        // reading view highlighting the cited passage (citing sentence = the
-        // last sentence of the preceding text segment).
-        const prev = idx > 0 ? segments[idx - 1] : undefined
-        const citingSentence = prev && prev.kind === 'text' ? lastSentence(prev.value) : ''
-        return (
-          <CitationPill
-            key={`${seg.kind}-${idx}`}
-            kind={seg.kind}
-            value={seg.value}
-            messageId={messageId}
-            onViewSource={
-              seg.kind === 'source' && onViewSource
-                ? () => onViewSource(`source:${seg.value}`, citingSentence)
-                : undefined
-            }
-          />
-        )
-      })}
+      <AnswerLinkContext.Provider value={linkContext}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm, remarkMath]}
+          rehypePlugins={[rehypeKatex]}
+          components={answerMarkdownComponents}
+        >
+          {markdownWithCompactRefs}
+        </ReactMarkdown>
+      </AnswerLinkContext.Provider>
     </div>
   )
 }

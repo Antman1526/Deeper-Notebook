@@ -1,7 +1,18 @@
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { BackupProvenancePanel } from './BackupProvenancePanel'
+
+// Tests mock `t` as the identity on keys; interpolated numbers are appended so the
+// formatting assertions below still see the computed value.
+vi.mock('@/lib/hooks/use-translation', () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: { value?: string | number; count?: number }) => {
+      const v = opts?.value ?? opts?.count
+      return v === undefined ? key : `${key}:${v}`
+    },
+  }),
+}))
 
 const baseSnapshot = {
   schema_version: 'runtime-snapshot-v1',
@@ -33,16 +44,16 @@ describe('BackupProvenancePanel', () => {
   it('renders valid local backup metadata and aggregate read-only provenance', () => {
     render(<BackupProvenancePanel snapshot={baseSnapshot} />)
 
-    expect(screen.getByRole('region', { name: 'Backup and provenance' })).toHaveTextContent('Valid')
-    expect(screen.getByText('2 KB')).toBeInTheDocument()
-    expect(screen.getByText('Integrity not verified')).toBeInTheDocument()
-    expect(screen.getByText('2 external read-only spaces')).toBeInTheDocument()
-    expect(screen.getByText(/Source fingerprints recorded/)).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'workspace.backupProvenancePanel.ariaLabel' })).toHaveTextContent('workspace.backupProvenancePanel.receiptValid')
+    expect(screen.getByText('workspace.backupProvenancePanel.sizeKb:2')).toBeInTheDocument()
+    expect(screen.getByText('workspace.backupProvenancePanel.integrityNotVerified')).toBeInTheDocument()
+    expect(screen.getByText('workspace.backupProvenancePanel.externalSpaceOther:2')).toBeInTheDocument()
+    expect(screen.getByText('workspace.backupProvenancePanel.fingerprintsRecorded')).toBeInTheDocument()
   })
 
   it.each([
-    ['stale', 'Stale', 'Backup is older than the local retention window'],
-    ['unknown', 'Unknown', 'No local backup receipt is available'],
+    ['stale', 'workspace.backupProvenancePanel.receiptStale', 'workspace.backupProvenancePanel.messageStale'],
+    ['unknown', 'workspace.backupProvenancePanel.receiptUnknown', 'workspace.backupProvenancePanel.messageUnknown'],
   ] as const)('renders %s backup state without inventing details', (freshness, label, message) => {
     render(
       <BackupProvenancePanel
@@ -59,7 +70,7 @@ describe('BackupProvenancePanel', () => {
       />,
     )
 
-    expect(screen.getByRole('region', { name: 'Backup and provenance' })).toHaveTextContent(label)
+    expect(screen.getByRole('region', { name: 'workspace.backupProvenancePanel.ariaLabel' })).toHaveTextContent(label)
     expect(screen.getByText(message)).toBeInTheDocument()
     expect(screen.queryByText(/\/private|Volumes|private source content/)).not.toBeInTheDocument()
   })
@@ -79,8 +90,8 @@ describe('BackupProvenancePanel', () => {
       />,
     )
 
-    expect(screen.getByText('1 external read-only space')).toBeInTheDocument()
-    expect(screen.getByText(/Source fingerprint summary unavailable/)).toBeInTheDocument()
+    expect(screen.getByText('workspace.backupProvenancePanel.externalSpaceOne:1')).toBeInTheDocument()
+    expect(screen.getByText('workspace.backupProvenancePanel.fingerprintsUnavailable')).toBeInTheDocument()
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
     expect(screen.queryByRole('link')).not.toBeInTheDocument()
   })

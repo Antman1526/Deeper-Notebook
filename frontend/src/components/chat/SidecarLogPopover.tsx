@@ -172,15 +172,16 @@ export function SidecarLogPopover({
         {data && data.available && (
           <>
             {data.hint && (
-              <div className="flex items-start gap-1.5 text-xs rounded bg-amber-50 dark:bg-amber-950/20 border border-amber-300 dark:border-amber-700 p-2">
-                <AlertCircle className="h-3 w-3 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
-                <span className="text-amber-900 dark:text-amber-100">
+              // v0.8.130 — status colours from theme tokens (UI audit Phase 1)
+              <div className="flex items-start gap-1.5 text-xs rounded bg-warning-soft border border-warning/40 p-2">
+                <AlertCircle className="h-3 w-3 text-warning-ink mt-0.5 shrink-0" />
+                <span className="text-warning-ink">
                   {data.hint}
                 </span>
               </div>
             )}
             {data.log ? (
-              <pre className="text-[10px] font-mono whitespace-pre-wrap break-all max-h-64 overflow-y-auto rounded bg-muted p-2">
+              <pre className="text-xs font-mono whitespace-pre-wrap break-all max-h-64 overflow-y-auto rounded bg-muted p-2">
                 {data.log}
               </pre>
             ) : (
@@ -197,7 +198,7 @@ export function SidecarLogPopover({
         {data && (data.available || showRestartWhenLogUnavailable) && (
           <>
             <div className="flex items-center justify-between gap-2">
-              <p className="text-[10px] text-muted-foreground flex-1">
+              <p className="text-xs text-muted-foreground flex-1">
                 {t('models.sidecarLog.restartHintInline', {
                   defaultValue:
                     'Restart this sidecar without quitting the app.',

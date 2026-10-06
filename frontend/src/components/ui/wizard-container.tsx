@@ -6,7 +6,9 @@ import { cn } from "@/lib/utils"
 interface WizardStep {
   number: number
   title: string
-  description: string
+  // v0.8.130 — optional: a step without a sub-line renders none (was required and repeated one
+  // sentence under every step of the Add Source dialog).
+  description?: string
 }
 
 interface WizardContainerProps {
@@ -54,12 +56,14 @@ function StepIndicator({ currentStep, steps, onStepClick }: {
                 )}>
                   {step.title}
                 </p>
-                <p className={cn(
-                  'text-xs',
-                  isCurrent ? 'text-muted-foreground' : 'text-muted-foreground/80'
-                )}>
-                  {step.description}
-                </p>
+                {step.description ? (
+                  <p className={cn(
+                    'text-xs',
+                    isCurrent ? 'text-muted-foreground' : 'text-muted-foreground/80'
+                  )}>
+                    {step.description}
+                  </p>
+                ) : null}
               </div>
             </div>
             {index < steps.length - 1 && (

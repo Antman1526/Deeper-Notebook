@@ -112,10 +112,10 @@ describe('StudyPlanWorkspace', () => {
   it('keeps the selected known tab addressable and falls back unknown values to overview', () => {
     render(<StudyPlanWorkspace planId="study_plan:one" />)
 
-    expect(screen.getByRole('tab', { name: 'Syllabus' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'study.studyPlanWorkspace.tabs.syllabus' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByText('Rendered syllabus editor')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Overview' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'study.studyPlanWorkspace.tabs.overview' }))
     expect(replace).toHaveBeenCalledWith('/study/plans/study_plan%3Aone?tab=overview', { scroll: false })
   })
 
@@ -123,17 +123,17 @@ describe('StudyPlanWorkspace', () => {
     render(<StudyPlanWorkspace planId="study_plan:one" />)
     expect(screen.getByRole('heading', { name: 'Understand mechanics', level: 2 })).toBeInTheDocument()
     expect(screen.queryAllByRole('heading', { level: 1 })).toHaveLength(0)
-    expect(screen.getByRole('tab', { name: 'Sources' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'study.studyPlanWorkspace.tabs.sources' })).toBeInTheDocument()
   })
 
   it('passes persisted approved scope to Research Gap only when the plan authorizes web access', async () => {
     workspaceState.activeTab = 'learn'
     const { unmount } = render(<StudyPlanWorkspace planId="study_plan:one" />)
 
-    fireEvent.change(screen.getByRole('combobox', { name: 'Tutor mode' }), { target: { value: 'research_gap' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Request web research permission' }))
-    fireEvent.change(screen.getByRole('textbox', { name: 'Tutor prompt' }), { target: { value: 'Find this gap' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Ask tutor' }))
+    fireEvent.change(screen.getByRole('combobox', { name: 'study.tutorDock.tutorMode' }), { target: { value: 'research_gap' } })
+    fireEvent.click(screen.getByRole('button', { name: 'study.tutorDock.requestWebPermission' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'study.tutorDock.prompt.aria' }), { target: { value: 'Find this gap' } })
+    fireEvent.click(screen.getByRole('button', { name: 'study.tutorDock.askTutor' }))
     await waitFor(() => expect(workspaceInvoke).toHaveBeenCalledWith(expect.objectContaining({
       input: expect.objectContaining({
         network_allowed: true,
@@ -145,12 +145,12 @@ describe('StudyPlanWorkspace', () => {
 
     workspaceState.networkAllowed = false
     render(<StudyPlanWorkspace planId="study_plan:one" />)
-    fireEvent.change(screen.getByRole('combobox', { name: 'Tutor mode' }), { target: { value: 'research_gap' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Request web research permission' }))
-    fireEvent.change(screen.getByRole('textbox', { name: 'Tutor prompt' }), { target: { value: 'Do not dispatch' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Ask tutor' }))
+    fireEvent.change(screen.getByRole('combobox', { name: 'study.tutorDock.tutorMode' }), { target: { value: 'research_gap' } })
+    fireEvent.click(screen.getByRole('button', { name: 'study.tutorDock.requestWebPermission' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'study.tutorDock.prompt.aria' }), { target: { value: 'Do not dispatch' } })
+    fireEvent.click(screen.getByRole('button', { name: 'study.tutorDock.askTutor' }))
     expect(workspaceInvoke).toHaveBeenCalledTimes(1)
-    expect(screen.getByText('A plan-approved HTTPS scope is required before web research can run.')).toBeInTheDocument()
+    expect(screen.getByText('study.tutorDock.status.scopeRequired')).toBeInTheDocument()
   })
 
   it.each(['draft', 'analyzing_sources', 'syllabus_proposed', 'editing', 'archived'] as const)(
@@ -162,9 +162,9 @@ describe('StudyPlanWorkspace', () => {
 
       render(<StudyPlanWorkspace planId="study_plan:one" />)
 
-      expect(screen.getByRole('status')).toHaveTextContent(/Tutor unavailable|approved syllabus/i)
-      expect(screen.queryByRole('combobox', { name: 'Tutor mode' })).not.toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: 'Ask tutor' })).not.toBeInTheDocument()
+      expect(screen.getByRole('status')).toHaveTextContent('study.studyPlanWorkspace.learnUnavailableDescription')
+      expect(screen.queryByRole('combobox', { name: 'study.tutorDock.tutorMode' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'study.tutorDock.askTutor' })).not.toBeInTheDocument()
       expect(workspaceInvoke).not.toHaveBeenCalled()
     },
   )
@@ -173,8 +173,8 @@ describe('StudyPlanWorkspace', () => {
     workspaceState.activeTab = 'progress'
     render(<StudyPlanWorkspace planId="study_plan:one" />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Accept Add a short practice block' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    fireEvent.click(screen.getByRole('button', { name: 'study.studyProgressPanel.acceptProposal' }))
+    fireEvent.click(screen.getByRole('button', { name: 'common.confirm' }))
     await waitFor(() => expect(progressDecision).toHaveBeenCalledWith({
       planId: 'study_plan:one',
       input: expect.objectContaining({

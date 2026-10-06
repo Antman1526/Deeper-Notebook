@@ -142,6 +142,7 @@ async function fetchConfig(): Promise<AppConfig> {
         hasUpdate: data.hasUpdate || false,
         dbStatus: data.dbStatus, // Can be undefined for old backends
         sourceUploadMaxBytes: data.sourceUploadMaxBytes ?? null,
+        dataPath: data.dataPath ?? null,
       }
       if (isDev) console.log('✅ [Config] Successfully loaded API config:', config)
       return config

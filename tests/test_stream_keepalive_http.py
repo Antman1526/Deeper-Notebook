@@ -20,7 +20,6 @@ from api.routers import chat as chat_router
 from api.routers import search as search_router
 from api.routers import source_chat as source_chat_router
 
-
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------

@@ -1,7 +1,10 @@
 import Link from 'next/link'
 import * as React from 'react'
 
+import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatDate } from '@/lib/utils/date-locale'
 import { RuntimeStatusPanel } from '@/components/deeper-notebook/runtime/RuntimeStatusPanel'
+import { CommandPaletteKey } from '@/components/deeper-notebook/shell/CommandPaletteKey'
 
 import type { IntelligenceHorizonProps } from '../horizon/IntelligenceHorizon'
 import { StatePanel } from './StatePanel'
@@ -9,20 +12,30 @@ import { VisualCard } from './VisualCard'
 import { VisualCardGrid } from './VisualCardGrid'
 import { WorkspaceHero } from './WorkspaceHero'
 import { WorkspacePage } from './WorkspacePage'
+import { RichText } from '@/components/common/RichText'
+import { notebookCoverTone } from '@/lib/notebook-cover'
 
 /** The V2 home consumes the exact presentation contract of IntelligenceHorizon. */
 export type WorkspaceHomeProps = IntelligenceHorizonProps
 
-function relativeTime(iso?: string): string {
+type TranslateFn = ReturnType<typeof useTranslation>['t']
+
+function relativeTime(t: TranslateFn, language: string, iso?: string): string {
   if (!iso) return '—'
   const then = new Date(iso).getTime()
   if (Number.isNaN(then)) return iso
   const diff = Date.now() - then
-  if (diff < 60_000) return 'just now'
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} min ago`
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} hr ago`
-  if (diff < 7 * 86_400_000) return `${Math.floor(diff / 86_400_000)} d ago`
-  return new Date(iso).toLocaleDateString()
+  if (diff < 60_000) return t('workspace.workspaceHome.relativeJustNow')
+  if (diff < 3_600_000) {
+    return t('workspace.workspaceHome.relativeMinutes', { count: Math.floor(diff / 60_000) })
+  }
+  if (diff < 86_400_000) {
+    return t('workspace.workspaceHome.relativeHours', { count: Math.floor(diff / 3_600_000) })
+  }
+  if (diff < 7 * 86_400_000) {
+    return t('workspace.workspaceHome.relativeDays', { count: Math.floor(diff / 86_400_000) })
+  }
+  return formatDate(iso, language)
 }
 
 function actionLinkHandler(callback: () => void) {
@@ -94,21 +107,137 @@ export function WorkspaceHome({
   runtimeSnapshotLoading = false,
   onRefreshRuntime,
 }: WorkspaceHomeProps) {
+  const { t, language } = useTranslation()
   const hasRecentNotebooks = recentNotebooks.length > 0
 
   return (
     <WorkspacePage
       title="Deeper Notebook"
-      eyebrow="Intelligence workspace"
-      description="Think further with every source in one quiet, local-first desk."
+      eyebrow={t('workspace.workspaceHome.eyebrow')}
+      description={t('workspace.workspaceHome.description')}
+      // v0.8.130 — Phase 3a: scopes the section spacing (workspace.css) to the home.
+      className="dn-workspace-home"
       data-testid="visual-system-v2-home"
       data-dn-visual-system="v2"
     >
       <WorkspaceHero
-        eyebrow="Working desk"
-        title="Continue the question that matters today."
-        description="Your recent folios, safe runtime signals, and next actions stay in one clear spread—ready when you are."
+        eyebrow={t('workspace.workspaceHome.heroEyebrow')}
+        title={t('workspace.workspaceHome.heroTitle')}
+        description={t('workspace.workspaceHome.heroDescription')}
       />
+
+      {/* v0.8.130 — your books first: the recent notebooks are a shelf under the hero, the
+          ways to start follow, and the runtime readout (an instrument, not a greeting)
+          closes the page. */}
+      <section aria-labelledby="workspace-recent-title" className="dn-workspace-section">
+        <div className="dn-workspace-section-heading">
+          <div>
+            <p className="dn-workspace-page-eyebrow">{t('workspace.workspaceHome.libraryIndex')}</p>
+            <h2 id="workspace-recent-title" className="dn-workspace-section-title">
+              {t('workspace.workspaceHome.recentFolios')}
+            </h2>
+            <p className="dn-workspace-section-description">{t('workspace.workspaceHome.recentFoliosHint')}</p>
+          </div>
+          <Link href="/notebooks" className="dn-workspace-secondary-link">
+            {t('workspace.workspaceHome.allNotebooks')}
+          </Link>
+        </div>
+
+        {notebooksLoading ? (
+          <StatePanel
+            kind="loading"
+            title={t('workspace.workspaceHome.loadingTitle')}
+            description={t('workspace.workspaceHome.loadingDescription')}
+          />
+        ) : !hasRecentNotebooks ? (
+          <StatePanel
+            kind="empty"
+            title={t('workspace.workspaceHome.emptyTitle')}
+            description={t('workspace.workspaceHome.emptyDescription')}
+            action={
+              <button
+                type="button"
+                onClick={onOpenStudio}
+                className="dn-visual-card-action"
+              >
+                {t('workspace.workspaceHome.openStudio')}
+              </button>
+            }
+          />
+        ) : (
+          <div className="dn-workspace-notebook-list" data-dn-home-shelf="">
+            {recentNotebooks.map((notebook) => (
+              <Link
+                key={notebook.id}
+                href={notebook.href ?? `/notebooks/${encodeURIComponent(notebook.id)}`}
+                aria-label={notebook.name}
+                className="dn-workspace-notebook-link"
+                data-dn-cover={notebookCoverTone(notebook.id)}
+              >
+                <span className="dn-workspace-notebook-name">{notebook.name}</span>
+                <span className="dn-workspace-notebook-time">
+                  {relativeTime(t, language, notebook.updated ?? notebook.created)}
+                </span>
+              </Link>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section aria-labelledby="workspace-actions-title" className="dn-workspace-section">
+        <div className="dn-workspace-section-heading">
+          <div>
+            <p className="dn-workspace-page-eyebrow">{t('workspace.workspaceHome.todayEyebrow')}</p>
+            <h2 id="workspace-actions-title" className="dn-workspace-section-title">
+              {t('workspace.workspaceHome.todayTitle')}
+            </h2>
+            <p className="dn-workspace-section-description">
+              {t('workspace.workspaceHome.todayDescription')}
+            </p>
+          </div>
+        </div>
+
+        <VisualCardGrid minimum="compact" role="group" aria-label={t('workspace.workspaceHome.actionsAriaLabel')}>
+          <VisualCard
+            title={t('workspace.workspaceHome.studio')}
+            description={t('workspace.workspaceHome.studioHint')}
+          >
+            <ActionLink
+              href="/studio"
+              label={t('workspace.workspaceHome.studio')}
+              onNavigate={onOpenStudio}
+            />
+          </VisualCard>
+          <VisualCard
+            title={t('workspace.workspaceHome.newNotebook')}
+            description={t('workspace.workspaceHome.newNotebookHint')}
+          >
+            <ActionButton
+              label={t('workspace.workspaceHome.newNotebook')}
+              onActivate={onCreateNotebook}
+            />
+          </VisualCard>
+          <VisualCard
+            title={t('workspace.workspaceHome.podcast')}
+            description={t('workspace.workspaceHome.podcastHint')}
+          >
+            <ActionButton
+              label={t('workspace.workspaceHome.podcast')}
+              onActivate={onCreatePodcast}
+            />
+          </VisualCard>
+          <VisualCard
+            title={t('workspace.workspaceHome.ask')}
+            description={t('workspace.workspaceHome.askHint')}
+          >
+            <ActionLink
+              href="/search"
+              label={t('workspace.workspaceHome.ask')}
+              onNavigate={onAsk}
+            />
+          </VisualCard>
+        </VisualCardGrid>
+      </section>
 
       <RuntimeStatusPanel
         snapshot={runtimeSnapshot}
@@ -117,120 +246,11 @@ export function WorkspaceHome({
         compact
       />
 
-      <section aria-labelledby="workspace-actions-title" className="dn-workspace-section">
-        <div className="dn-workspace-section-heading">
-          <div>
-            <p className="dn-workspace-page-eyebrow">Today</p>
-            <h2 id="workspace-actions-title" className="dn-workspace-section-title">
-              Open a working spread
-            </h2>
-            <p className="dn-workspace-section-description">
-              Start with a source, a notebook, a grounded question, or an explicitly reviewed podcast brief.
-            </p>
-          </div>
-        </div>
-
-        <VisualCardGrid minimum="compact" aria-label="Workspace actions">
-          <VisualCard
-            title="Studio"
-            description="Drop files into a notebook or podcast brief."
-          >
-            <ActionLink
-              href="/studio"
-              label="Studio"
-              onNavigate={onOpenStudio}
-            />
-          </VisualCard>
-          <VisualCard
-            title="New Notebook"
-            description="Start an empty, local canvas."
-          >
-            <ActionButton
-              label="New Notebook"
-              onActivate={onCreateNotebook}
-            />
-          </VisualCard>
-          <VisualCard
-            title="Podcast"
-            description="Generate a reviewed listening brief from sources."
-          >
-            <ActionButton
-              label="Podcast"
-              onActivate={onCreatePodcast}
-            />
-          </VisualCard>
-          <VisualCard
-            title="Ask"
-            description="Search and synthesize from your evidence."
-          >
-            <ActionLink
-              href="/search"
-              label="Ask"
-              onNavigate={onAsk}
-            />
-          </VisualCard>
-        </VisualCardGrid>
-      </section>
-
-      <section aria-labelledby="workspace-recent-title" className="dn-workspace-section">
-        <div className="dn-workspace-section-heading">
-          <div>
-            <p className="dn-workspace-page-eyebrow">Library index</p>
-            <h2 id="workspace-recent-title" className="dn-workspace-section-title">
-              Recent folios
-            </h2>
-            <p className="dn-workspace-section-description">Pick up where you left off.</p>
-          </div>
-          <Link href="/notebooks" className="dn-workspace-secondary-link">
-            All notebooks
-          </Link>
-        </div>
-
-        {notebooksLoading ? (
-          <StatePanel
-            kind="loading"
-            title="Loading your notebook desk"
-            description="Checking local notebooks and runtime readiness. Your workspace stays untouched while it loads."
-          />
-        ) : !hasRecentNotebooks ? (
-          <StatePanel
-            kind="empty"
-            title="Your notebook is ready to begin"
-            description="No notebooks yet. Drop a PDF into Studio to start your first."
-            action={
-              <button
-                type="button"
-                onClick={onOpenStudio}
-                className="dn-visual-card-action"
-              >
-                Open Studio
-              </button>
-            }
-          />
-        ) : (
-          <div className="dn-workspace-notebook-list">
-            {recentNotebooks.map((notebook) => (
-              <Link
-                key={notebook.id}
-                href={notebook.href ?? `/notebooks/${encodeURIComponent(notebook.id)}`}
-                aria-label={notebook.name}
-                className="dn-workspace-notebook-link"
-              >
-                <span className="dn-workspace-notebook-name">{notebook.name}</span>
-                <span className="dn-workspace-notebook-time">
-                  {relativeTime(notebook.updated ?? notebook.created)}
-                </span>
-              </Link>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <aside aria-label="Notebook shortcuts and data path" className="dn-workspace-note">
+      <aside aria-label={t('workspace.workspaceHome.shortcutsAriaLabel')} className="dn-workspace-note">
         <span>
-          Tip: hit <kbd>⌘K</kbd> / <kbd>Ctrl+K</kbd> from anywhere to jump to a notebook, source, or action.
+          <RichText text={t('workspace.workspaceHome.tip')} components={{ key: () => <CommandPaletteKey /> }} />
         </span>
-        <span>All data lives in <code>{dataPath}</code>.</span>
+        <span><RichText text={t('workspace.workspaceHome.data')} components={{ path: () => <code>{dataPath}</code> }} /></span>
       </aside>
     </WorkspacePage>
   )

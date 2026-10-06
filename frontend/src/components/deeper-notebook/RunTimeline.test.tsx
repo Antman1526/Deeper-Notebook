@@ -1,5 +1,5 @@
 import React from 'react'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -8,7 +8,14 @@ import type { NotebookChatMessage } from '@/lib/types/api'
 
 vi.mock('@/lib/hooks/use-translation', () => ({
   useTranslation: () => ({
-    t: (_key: string, opts?: { defaultValue?: string }) => opts?.defaultValue ?? _key,
+    // Returns the key; interpolation values are appended so assertions can still
+    // see which data reached each message.
+    t: (_key: string, opts?: Record<string, unknown>) =>
+      opts?.defaultValue
+        ? String(opts.defaultValue)
+        : opts
+          ? `${_key} ${JSON.stringify(opts)}`
+          : _key,
   }),
 }))
 
@@ -64,16 +71,21 @@ describe('RunTimeline', () => {
       },
     )
 
-    expect(screen.getByText('Run timeline')).toBeInTheDocument()
-    expect(screen.getByText('Context built')).toBeInTheDocument()
-    expect(screen.getByText(/2 insight sources/)).toBeInTheDocument()
-    expect(screen.getByText('Model route')).toBeInTheDocument()
+    // v0.8.130 — Phase 2c: the facts sit behind a collapsed "Run details" disclosure.
+    const toggle = screen.getByRole('button', { name: 'workspace.runTimeline.runDetails' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('workspace.runTimeline.contextBuilt')).not.toBeVisible()
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText('workspace.runTimeline.contextBuilt')).toBeVisible()
+    expect(screen.getByText(/workspace\.runTimeline\.insightSourceOther \{"count":2\}/)).toBeInTheDocument()
+    expect(screen.getByText('workspace.runTimeline.modelRoute')).toBeInTheDocument()
     expect(screen.getByText(/cloud/)).toBeInTheDocument()
-    expect(screen.getByText('Privacy gate')).toBeInTheDocument()
+    expect(screen.getByText('workspace.runTimeline.privacyGate')).toBeInTheDocument()
     expect(screen.getByText(/email/)).toBeInTheDocument()
-    expect(screen.getByText('MCP tools')).toBeInTheDocument()
-    expect(screen.getByText(/1 call/)).toBeInTheDocument()
-    expect(screen.getByText('Agent state')).toBeInTheDocument()
+    expect(screen.getByText('workspace.runTimeline.mcpTools')).toBeInTheDocument()
+    expect(screen.getByText(/workspace\.runTimeline\.callOne \{"count":1\}/)).toBeInTheDocument()
+    expect(screen.getByText('workspace.runTimeline.agentState')).toBeInTheDocument()
     expect(screen.getByText(/clarify/)).toBeInTheDocument()
   })
 
@@ -87,7 +99,23 @@ describe('RunTimeline', () => {
       />,
     )
 
-    expect(screen.getByText('Run timeline')).toBeInTheDocument()
-    expect(screen.getByText(/Streaming response/)).toBeInTheDocument()
+    // v0.8.130 — Phase 2c: one status line while streaming, not the five-card panel.
+    expect(screen.getByRole('status')).toHaveTextContent(/workspace\.runTimeline\.streaming/)
+    expect(screen.queryByText('workspace.runTimeline.contextBuilt')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'workspace.runTimeline.runDetails' })).not.toBeInTheDocument()
+  })
+
+  // v0.8.130 — the "Run timeline · idle · Ready" panel sat above every empty chat.
+  it('renders nothing before the first run', () => {
+    const { container } = renderWithClient(
+      <RunTimeline
+        messages={[]}
+        isStreaming={false}
+        disabledMcpServers={[]}
+        contextStats={{ sourcesInsights: 0, sourcesFull: 0, notesCount: 0 }}
+      />,
+    )
+
+    expect(container).toBeEmptyDOMElement()
   })
 })

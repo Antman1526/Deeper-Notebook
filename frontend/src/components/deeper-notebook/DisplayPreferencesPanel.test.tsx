@@ -21,25 +21,25 @@ describe('DisplayPreferencesPanel', () => {
   it('labels every control and exposes keyboard-operable native selects', () => {
     render(<DisplayPreferencesPanel />)
 
-    for (const label of ['Wallpaper', 'Motion', 'Transparency']) {
+    for (const label of ['workspace.displayPreferencesPanel.wallpaper', 'workspace.displayPreferencesPanel.motion', 'workspace.displayPreferencesPanel.transparency']) {
       const control = screen.getByRole('combobox', { name: label })
       expect(control).toBeEnabled()
       expect(control.tagName).toBe('SELECT')
     }
 
-    expect(screen.getByRole('heading', { name: 'Display preferences' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'workspace.displayPreferencesPanel.heading' })).toBeVisible()
   })
 
   it('updates root display attributes and persists without changing the selected theme', () => {
     render(<DisplayPreferencesPanel />)
 
-    fireEvent.change(screen.getByRole('combobox', { name: 'Wallpaper' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'workspace.displayPreferencesPanel.wallpaper' }), {
       target: { value: 'off' },
     })
-    fireEvent.change(screen.getByRole('combobox', { name: 'Motion' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'workspace.displayPreferencesPanel.motion' }), {
       target: { value: 'reduced' },
     })
-    fireEvent.change(screen.getByRole('combobox', { name: 'Transparency' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'workspace.displayPreferencesPanel.transparency' }), {
       target: { value: 'solid' },
     })
 
@@ -56,7 +56,7 @@ describe('DisplayPreferencesPanel', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
     render(<DisplayPreferencesPanel />)
 
-    fireEvent.change(screen.getByRole('combobox', { name: 'Wallpaper' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'workspace.displayPreferencesPanel.wallpaper' }), {
       target: { value: 'static' },
     })
 
@@ -76,9 +76,9 @@ describe('DisplayPreferencesPanel', () => {
 
     render(<DisplayPreferencesPanel />)
 
-    expect(screen.getByRole('combobox', { name: 'Wallpaper' })).toHaveValue('static')
-    expect(screen.getByRole('combobox', { name: 'Motion' })).toHaveValue('full')
-    expect(screen.getByRole('combobox', { name: 'Transparency' })).toHaveValue('solid')
+    expect(screen.getByRole('combobox', { name: 'workspace.displayPreferencesPanel.wallpaper' })).toHaveValue('static')
+    expect(screen.getByRole('combobox', { name: 'workspace.displayPreferencesPanel.motion' })).toHaveValue('full')
+    expect(screen.getByRole('combobox', { name: 'workspace.displayPreferencesPanel.transparency' })).toHaveValue('solid')
     expect(document.documentElement.dataset.dnWallpaper).toBe('static')
     expect(document.documentElement.dataset.dnMotion).toBe('full')
     expect(document.documentElement.dataset.dnTransparency).toBe('solid')
@@ -90,7 +90,7 @@ describe('DisplayPreferencesPanel', () => {
 
     try {
       render(<DisplayPreferencesPanel />)
-      fireEvent.change(screen.getByRole('combobox', { name: 'Motion' }), {
+      fireEvent.change(screen.getByRole('combobox', { name: 'workspace.displayPreferencesPanel.motion' }), {
         target: { value: 'full' },
       })
 
@@ -104,11 +104,11 @@ describe('DisplayPreferencesPanel', () => {
   it('exposes focus mode in display preferences with explicit pressed state', () => {
     render(<DisplayPreferencesPanel />)
 
-    const focus = screen.getByRole('button', { name: 'Enter Focus mode' })
+    const focus = screen.getByRole('button', { name: 'workspace.displayPreferencesPanel.enterFocusMode' })
     expect(focus).toHaveAttribute('aria-pressed', 'false')
     fireEvent.click(focus)
 
-    expect(screen.getByRole('button', { name: 'Exit Focus mode' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'workspace.displayPreferencesPanel.exitFocusMode' })).toHaveAttribute('aria-pressed', 'true')
     expect(JSON.parse(localStorage.getItem('dn-display-preferences-v1') ?? '{}')).toMatchObject({
       state: { focusMode: true },
     })
@@ -120,7 +120,7 @@ describe('DisplayPreferencesPanel', () => {
 describe('density control', () => {
   it('offers Comfortable and Compact and stamps data-dn-density', () => {
     render(<DisplayPreferencesPanel />)
-    const select = screen.getByLabelText('Density') as HTMLSelectElement
+    const select = screen.getByLabelText('workspace.displayPreferencesPanel.density') as HTMLSelectElement
     expect(select.value).toBe('comfortable')
     fireEvent.change(select, { target: { value: 'compact' } })
     expect(document.documentElement.dataset.dnDensity).toBe('compact')

@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { studyVoiceApi, type StudyVoiceCapability } from '@/lib/api/study-voice'
+import { useTranslation } from '@/lib/hooks/use-translation'
 
 export interface StudyVoiceTutorProps {
   planId: string
@@ -17,18 +18,20 @@ type VoiceState = 'idle' | 'recording' | 'transcribing' | 'synthesizing'
 
 const RECORDING_TYPES = ['audio/webm', 'audio/mp4', 'audio/ogg']
 
+/** Returns an i18n key; the error state stores the key and the caller translates it where it renders. */
 function safeVoiceError(error: unknown, fallback: string): string {
   const code = (error as { response?: { data?: { detail?: { code?: string } } } })?.response?.data?.detail?.code
-  if (code === 'local_speech_unavailable') return 'Local speech is unavailable.'
-  if (code === 'audio_too_large') return 'The recording is too large.'
-  if (code === 'audio_duration_too_long') return 'The recording is too long.'
-  if (code === 'voice_text_too_large') return 'This tutor response is too long for local speech.'
-  if (code === 'voice_timeout') return 'Local speech did not finish. Try again.'
-  if (error instanceof DOMException && error.name === 'AbortError') return 'Voice request cancelled.'
+  if (code === 'local_speech_unavailable') return 'study.studyVoiceTutor.errors.localSpeechUnavailable'
+  if (code === 'audio_too_large') return 'study.studyVoiceTutor.errors.audioTooLarge'
+  if (code === 'audio_duration_too_long') return 'study.studyVoiceTutor.errors.audioTooLong'
+  if (code === 'voice_text_too_large') return 'study.studyVoiceTutor.errors.voiceTextTooLarge'
+  if (code === 'voice_timeout') return 'study.studyVoiceTutor.errors.voiceTimeout'
+  if (error instanceof DOMException && error.name === 'AbortError') return 'study.studyVoiceTutor.errors.cancelled'
   return fallback
 }
 
 export function StudyVoiceTutor({ planId, capability, assistantText = null, onTranscript }: StudyVoiceTutorProps) {
+  const { t } = useTranslation()
   const [state, setState] = useState<VoiceState>('idle')
   const [transcript, setTranscript] = useState<string | null>(null)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
@@ -95,7 +98,7 @@ export function StudyVoiceTutor({ planId, capability, assistantText = null, onTr
     try {
       if (recorderRef.current?.state === 'recording') recorderRef.current.stop()
     } catch {
-      setError('The recording could not be stopped.')
+      setError('study.studyVoiceTutor.errors.stopFailed')
       releaseStream()
       setState('idle')
     }
@@ -106,7 +109,7 @@ export function StudyVoiceTutor({ planId, capability, assistantText = null, onTr
     setError(null)
     const operationId = beginOperation()
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      setError('Microphone access is unavailable.')
+      setError('study.studyVoiceTutor.errors.micUnavailable')
       return
     }
     try {
@@ -117,7 +120,7 @@ export function StudyVoiceTutor({ planId, capability, assistantText = null, onTr
       }
       if (typeof MediaRecorder === 'undefined') {
         stream.getTracks().forEach((track) => track.stop())
-        setError('Recording is unavailable in this browser.')
+        setError('study.studyVoiceTutor.errors.recordingUnavailable')
         return
       }
       const mimeType = RECORDING_TYPES.find((type) => MediaRecorder.isTypeSupported?.(type))
@@ -131,7 +134,7 @@ export function StudyVoiceTutor({ planId, capability, assistantText = null, onTr
       }
       recorder.onerror = () => {
         if (isCurrentOperation(operationId)) {
-          setError('The recording could not be completed.')
+          setError('study.studyVoiceTutor.errors.recordingFailed')
           releaseStream()
           setState('idle')
         }
@@ -159,7 +162,7 @@ export function StudyVoiceTutor({ planId, capability, assistantText = null, onTr
             setState('idle')
           })
           .catch((requestError: unknown) => {
-            if (isCurrentOperation(operationId)) setError(safeVoiceError(requestError, 'Local transcription was unavailable.'))
+            if (isCurrentOperation(operationId)) setError(safeVoiceError(requestError, 'study.studyVoiceTutor.errors.transcriptionFailed'))
             if (isCurrentOperation(operationId)) setState('idle')
           })
           .finally(() => {
@@ -173,9 +176,9 @@ export function StudyVoiceTutor({ planId, capability, assistantText = null, onTr
         releaseStream()
         setState('idle')
         if (requestError instanceof DOMException && requestError.name === 'NotAllowedError') {
-          setError('Microphone access was denied.')
+          setError('study.studyVoiceTutor.errors.micDenied')
         } else {
-          setError('Microphone access could not be started.')
+          setError('study.studyVoiceTutor.errors.micStartFailed')
         }
       }
     }
@@ -196,7 +199,7 @@ export function StudyVoiceTutor({ planId, capability, assistantText = null, onTr
       audioUrlRef.current = url
       setAudioUrl(url)
     } catch (requestError: unknown) {
-      if (isCurrentOperation(operationId)) setError(safeVoiceError(requestError, 'Local speech synthesis was unavailable.'))
+      if (isCurrentOperation(operationId)) setError(safeVoiceError(requestError, 'study.studyVoiceTutor.errors.synthesisFailed'))
     } finally {
       if (controllerRef.current === controller) controllerRef.current = null
       if (isCurrentOperation(operationId)) setState('idle')
@@ -206,23 +209,23 @@ export function StudyVoiceTutor({ planId, capability, assistantText = null, onTr
   return (
     <Card aria-labelledby="study-voice-tutor-heading">
       <CardHeader>
-        <CardTitle id="study-voice-tutor-heading" className="text-base">Spoken tutoring (optional)</CardTitle>
-        <CardDescription>Use local speech as an enhancement; the text tutor remains available.</CardDescription>
+        <CardTitle id="study-voice-tutor-heading" className="text-base">{t('study.studyVoiceTutor.title')}</CardTitle>
+        <CardDescription>{t('study.studyVoiceTutor.description')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        {capability.stt !== 'ready' ? <p className="text-sm text-muted-foreground">Local speech recognition is unavailable.</p> : null}
-        {capability.tts !== 'ready' ? <p className="text-sm text-muted-foreground">Local speech synthesis is unavailable.</p> : null}
+        {capability.stt !== 'ready' ? <p className="text-sm text-muted-foreground">{t('study.studyVoiceTutor.sttUnavailable')}</p> : null}
+        {capability.tts !== 'ready' ? <p className="text-sm text-muted-foreground">{t('study.studyVoiceTutor.ttsUnavailable')}</p> : null}
         <div className="flex flex-wrap gap-2">
           <Button type="button" onClick={state === 'recording' ? stopRecording : () => void startRecording()} disabled={capability.stt !== 'ready' || (state !== 'idle' && state !== 'recording')}>
-            {state === 'recording' ? 'Stop recording' : state === 'transcribing' ? 'Transcribing…' : 'Record question'}
+            {state === 'recording' ? t('study.studyVoiceTutor.stopRecording') : state === 'transcribing' ? t('study.studyVoiceTutor.transcribing') : t('study.studyVoiceTutor.recordQuestion')}
           </Button>
-          {state !== 'idle' ? <Button type="button" variant="outline" onClick={cancel}>Cancel voice</Button> : null}
-          {assistantText?.trim() && capability.tts === 'ready' ? <Button type="button" variant="outline" onClick={() => void synthesize()} disabled={state !== 'idle'}>{state === 'synthesizing' ? 'Preparing audio…' : 'Play tutor response'}</Button> : null}
+          {state !== 'idle' ? <Button type="button" variant="outline" onClick={cancel}>{t('study.studyVoiceTutor.cancelVoice')}</Button> : null}
+          {assistantText?.trim() && capability.tts === 'ready' ? <Button type="button" variant="outline" onClick={() => void synthesize()} disabled={state !== 'idle'}>{state === 'synthesizing' ? t('study.studyVoiceTutor.preparingAudio') : t('study.studyVoiceTutor.playResponse')}</Button> : null}
         </div>
-        {state === 'transcribing' ? <p role="status" className="text-sm text-muted-foreground">Transcribing locally…</p> : null}
-        {transcript ? <p className="whitespace-pre-wrap rounded-md border bg-muted/30 p-3 text-sm" aria-label="Spoken question">{transcript}</p> : null}
-        {audioUrl ? <audio controls src={audioUrl} onEnded={revokeAudioUrl} aria-label="Tutor response audio" /> : null}
-        {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+        {state === 'transcribing' ? <p role="status" className="text-sm text-muted-foreground">{t('study.studyVoiceTutor.transcribingLocally')}</p> : null}
+        {transcript ? <p className="whitespace-pre-wrap rounded-md border bg-muted/30 p-3 text-sm" aria-label={t('study.studyVoiceTutor.spokenQuestion')}>{transcript}</p> : null}
+        {audioUrl ? <audio controls src={audioUrl} onEnded={revokeAudioUrl} aria-label={t('study.studyVoiceTutor.responseAudio')} /> : null}
+        {error ? <p role="alert" className="text-sm text-destructive">{t(error)}</p> : null}
       </CardContent>
     </Card>
   )

@@ -10,7 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, StickyNote, Bot, User, MoreVertical, Trash2, Download, ListChecks, ChevronDown } from 'lucide-react'
+import { Plus, StickyNote, Bot, User, MoreVertical, Trash2, Download, ListChecks } from 'lucide-react'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { EmptyState } from '@/components/common/EmptyState'
 import { Badge } from '@/components/ui/badge'
@@ -89,45 +89,53 @@ export function NotesColumn({
         collapsedIcon={StickyNote}
         collapsedLabel={notesLabel}
       >
-        <Card className="h-full flex flex-col flex-1 overflow-hidden">
-          <CardHeader className="pb-3 flex-shrink-0">
-            <div className="flex items-center justify-between gap-2">
-              <CardTitle className="text-lg">{notesLabel}</CardTitle>
-              <div className="flex items-center gap-2">
-                {onBulkContextModeChange && notes && notes.length > 0 && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm" title={t('sources.bulkContext')}>
-                        <ListChecks className="h-4 w-4" />
-                        <ChevronDown className="h-4 w-4 ml-1" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => onBulkContextModeChange('include')}>
-                        {t('sources.includeAllInContext')}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => onBulkContextModeChange('exclude')}>
-                        {t('sources.excludeAllFromContext')}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setEditingNote(null)
-                    setShowAddDialog(true)
-                  }}
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  {t('common.writeNote')}
-                </Button>
-                {collapseButton}
-              </div>
+        <Card data-dn-column="" className="h-full flex flex-col flex-1 overflow-hidden">
+          <CardHeader className="flex-shrink-0">
+            {/* v0.8.130 — Phase 2b: the header holds the title and collapse only; with the
+                actions beside it the title truncated to "N…" at 1280px. */}
+            <div className="flex items-center gap-1">
+              {/* v0.8.130 — Phase 4b: the column title is the h2 its cards sit under. */}
+              <CardTitle role="heading" aria-level={2} className="min-w-0 flex-1 truncate text-base font-medium">{notesLabel}</CardTitle>
+              {collapseButton}
             </div>
           </CardHeader>
 
-          <CardContent className="flex-1 overflow-y-auto min-h-0">
+          {/* v0.8.130 — Phase 2b: a full-width Write note row, bulk context beside it. */}
+          <div data-dn-column-actions="" className="flex flex-none items-center gap-2 px-4 pt-3">
+            <Button
+              variant="outline"
+              className="min-w-0 flex-1 rounded-md"
+              aria-label={t('common.addNote')}
+              onClick={() => {
+                setEditingNote(null)
+                setShowAddDialog(true)
+              }}
+            >
+              <Plus className="h-4 w-4" />
+              {/* v0.8.130 — visible "Add"; "Write Note" truncated at 1280px. */}
+              <span className="truncate">{t('common.add')}</span>
+            </Button>
+            {onBulkContextModeChange && notes && notes.length > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="size-8" aria-label={t('sources.bulkContext')} title={t('sources.bulkContext')}>
+                    <ListChecks className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => onBulkContextModeChange('include')}>
+                    {t('sources.includeAllInContext')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onBulkContextModeChange('exclude')}>
+                    {t('sources.excludeAllFromContext')}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
+
+          {/* v0.8.130 — notebook layer: the Notes body is ruled paper with a margin rule. */}
+          <CardContent data-dn-ruled="" className="flex-1 overflow-y-auto min-h-0">
             {isLoading ? (
               <div className="flex items-center justify-center py-8">
                 <LoadingSpinner />
@@ -141,9 +149,10 @@ export function NotesColumn({
             ) : (
               <div className="space-y-3">
                 {notes.map((note) => (
+                  // v0.8.130 — narrow transition, no press-scale (UI audit Phase 1)
                   <div
                     key={note.id}
-                    className="group relative cursor-pointer rounded-xl border border-border/50 bg-card/95 p-3.5 transition-all duration-200 ease-out ring-1 ring-border/30 hover:ring-primary/40 hover:border-border/80 hover:shadow-md active:scale-[0.99] shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)] dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.03)]"
+                    className="group relative cursor-pointer rounded-xl border bg-card p-3.5 transition-[border-color] duration-200 ease-out hover:border-foreground/25"
                     onClick={() => setEditingNote(note)}
                   >
                     <div className="flex items-start justify-between mb-2">
@@ -153,7 +162,7 @@ export function NotesColumn({
                         ) : (
                           <User className="h-4 w-4 text-muted-foreground" />
                         )}
-                        <Badge variant="secondary" className="text-[11px] rounded-full px-2 py-0.5">
+                        <Badge variant="secondary" className="text-xs rounded-full px-2 py-0.5">
                           {note.note_type === 'ai' ? t('common.aiGenerated') : t('common.human')}
                         </Badge>
                       </div>
@@ -183,7 +192,7 @@ export function NotesColumn({
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-7 w-7 p-0 rounded-full opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-all duration-150 hover:bg-muted/80"
+                              className="h-7 w-7 p-0 rounded-md opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-[opacity,background-color] duration-150 hover:bg-muted/80"
                               onClick={(e) => e.stopPropagation()}
                             >
                               <MoreVertical className="h-4 w-4" />
@@ -219,7 +228,7 @@ export function NotesColumn({
                     )}
 
                     {note.content && (
-                      <p className="text-sm text-muted-foreground line-clamp-3 break-words leading-relaxed">
+                      <p data-dn-reading="" className="text-sm text-muted-foreground line-clamp-3 break-words leading-relaxed">
                         {note.content}
                       </p>
                     )}

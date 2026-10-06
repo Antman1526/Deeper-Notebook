@@ -300,6 +300,11 @@ export async function installStudyWorkbenchFixture(
   await jsonRoute(page, ledger, '/api/system/db-repair-needed', { needs_repair: false })
   await jsonRoute(page, ledger, '/api/updates/check', { current: 'fixture', latest: null, update_available: false, skipped: false, skipped_version: null, html_url: null, published_at: null, enabled: false, last_check: null })
   await jsonRoute(page, ledger, '/api/system/network-status', { status: state === 'offline' ? 'offline' : 'online', forced_offline: state === 'offline', local_fallback_model: null, checked_epoch_ms: 0 })
+  // v0.8.130 — the runtime-features hook reads /api/features on every page; unmocked,
+  // the Next server answered 500 and the empty state's console check failed.
+  await jsonRoute(page, ledger, '/api/features', {
+    features: { evidenceStudio: true, visualRefresh: true, modelFleet: true, researchRuns: true, studyWorkbench: true, sourceVisuals: true },
+  })
   await jsonRoute(page, ledger, '/api/deeper-notebook/vaults', [])
   await jsonRoute(page, ledger, '/api/deeper-notebook/overlay/notes', [])
   await jsonRoute(page, ledger, '/api/settings', { configured: {}, source: {}, encryption_configured: true })

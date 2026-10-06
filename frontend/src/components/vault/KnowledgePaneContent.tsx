@@ -357,7 +357,7 @@ export function KnowledgePaneContent({
       <section
         ref={paneRef}
         role="region"
-        aria-label={`${t('knowledge.knowledgePane')} modes ${pane.id}`}
+        aria-label={t('knowledge.knowledgePaneContent.modesRegion', { id: pane.id })}
         className="flex min-h-full flex-col p-4 sm:p-6"
       >
         {activeTarget?.kind === 'ask' && (
@@ -449,7 +449,7 @@ export function KnowledgePaneContent({
     <section
       ref={paneRef}
       role="region"
-      aria-label={`${t('knowledge.knowledgePane')} modes ${pane.id}`}
+      aria-label={t('knowledge.knowledgePaneContent.modesRegion', { id: pane.id })}
       tabIndex={0}
       onKeyDown={(event) => {
         if (
@@ -475,7 +475,7 @@ export function KnowledgePaneContent({
     >
       <div
         role="toolbar"
-        aria-label={`${t('knowledge.knowledgePane')} ${pane.id}`}
+        aria-label={t('knowledge.knowledgePaneContent.paneToolbar', { id: pane.id })}
         className="flex w-fit flex-wrap items-center gap-1 rounded-md border bg-muted/40 p-1"
       >
         {modeOptions.map(({ mode, label, icon: Icon }) => (
@@ -534,8 +534,8 @@ export function KnowledgePaneContent({
                     }
                 : undefined}
               destination="quick"
-              label={focusedBlock ? 'Turn selected block into podcast' : 'Turn note into podcast'}
-              disabledReason={knowledgeDocumentId ? undefined : 'This note is not available in the unified knowledge engine.'}
+              label={focusedBlock ? t('knowledge.knowledgePaneContent.turnBlockIntoPodcast') : t('knowledge.knowledgePaneContent.turnNoteIntoPodcast')}
+              disabledReason={knowledgeDocumentId ? undefined : t('knowledge.knowledgePaneContent.noteUnavailable')}
               onOpen={openPodcastReview}
             />
           </div>

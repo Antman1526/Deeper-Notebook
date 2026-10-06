@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { TurnIntoPodcastAction } from '@/components/podcasts/TurnIntoPodcastAction'
 import type { NamedKnowledgeWorkspaceSummary } from '@/lib/api/knowledge-navigation'
+import { useTranslation } from '@/lib/hooks/use-translation'
 import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
 
 interface KnowledgeWorkspacesPanelProps {
@@ -41,6 +42,7 @@ export function KnowledgeWorkspacesPanel({
   onRefresh,
   commandIntent = null,
 }: KnowledgeWorkspacesPanelProps) {
+  const { t } = useTranslation()
   const openPodcastReview = usePodcastStudioStore((state) => state.open)
   const [editMode, setEditMode] = useState<EditMode>(null)
   const [editing, setEditing] = useState<NamedKnowledgeWorkspaceSummary | null>(null)
@@ -82,10 +84,10 @@ export function KnowledgeWorkspacesPanel({
       close(true)
     } catch (cause) {
       if (isConflict(cause)) {
-        setError('Workspace changed elsewhere. Refreshing its latest revision; review and try again.')
+        setError(t('knowledge.knowledgeWorkspacesPanel.conflict'))
         void onRefresh()
       } else {
-        setError('Workspace could not be saved. Check the knowledge engine and try again.')
+        setError(t('knowledge.knowledgeWorkspacesPanel.saveFailed'))
       }
     } finally {
       setPending(false)
@@ -98,10 +100,10 @@ export function KnowledgeWorkspacesPanel({
       await action()
     } catch (cause) {
       if (isConflict(cause)) {
-        setError('Workspace changed elsewhere. Refreshing its latest revision; review and try again.')
+        setError(t('knowledge.knowledgeWorkspacesPanel.conflict'))
         void onRefresh()
       } else {
-        setError('Workspace could not be updated. Check the knowledge engine and try again.')
+        setError(t('knowledge.knowledgeWorkspacesPanel.updateFailed'))
       }
     } finally {
       setPending(false)
@@ -109,30 +111,30 @@ export function KnowledgeWorkspacesPanel({
   }
 
   return (
-    <section aria-label="Saved workspaces" className="space-y-3">
+    <section aria-label={t('knowledge.knowledgeWorkspacesPanel.saved')} className="space-y-3">
       <div className="rounded-md border p-3">
-        <h2 className="font-medium">Current Session</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Autosaved locally in this knowledge workspace.</p>
-        <Button type="button" size="sm" className="mt-3" onClick={() => begin('save')}>Save Current As</Button>
+        <h2 className="font-medium">{t('knowledge.knowledgeWorkspacesPanel.currentSession')}</h2>
+        <p className="mt-1 text-sm text-muted-foreground">{t('knowledge.knowledgeWorkspacesPanel.autosaved')}</p>
+        <Button type="button" size="sm" className="mt-3" onClick={() => begin('save')}>{t('knowledge.knowledgeWorkspacesPanel.saveCurrentAs')}</Button>
       </div>
-      {selectingReplacement && <p role="status" className="text-sm text-muted-foreground">Select a saved workspace to replace with the current session.</p>}
+      {selectingReplacement && <p role="status" className="text-sm text-muted-foreground">{t('knowledge.knowledgeWorkspacesPanel.selectReplacement')}</p>}
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-      {editMode && <form aria-label="Workspace editor" className="rounded-md border p-3" onSubmit={(event) => { event.preventDefault(); void submit() }}>
-        <label className="block text-sm font-medium" htmlFor="workspace-name">Workspace name</label>
+      {editMode && <form aria-label={t('knowledge.knowledgeWorkspacesPanel.editor')} className="rounded-md border p-3" onSubmit={(event) => { event.preventDefault(); void submit() }}>
+        <label className="block text-sm font-medium" htmlFor="workspace-name">{t('knowledge.knowledgeWorkspacesPanel.nameLabel')}</label>
         <input id="workspace-name" value={name} onChange={(event) => setName(event.target.value)} autoFocus className="mt-1 h-9 w-full rounded-md border px-2" />
         <div className="mt-3 flex gap-2">
           <Button type="submit" size="sm" disabled={!name.trim() || pending}>
-            {editMode === 'rename' ? 'Save rename' : editMode === 'duplicate' ? 'Duplicate workspace' : 'Save workspace'}
+            {editMode === 'rename' ? t('knowledge.knowledgeWorkspacesPanel.saveRename') : editMode === 'duplicate' ? t('knowledge.knowledgeWorkspacesPanel.duplicateWorkspace') : t('knowledge.knowledgeWorkspacesPanel.saveWorkspace')}
           </Button>
-          <Button type="button" size="sm" variant="ghost" onClick={() => close()} disabled={pending}>Cancel</Button>
+          <Button type="button" size="sm" variant="ghost" onClick={() => close()} disabled={pending}>{t('common.cancel')}</Button>
         </div>
       </form>}
       <ul className="space-y-2">
         {workspaces.map((workspace) => <li key={workspace.id} className="rounded-md border p-3">
           <p className="font-medium">{workspace.name}</p>
-          <p className="text-xs text-muted-foreground">Revision {workspace.revision}</p>
+          <p className="text-xs text-muted-foreground">{t('knowledge.knowledgeWorkspacesPanel.revision', { revision: workspace.revision })}</p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button type="button" size="sm" onClick={() => void perform(() => onOpen(workspace))} disabled={pending}>Open {workspace.name}</Button>
+            <Button type="button" size="sm" onClick={() => void perform(() => onOpen(workspace))} disabled={pending}>{t('knowledge.knowledgeWorkspacesPanel.open', { name: workspace.name })}</Button>
             <TurnIntoPodcastAction
               selection={{
                 kind: 'knowledge_collection',
@@ -140,13 +142,13 @@ export function KnowledgeWorkspacesPanel({
                 collectionId: workspace.id,
               }}
               destination="quick"
-              disabledReason={pending ? 'Workspace action is still in progress.' : undefined}
+              disabledReason={pending ? t('knowledge.knowledgeWorkspacesPanel.actionInProgress') : undefined}
               onOpen={openPodcastReview}
             />
-            <Button type="button" size="sm" variant="outline" onClick={() => begin('rename', workspace)} disabled={pending}>Rename {workspace.name}</Button>
-            <Button type="button" size="sm" variant="outline" onClick={() => begin('duplicate', workspace)} disabled={pending}>Duplicate {workspace.name}</Button>
-            <Button type="button" size="sm" variant="outline" onClick={() => { setSelectingReplacement(false); void perform(() => onReplaceWithCurrent(workspace)) }} disabled={pending}>Replace With Current</Button>
-            <Button type="button" size="sm" variant="ghost" onClick={() => void perform(() => onDelete(workspace))} disabled={pending}>Delete {workspace.name}</Button>
+            <Button type="button" size="sm" variant="outline" onClick={() => begin('rename', workspace)} disabled={pending}>{t('knowledge.knowledgeWorkspacesPanel.rename', { name: workspace.name })}</Button>
+            <Button type="button" size="sm" variant="outline" onClick={() => begin('duplicate', workspace)} disabled={pending}>{t('knowledge.knowledgeWorkspacesPanel.duplicate', { name: workspace.name })}</Button>
+            <Button type="button" size="sm" variant="outline" onClick={() => { setSelectingReplacement(false); void perform(() => onReplaceWithCurrent(workspace)) }} disabled={pending}>{t('knowledge.knowledgeWorkspacesPanel.replaceWithCurrent')}</Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => void perform(() => onDelete(workspace))} disabled={pending}>{t('knowledge.knowledgeWorkspacesPanel.delete', { name: workspace.name })}</Button>
           </div>
         </li>)}
       </ul>

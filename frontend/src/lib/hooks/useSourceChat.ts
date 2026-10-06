@@ -1,5 +1,6 @@
 'use client'
 
+import { markErrorReported } from '@/lib/api/client'
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -233,6 +234,7 @@ export function useSourceChat(sourceId: string) {
         setPendingModelOverride(null)
         queryClient.invalidateQueries({ queryKey: ['sourceChatSessions', sourceId] })
       } catch (err: unknown) {
+        markErrorReported(err) // v0.8.130 — this caller reports the failure itself
         const error = err as { response?: { data?: { detail?: string } }, message?: string };
         console.error('Failed to create chat session:', error)
         toast.error(getApiErrorMessage(error.response?.data?.detail || error.message, (key) => t(key), 'apiErrors.failedToCreateSession'))

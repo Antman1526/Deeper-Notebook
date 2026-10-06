@@ -11,8 +11,8 @@ describe('StudyDashboard', () => {
       stability: 3, difficulty: 5, lapse_count: 2, current: true,
     }]} />)
 
-    expect(screen.getByText('Due today')).toBeInTheDocument()
+    expect(screen.getByText('study.studyDashboard.dueToday')).toBeInTheDocument()
     expect(screen.getByText('artifact:research')).toBeInTheDocument()
-    expect(screen.getByText('2 lapses')).toBeInTheDocument()
+    expect(screen.getByText('study.studyDashboard.lapses')).toBeInTheDocument()
   })
 })

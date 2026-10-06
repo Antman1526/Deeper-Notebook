@@ -3,6 +3,17 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { RuntimeStatusPanel } from './RuntimeStatusPanel'
 
+// Tests mock `t` as the identity on keys; interpolated numbers are appended so the
+// formatting assertions below still see the computed value.
+vi.mock('@/lib/hooks/use-translation', () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: { value?: string | number; count?: number }) => {
+      const v = opts?.value ?? opts?.count
+      return v === undefined ? key : `${key}:${v}`
+    },
+  }),
+}))
+
 const readySnapshot = {
   schema_version: 'runtime-snapshot-v1',
   status: 'ready',
@@ -17,9 +28,9 @@ const readySnapshot = {
 
 describe('RuntimeStatusPanel', () => {
   it.each([
-    ['ready', 'Ready'],
-    ['degraded', 'Degraded'],
-    ['unknown', 'Unknown'],
+    ['ready', 'workspace.runtimeStatusPanel.stateReady'],
+    ['degraded', 'workspace.runtimeStatusPanel.stateDegraded'],
+    ['unknown', 'workspace.runtimeStatusPanel.stateUnknown'],
   ] as const)('renders the %s overall state', (status, label) => {
     render(
       <RuntimeStatusPanel
@@ -43,9 +54,9 @@ describe('RuntimeStatusPanel', () => {
       />,
     )
 
-    expect(screen.getByText('Database is offline')).toBeInTheDocument()
-    expect(screen.getByText('Migrations are pending')).toBeInTheDocument()
-    expect(screen.getByText('Database status is unavailable')).toBeInTheDocument()
+    expect(screen.getByText('workspace.runtimeStatusPanel.reasons.databaseOffline')).toBeInTheDocument()
+    expect(screen.getByText('workspace.runtimeStatusPanel.reasons.migrationsPending')).toBeInTheDocument()
+    expect(screen.getByText('workspace.runtimeStatusPanel.reasons.databaseCheckFailed')).toBeInTheDocument()
     expect(screen.queryByText('database_offline')).not.toBeInTheDocument()
     expect(screen.queryByText(/Users|private|canary|exception|token/i)).not.toBeInTheDocument()
   })
@@ -54,7 +65,7 @@ describe('RuntimeStatusPanel', () => {
     const onRefresh = vi.fn()
     render(<RuntimeStatusPanel snapshot={readySnapshot} onRefresh={onRefresh} />)
 
-    const refresh = screen.getByRole('button', { name: 'Refresh runtime status' })
+    const refresh = screen.getByRole('button', { name: 'workspace.runtimeStatusPanel.refresh' })
     expect(refresh).toBeEnabled()
     expect(onRefresh).not.toHaveBeenCalled()
     fireEvent.click(refresh)
@@ -82,17 +93,17 @@ describe('startup stage timings', () => {
       />,
     )
 
-    expect(screen.getByText('chat model scan')).toBeInTheDocument()
-    expect(screen.getByText('2.2s')).toBeInTheDocument()
-    expect(screen.getByText('core ready')).toBeInTheDocument()
-    expect(screen.getByText('97.4s')).toBeInTheDocument()
+    expect(screen.getByText('workspace.runtimeStatusPanel.stages.chatModelScan')).toBeInTheDocument()
+    expect(screen.getByText('workspace.runtimeStatusPanel.stageSeconds:2.2')).toBeInTheDocument()
+    expect(screen.getByText('workspace.runtimeStatusPanel.stages.coreReady')).toBeInTheDocument()
+    expect(screen.getByText('workspace.runtimeStatusPanel.stageSeconds:97.4')).toBeInTheDocument()
     // sub-100ms noise stays hidden
-    expect(screen.queryByText('launcher start')).toBeNull()
+    expect(screen.queryByText('workspace.runtimeStatusPanel.stages.launcherStart')).toBeNull()
   })
 
   it('renders no stage rows when the receipt has none', () => {
     render(<RuntimeStatusPanel snapshot={readySnapshot} onRefresh={vi.fn()} />)
-    expect(screen.queryByText(/core ready/)).toBeNull()
+    expect(screen.queryByText(/workspace.runtimeStatusPanel.stages.coreReady/)).toBeNull()
   })
 })
 

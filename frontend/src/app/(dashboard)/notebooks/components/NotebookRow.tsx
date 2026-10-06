@@ -20,6 +20,7 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import { getDateLocale } from '@/lib/utils/date-locale'
 import { TurnIntoPodcastAction } from '@/components/podcasts/TurnIntoPodcastAction'
 import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
+import { notebookCoverTone } from '@/lib/notebook-cover'
 
 interface NotebookRowProps {
   notebook: NotebookResponse
@@ -51,18 +52,24 @@ export function NotebookRow({ notebook }: NotebookRowProps) {
           the accessible primary action (a real link) for keyboard/screen-reader
           users — avoiding nested interactive (button-in-button) semantics. */}
       <div
+        // v0.8.130 — the list shows each notebook's spine, in the cloth it wears on the shelf.
+        data-dn-notebook-row=""
+        data-dn-cover={notebookCoverTone(notebook.id)}
         className="group flex items-center gap-4 rounded-lg border bg-card px-4 py-3 card-hover"
         onClick={handleRowClick}
         style={{ cursor: 'pointer' }}
       >
+        <span data-dn-row-spine="" aria-hidden="true" />
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2">
             <Link
               href={`/notebooks/${encodeURIComponent(notebook.id)}`}
               onClick={(e) => e.stopPropagation()}
-              className="font-medium truncate rounded-sm outline-none group-hover:text-primary transition-colors focus-visible:ring-2 focus-visible:ring-ring"
+              className="min-w-0 font-medium rounded-sm outline-none group-hover:text-primary transition-colors focus-visible:ring-2 focus-visible:ring-ring"
             >
-              {notebook.name}
+              {/* v0.8.130 — the ellipsis lives on a block inside the link: links are flex
+                  boxes in the new visual system, and a flex box draws no ellipsis. */}
+              <span className="block truncate">{notebook.name}</span>
             </Link>
             {notebook.archived && (
               <Badge variant="secondary">
@@ -81,7 +88,7 @@ export function NotebookRow({ notebook }: NotebookRowProps) {
           <TurnIntoPodcastAction
             selection={{ kind: 'notebook', notebookId: notebook.id }}
             destination="quick"
-            disabledReason={noReadableContent ? 'No readable content is available' : undefined}
+            disabledReason={noReadableContent ? t('notebooks.notebookRow.noReadableContent') : undefined}
             onOpen={openPodcastReview}
           />
           <Badge
@@ -91,7 +98,7 @@ export function NotebookRow({ notebook }: NotebookRowProps) {
                 ? 'text-foreground bg-muted/40 border-border'
                 : 'text-muted-foreground/70 bg-transparent border-border/50'
             }`}
-            title={`${notebook.source_count} sources`}
+            title={notebook.source_count === 1 ? t('notebooks.notebookRow.sourceTitleOne', { count: 1 }) : t('notebooks.notebookRow.sourcesTitle', { count: notebook.source_count })}
           >
             <FileText className={`h-3 w-3 ${notebook.source_count > 0 ? 'text-primary' : 'text-muted-foreground/60'}`} />
             <span>{notebook.source_count}</span>
@@ -103,9 +110,10 @@ export function NotebookRow({ notebook }: NotebookRowProps) {
                 ? 'text-foreground bg-muted/40 border-border'
                 : 'text-muted-foreground/70 bg-transparent border-border/50'
             }`}
-            title={`${notebook.note_count} notes`}
+            title={notebook.note_count === 1 ? t('notebooks.notebookRow.noteTitleOne', { count: 1 }) : t('notebooks.notebookRow.notesTitle', { count: notebook.note_count })}
           >
-            <StickyNote className={`h-3 w-3 ${notebook.note_count > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground/60'}`} />
+            {/* v0.8.130 — status colours from theme tokens (UI audit Phase 1) */}
+            <StickyNote className={`h-3 w-3 ${notebook.note_count > 0 ? 'text-warning-ink' : 'text-muted-foreground/60'}`} />
             <span>{notebook.note_count}</span>
           </Badge>
         </div>

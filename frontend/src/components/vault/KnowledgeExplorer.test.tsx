@@ -505,18 +505,21 @@ describe('KnowledgeExplorer durable workspace integration', () => {
     expect(screen.getByTestId('research-core-folio')).toBeInTheDocument()
     expect(screen.getByTestId('research-core-folio-index')).toHaveTextContent('knowledge.readOnly')
     expect(screen.getByTestId('research-core-folio-workspace')).toHaveTextContent('One')
-    expect(screen.getByRole('banner', { name: 'Research Core workspace' })).toBeInTheDocument()
-    expect(screen.getAllByRole('main')).toHaveLength(1)
+    expect(screen.getByRole('group', { name: 'knowledge.researchCoreHeader.workspace' })).toBeInTheDocument()
+    // v0.8.130 — Phase 4b: the Knowledge page is the main landmark; the explorer's pane
+    // workspace is a named region inside it.
+    expect(screen.queryAllByRole('main')).toHaveLength(0)
+    expect(screen.getByRole('region', { name: 'knowledge.knowledgeWorkspace' })).toBeInTheDocument()
     expect(screen.getByRole('complementary', { name: 'knowledge.intelligenceDrawer' })).toBeInTheDocument()
-    const launcher = screen.getByRole('toolbar', { name: 'Research modes' })
-    expect(screen.getByRole('tab', { name: 'Read: One' })).toBeInTheDocument()
+    const launcher = screen.getByRole('toolbar', { name: 'knowledge.knowledgeModeLauncher.modes' })
+    expect(screen.getByRole('tab', { name: 'knowledge.commands.modeRead: One' })).toBeInTheDocument()
 
     fireEvent.keyDown(launcher, { key: '4', altKey: true })
 
     const activePane = useKnowledgeWorkspaceStore.getState().panes['pane-1']
     expect(activePane.tabs.find((tab) => tab.id === activePane.activeTabId))
       .toMatchObject({ mode: 'search', target: { kind: 'search' } })
-    expect(screen.getByRole('tab', { name: 'Search: Search' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'knowledge.commands.modeSearch: knowledge.commands.modeSearch' })).toBeInTheDocument()
 
     useKnowledgeCommandContextStore.getState().context?.openResearchMode?.('read')
     expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs
@@ -570,7 +573,7 @@ describe('KnowledgeExplorer durable workspace integration', () => {
 
       const openSources = screen.getByRole('button', { name: 'knowledge.openUtilityDrawer' })
       fireEvent.click(openSources)
-      fireEvent.click(screen.getByRole('button', { name: 'Collapse utility sidebar' }))
+      fireEvent.click(screen.getByRole('button', { name: 'knowledge.knowledgeUtilityRail.collapseSidebar' }))
 
       const closeSources = screen.getByRole('button', { name: 'knowledge.closeUtilityDrawer' })
       fireEvent.click(closeSources)
@@ -589,8 +592,8 @@ describe('KnowledgeExplorer durable workspace integration', () => {
       authorityKinds: ['external_read_only'], tags: ['plans'],
     }))
 
-    expect(screen.getByRole('region', { name: 'Active knowledge search' })).toHaveTextContent('text: plan')
-    expect(screen.getByRole('list', { name: 'Knowledge search results' })).toHaveTextContent('Search plan')
+    expect(screen.getByRole('region', { name: 'knowledge.knowledgeExplorer.activeSearch' })).toHaveTextContent('text: plan')
+    expect(screen.getByRole('list', { name: 'knowledge.knowledgeExplorer.searchResults' })).toHaveTextContent('Search plan')
     expect(searchView.calls).toContainEqual(['plan', true, {
       mode: 'text', spaceIds: ['knowledge_engine_space:research'], authorityKinds: ['external_read_only'], tags: ['plans'],
     }])
@@ -968,7 +971,7 @@ describe('KnowledgeExplorer durable workspace integration', () => {
 
     await renderExplorer()
 
-    expect(screen.getByRole('tab', { name: 'Read: Persisted one' }))
+    expect(screen.getByRole('tab', { name: 'knowledge.commands.modeRead: Persisted one' }))
       .toBeInTheDocument()
     expect(screen.getByText('Backlink for One')).toBeInTheDocument()
     expect(vaultQueries.page).toHaveBeenCalledWith(
@@ -1054,12 +1057,26 @@ describe('KnowledgeExplorer durable workspace integration', () => {
       expect(observe).toHaveBeenCalled()
 
       const initialWidth = useKnowledgeWorkspaceStore.getState().navigation.sidebarWidth
-      const entry = { contentRect: { width: initialWidth - 32 } } as ResizeObserverEntry
-      act(() => resizeCallback?.([entry], {} as ResizeObserver))
-      expect(useKnowledgeWorkspaceStore.getState().navigation.sidebarWidth).toBe(initialWidth)
+      // A browser entry: the border box, and a content box 32px narrower (padding).
+      const entryFor = (borderBox: number) => ({
+        contentRect: { width: borderBox - 32 },
+        borderBoxSize: [{ inlineSize: borderBox, blockSize: 600 }],
+      }) as unknown as ResizeObserverEntry
+      const width = () => useKnowledgeWorkspaceStore.getState().navigation.sidebarWidth
 
-      act(() => resizeCallback?.([entry], {} as ResizeObserver))
-      expect(useKnowledgeWorkspaceStore.getState().navigation.sidebarWidth).toBe(initialWidth - 32)
+      // The first observation is the layout baseline.
+      act(() => resizeCallback?.([entryFor(initialWidth)], {} as ResizeObserver))
+      expect(width()).toBe(initialWidth)
+
+      // v0.8.130 — an unchanged rail is not a resize. Saving its content box shrank the
+      // rail by its padding on every observation, down to 240px, at a timing-dependent
+      // pace (the Luminous knowledge snapshot flaked on it).
+      act(() => resizeCallback?.([entryFor(initialWidth)], {} as ResizeObserver))
+      expect(width()).toBe(initialWidth)
+
+      // A genuine resize changes the border box, and is kept.
+      act(() => resizeCallback?.([entryFor(initialWidth - 32)], {} as ResizeObserver))
+      expect(width()).toBe(initialWidth - 32)
     } finally {
       if (originalResizeObserver) vi.stubGlobal('ResizeObserver', originalResizeObserver)
       else vi.unstubAllGlobals()
@@ -1296,7 +1313,7 @@ describe('KnowledgeExplorer overlay authority', () => {
     vaultQueries.backlinks.mockClear()
     vaultQueries.outgoing.mockClear()
     const pane = screen.getByRole('region', {
-      name: 'knowledge.knowledgePane modes pane-1',
+      name: 'knowledge.knowledgePaneContent.modesRegion',
     })
     fireEvent.click(within(pane).getByRole('button', {
       name: 'Navigate target Overlay mention',
@@ -1436,7 +1453,7 @@ describe('KnowledgeExplorer overlay authority', () => {
     })
     expect(workspacePane.activeTabId).toBe(incomingTab?.id)
 
-    fireEvent.click(screen.getByRole('tab', { name: `Graph: ${center.title}` }))
+    fireEvent.click(screen.getByRole('tab', { name: `knowledge.commands.modeGraph: ${center.title}` }))
     fireEvent.click(screen.getByRole('button', { name: graphNodeName }))
 
     workspacePane = useKnowledgeWorkspaceStore.getState().panes['pane-1']
@@ -1476,9 +1493,9 @@ describe('KnowledgeExplorer utility rail', () => {
     await selectFile('notes/one.md')
     const activeBefore = useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId
 
-    fireEvent.click(screen.getByRole('button', { name: 'Bookmarks' }))
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.navigation.bookmarks' }))
 
-    expect(screen.getByRole('navigation', { name: 'Bookmarks' })).toBeVisible()
+    expect(screen.getByRole('navigation', { name: 'knowledge.navigation.bookmarks' })).toBeVisible()
     expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId).toBe(activeBefore)
   })
 
@@ -1501,16 +1518,16 @@ describe('KnowledgeExplorer utility rail', () => {
     })
     await renderExplorer()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Workspaces' }))
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.navigation.workspaces' }))
     const before = serializeKnowledgeWorkspace(useKnowledgeWorkspaceStore.getState())
     const applyNamedWorkspace = vi.spyOn(useKnowledgeWorkspaceStore.getState(), 'applyNamedWorkspace')
-    fireEvent.click(screen.getByRole('button', { name: 'Open Research desk' }))
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.knowledgeWorkspacesPanel.open' }))
 
-    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Open workspace with unavailable targets' })).toBeVisible())
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'knowledge.workspaceRestoreDialog.title' })).toBeVisible())
     expect(serializeKnowledgeWorkspace(useKnowledgeWorkspaceStore.getState())).toEqual(before)
     expect(applyNamedWorkspace).not.toHaveBeenCalled()
     const revisionBeforeCancel = useKnowledgeWorkspaceStore.getState().revision
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    fireEvent.click(screen.getByRole('button', { name: 'common.cancel' }))
     expect(serializeKnowledgeWorkspace(useKnowledgeWorkspaceStore.getState())).toEqual(before)
     expect(useKnowledgeWorkspaceStore.getState().revision).toBe(revisionBeforeCancel)
   })
@@ -1546,12 +1563,12 @@ describe('KnowledgeExplorer utility rail', () => {
       summary: { available: 1, stale: 0, unavailable: 0, missing: 1 },
     })
     await renderExplorer()
-    fireEvent.click(screen.getByRole('button', { name: 'Workspaces' }))
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.navigation.workspaces' }))
     const applyNamedWorkspace = vi.spyOn(useKnowledgeWorkspaceStore.getState(), 'applyNamedWorkspace')
-    fireEvent.click(screen.getByRole('button', { name: 'Open Research desk' }))
-    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Open workspace with unavailable targets' })).toBeVisible())
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.knowledgeWorkspacesPanel.open' }))
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'knowledge.workspaceRestoreDialog.title' })).toBeVisible())
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open available' }))
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.navigation.openAvailable' }))
 
     await waitFor(() => expect(applyNamedWorkspace).toHaveBeenCalledOnce())
     expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs).toHaveLength(1)
@@ -1597,12 +1614,12 @@ describe('KnowledgeExplorer utility rail', () => {
       summary: { available: 2, stale: 0, unavailable: 0, missing: 1 },
     })
     await renderExplorer()
-    fireEvent.click(screen.getByRole('button', { name: 'Workspaces' }))
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.navigation.workspaces' }))
     states.persistenceWrites.mockClear()
     const setFocusedBlock = vi.spyOn(useKnowledgeWorkspaceStore.getState(), 'setFocusedBlock')
-    fireEvent.click(screen.getByRole('button', { name: 'Open Research desk' }))
-    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Open workspace with unavailable targets' })).toBeVisible())
-    fireEvent.click(screen.getByRole('button', { name: 'Open available' }))
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.knowledgeWorkspacesPanel.open' }))
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'knowledge.workspaceRestoreDialog.title' })).toBeVisible())
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.navigation.openAvailable' }))
 
     await waitFor(() => expect(setFocusedBlock).toHaveBeenCalledWith('pane-1', 'tab-block', {
       blockId: 'knowledge_engine_block:one', sourceRevisionId: 'knowledge_engine_revision:one',
@@ -1626,10 +1643,10 @@ describe('KnowledgeExplorer utility rail', () => {
     pageIdentity.value = 'knowledge_engine_document:research'
     const { unmount } = await renderExplorer()
     await selectFile('notes/one.md')
-    fireEvent.click(screen.getByRole('button', { name: 'Workspaces' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Save Current As' }))
-    fireEvent.change(screen.getByLabelText('Workspace name'), { target: { value: 'Stable desk' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save workspace' }))
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.navigation.workspaces' }))
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.knowledgeWorkspacesPanel.saveCurrentAs' }))
+    fireEvent.change(screen.getByLabelText('knowledge.knowledgeWorkspacesPanel.nameLabel'), { target: { value: 'Stable desk' } })
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.knowledgeWorkspacesPanel.saveWorkspace' }))
     await waitFor(() => expect(navigationQueries.createWorkspace).toHaveBeenCalledOnce())
     const savedWorkspace = navigationQueries.createWorkspace.mock.calls.at(0) as unknown as [{ snapshot: unknown }]
     const serialized = JSON.stringify(savedWorkspace[0].snapshot)
@@ -1643,11 +1660,11 @@ describe('KnowledgeExplorer utility rail', () => {
     act(() => useKnowledgeWorkspaceStore.getState().resetWorkspace())
     await renderExplorer()
     await selectFile('notes/one.md')
-    fireEvent.click(screen.getByRole('button', { name: 'Workspaces' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Save Current As' }))
-    fireEvent.change(screen.getByLabelText('Workspace name'), { target: { value: 'Unavailable desk' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save workspace' }))
-    await waitFor(() => expect(screen.getByText('Workspace could not be saved. Check the knowledge engine and try again.')).toBeVisible())
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.navigation.workspaces' }))
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.knowledgeWorkspacesPanel.saveCurrentAs' }))
+    fireEvent.change(screen.getByLabelText('knowledge.knowledgeWorkspacesPanel.nameLabel'), { target: { value: 'Unavailable desk' } })
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.knowledgeWorkspacesPanel.saveWorkspace' }))
+    await waitFor(() => expect(screen.getByText('knowledge.knowledgeWorkspacesPanel.saveFailed')).toBeVisible())
     expect(navigationQueries.createWorkspace).not.toHaveBeenCalled()
   })
 
@@ -1655,14 +1672,14 @@ describe('KnowledgeExplorer utility rail', () => {
     await renderExplorer()
     const width = useKnowledgeWorkspaceStore.getState().navigation.sidebarWidth
 
-    fireEvent.keyDown(screen.getByRole('separator', { name: 'Resize utility sidebar' }), { key: 'ArrowRight' })
+    fireEvent.keyDown(screen.getByRole('separator', { name: 'knowledge.knowledgeExplorer.resizeUtilitySidebar' }), { key: 'ArrowRight' })
 
     expect(useKnowledgeWorkspaceStore.getState().navigation.sidebarWidth).toBe(Math.min(640, width + 16))
   })
 
   it('clamps pointer sidebar resizing and exposes its accessible value', async () => {
     await renderExplorer()
-    const handle = screen.getByRole('separator', { name: 'Resize utility sidebar' })
+    const handle = screen.getByRole('separator', { name: 'knowledge.knowledgeExplorer.resizeUtilitySidebar' })
 
     fireEvent.mouseDown(handle, { clientX: 100 })
     fireEvent.mouseMove(handle, { clientX: 9_000 })
@@ -1676,7 +1693,7 @@ describe('KnowledgeExplorer utility rail', () => {
     pageIdentity.value = 'knowledge_engine_document:research'
     await renderExplorer()
     await selectFile('notes/one.md')
-    const pane = screen.getByRole('region', { name: 'knowledge.knowledgePane modes pane-1' })
+    const pane = screen.getByRole('region', { name: 'knowledge.knowledgePaneContent.modesRegion' })
     pane.focus()
     const activeBefore = useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId
 
@@ -1684,7 +1701,7 @@ describe('KnowledgeExplorer utility rail', () => {
       .toMatchObject({ knowledgeDocumentId: 'knowledge_engine_document:research' }))
     expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId).toBe(activeBefore)
     expect(document.activeElement).toBe(pane)
-    expect(screen.getByRole('button', { name: 'Bookmark Current Target' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'knowledge.knowledgeUtilityRail.bookmarkCurrentTarget' })).toBeEnabled()
   })
 
   it('keeps Bookmark Current Target disabled for an absent or malformed page ID', async () => {
@@ -1692,7 +1709,7 @@ describe('KnowledgeExplorer utility rail', () => {
     await renderExplorer()
     await selectFile('notes/one.md')
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Bookmark Current Target' })).toBeDisabled())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'knowledge.knowledgeUtilityRail.bookmarkCurrentTarget' })).toBeDisabled())
     expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs[0].knowledgeDocumentId).toBeNull()
   })
 
@@ -1707,7 +1724,7 @@ describe('KnowledgeExplorer utility rail', () => {
     await selectFile('notes/one.md')
     const activeBefore = useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId
 
-    fireEvent.click(screen.getByRole('button', { name: 'Random Note' }))
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.knowledgeUtilityRail.randomNote' }))
 
     await waitFor(() => expect(navigationQueries.random).toHaveBeenCalledWith({
       spaceIds: ['knowledge_engine_space:research'], authorityKinds: ['external_read_only'], tags: ['plans'],
@@ -1726,7 +1743,7 @@ describe('KnowledgeExplorer utility rail', () => {
       blockId: 'knowledge_engine_block:heading', sourceRevisionId: null,
     }))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Bookmark Current Target' }))
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.knowledgeUtilityRail.bookmarkCurrentTarget' }))
 
     await waitFor(() => expect(navigationQueries.create).toHaveBeenCalledWith(expect.objectContaining({
       target: {
@@ -1755,7 +1772,7 @@ describe('KnowledgeExplorer utility rail', () => {
     await renderExplorer()
     await act(async () => undefined)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Bookmark Current Target' }))
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.knowledgeUtilityRail.bookmarkCurrentTarget' }))
 
     await waitFor(() => expect(navigationQueries.create).toHaveBeenCalledWith(expect.objectContaining({
       target: {
@@ -1792,6 +1809,6 @@ describe('KnowledgeExplorer utility rail', () => {
       knowledgeDocumentId: 'knowledge_engine_document:overlay',
     }))
     expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].activeTabId).toBe(tabId)
-    expect(screen.getByRole('button', { name: 'Bookmark Current Target' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'knowledge.knowledgeUtilityRail.bookmarkCurrentTarget' })).toBeEnabled()
   })
 })

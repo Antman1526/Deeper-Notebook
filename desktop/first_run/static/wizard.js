@@ -1,9 +1,94 @@
 (() => {
   const THEMES = window.DN_THEME_CATALOG;
+  const dnWizardT = window.dnWizardT;
 
-  let chosenTheme = 'research-core-dark';
+  // v0.8.130 — fixed sentences the launcher/server send as `message` / `error`,
+  // keyed by the exact English literal. Only literals with no interpolated
+  // values belong here; paths, exception text and URLs are shown as received.
+  // desktop/tests/test_wizard_i18n.py asserts each literal still appears
+  // verbatim in the backend source, so a reworded sentence fails a test
+  // instead of silently falling back to English.
+  const FIXED_MESSAGE_KEYS = {
+    // desktop/app.py
+    'Launcher starting…': 'msg.launcherStarting',
+    'Main window opening…': 'msg.windowOpening',
+    // desktop/launcher.py
+    'Local resource governor deferred spawn': 'msg.governorDeferred',
+    'sidecar failed its post-spawn health check': 'msg.healthCheckFailed',
+  };
+  // v0.8.130 — launcher sentences that embed live values (a path, a port, an exit
+  // code). Matched by regex over the exact English shape; the named groups are
+  // inserted verbatim into the translated template, never translated themselves.
+  // First match wins. Anything that matches no pattern is free-form exception text
+  // and is shown as received. test_wizard_i18n.py renders the real backend
+  // f-strings from desktop/app.py + launcher.py and asserts each regex still
+  // matches one, so a reworded sentence fails a test.
+  const MESSAGE_PATTERNS = [
+    // desktop/app.py: provider warnings
+    { re: '^No chat GGUF found in (?<path>.+)\\. Local chat will be disabled until you download a model \\(use the Models dialog in Settings, or drop a Hermes-3 / Qwen2\\.5 / Llama-3\\.2 \\*\\.gguf into the folder above\\)\\.$', key: 'msg.noChatGguf' },
+    { re: '^No embedding GGUF found at (?<path>.+)\\. Vector search will be disabled\\. Download nomic-embed-text-v1\\.5\\.f16\\.gguf to enable semantic search\\.$', key: 'msg.noEmbeddingGguf' },
+    // desktop/app.py: openchronicle.detect reports available=True|False
+    { re: '^available=True$', key: 'msg.openchronicleFound' },
+    { re: '^available=False$', key: 'msg.openchronicleNotFound' },
+    // desktop/app.py: memory.commands_registered reports the copied file's path
+    { re: '^(?<path>.*[\\\\/]memory_commands\\.py)$', key: 'msg.memoryCommandsRegistered' },
+    // desktop/launcher.py: _wait_tcp / _wait_http
+    { re: '^child for (?<host>[^\\s:]+):(?<port>\\d+) exited rc=(?<code>-?\\d+) before the port came up — check the per-child log in the debug-mode logs dir$', key: 'msg.childExitedTcp' },
+    { re: '^child for (?<url>\\S+) exited rc=(?<code>-?\\d+) before the endpoint became reachable — check the per-child log in the debug-mode logs dir$', key: 'msg.childExitedHttp' },
+    { re: '^tcp (?<host>[^\\s:]+):(?<port>\\d+) never came up within (?<seconds>[\\d.]+)s$', key: 'msg.tcpTimeout' },
+    { re: '^http (?<url>\\S+) never returned <500 within (?<seconds>[\\d.]+)s$', key: 'msg.httpTimeout' },
+  ];
+  const COMPILED_PATTERNS = MESSAGE_PATTERNS.map(({re, key}) => ({re: new RegExp(re), key}));
+  const translateMessage = (text) => {
+    if (Object.prototype.hasOwnProperty.call(FIXED_MESSAGE_KEYS, text)) {
+      return dnWizardT(FIXED_MESSAGE_KEYS[text]);
+    }
+    for (const {re, key} of COMPILED_PATTERNS) {
+      const m = re.exec(text);
+      if (m) return dnWizardT(key, m.groups);
+    }
+    return text;
+  };
+
+  // desktop/first_run/server.py, /api/save handler
+  const SAVE_ERROR_KEYS = {
+    'invalid provider': 'error.invalidProvider',
+  };
+  const fromTable = (table, text) =>
+    Object.prototype.hasOwnProperty.call(table, text) ? dnWizardT(table[text]) : text;
+
+  // Progress step codes ("supervisor.surreal") get a friendly label when the
+  // dictionary has a `step.<code>` key, else the raw code as before.
+  const stepLabel = (code) => {
+    const key = 'step.' + code;
+    const label = dnWizardT(key);
+    return label !== key ? label : code.replaceAll('.', ' › ');
+  };
+
+  // v0.8.130 — indigo is the one brand; the wizard used to preselect teal Research Core Dark.
+  let chosenTheme = 'gemini-forward-light';
   let openchronicleChoice = 'skip';
   const html = document.documentElement;
+
+  // v0.8.130 — translate the static markup once at startup. English stays in
+  // index.html as the no-JS fallback; en-US re-applies the same text.
+  // data-i18n-html values are authored by us (never user input), so innerHTML is safe.
+  const applyI18n = () => {
+    html.lang = window.dnWizardLocale();
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      el.textContent = dnWizardT(el.dataset.i18n);
+    });
+    document.querySelectorAll('[data-i18n-html]').forEach(el => {
+      el.innerHTML = dnWizardT(el.dataset.i18nHtml);
+    });
+    document.querySelectorAll('[data-i18n-attr]').forEach(el => {
+      el.dataset.i18nAttr.split(',').forEach(pair => {
+        const [attr, key] = pair.split(':').map(part => part.trim());
+        if (attr && key) el.setAttribute(attr, dnWizardT(key));
+      });
+    });
+  };
+  applyI18n();
 
   const screens = document.querySelectorAll('[data-screen]');
   const show = (name) => screens.forEach(s =>
@@ -19,15 +104,22 @@
 
   // Build theme grid
   const grid = document.getElementById('theme_grid');
-  THEMES.forEach(t => {
+  THEMES.forEach(theme => {
     const card = document.createElement('div');
     card.className = 'theme-card';
-    card.dataset.theme = t.id;
+    card.dataset.theme = theme.id;
     card.innerHTML = `
-      <div class="theme-swatch" style="--swatch-bg:${t.bg};--swatch-fg:${t.fg}"></div>
-      <div class="theme-name">${t.name}</div>
+      <div class="theme-swatch" style="--swatch-bg:${theme.bg};--swatch-fg:${theme.fg}"></div>
+      <div class="theme-name"></div>
     `;
-    card.addEventListener('click', () => setTheme(t.id));
+    // v0.8.130 — only the six generic names (Dark, Paper, System…) are
+    // translated; proper-noun themes keep their catalog name. dnWizardT
+    // returns the key itself when it has no entry, which is the "no key" test.
+    const themeKey = 'theme.' + theme.id;
+    const translated = dnWizardT(themeKey);
+    card.querySelector('.theme-name').textContent =
+      translated !== themeKey ? translated : theme.name;
+    card.addEventListener('click', () => setTheme(theme.id));
     grid.appendChild(card);
   });
   setTheme(chosenTheme);
@@ -37,7 +129,7 @@
     const selectedTheme = THEMES.find(theme => theme.id === chosenTheme);
     setTheme(selectedTheme && selectedTheme.dark
       ? 'research-core-light'
-      : 'research-core-dark');
+      : 'gemini-forward-light');
   });
 
   // Pre-fill model dir
@@ -45,6 +137,61 @@
   modelDirInput.value = navigator.platform.toLowerCase().includes('win')
     ? '%USERPROFILE%\\Desktop\\AI_Models'
     : '~/Desktop/AI_Models';
+
+  // v0.8.130 — the setting-up screen is reached two ways: after saving, and
+  // directly, by the launcher's progress window (?screen=setting-up), which shows
+  // it for the whole of first-launch setup. Both use these.
+  const startSetupClock = () => {
+    const elapsed = document.getElementById('progress-elapsed');
+    const startTs = Date.now();
+    elapsed.textContent = dnWizardT('progress.seconds', {n: 0});
+    setInterval(() => {
+      elapsed.textContent = dnWizardT('progress.seconds', {n: Math.round((Date.now() - startTs) / 1000)});
+    }, 500);
+  };
+  const followProgress = () => {
+    const list = document.getElementById('progress-list');
+    const latest = document.getElementById('progress-latest');
+    const es = new EventSource('/api/progress');
+    let sawFailure = false;
+    const items = {};
+    es.onmessage = (ev) => {
+      const evt = JSON.parse(ev.data);
+      let li = items[evt.step];
+      if (!li) {
+        li = document.createElement('li');
+        li.textContent = stepLabel(evt.step);
+        list.appendChild(li);
+        items[evt.step] = li;
+        // v0.8.130 — the list outgrows the window: keep the newest step in view.
+        if (li.scrollIntoView) li.scrollIntoView({block: 'nearest'});
+        // The launcher never reports "startup" as finished; the next step starting
+        // is what finishes it, so it does not sit there looking busy to the end.
+        if (evt.step !== 'startup' && items.startup) items.startup.dataset.status = 'done';
+      }
+      li.dataset.status = evt.status;
+      if (evt.status === 'error') sawFailure = true;
+      // v0.8.130 — fixed sentences by exact match, value-bearing ones by
+      // pattern; everything else is free-form backend text, shown as received.
+      if (evt.message) {
+        const shown = translateMessage(evt.message);
+        // v0.8.130 — failure text that matched nothing is the launcher's own
+        // exception text. It cannot be translated, so it is framed by a
+        // translated sentence naming the step, and kept verbatim for support.
+        latest.textContent = (evt.status === 'error' && shown === evt.message)
+          ? dnWizardT('msg.stepError', {step: stepLabel(evt.step), detail: evt.message})
+          : shown;
+      }
+      if (evt.step === 'ready' && evt.status === 'done') {
+        es.close();
+      }
+    };
+    es.onerror = () => {
+      // v0.8.130 — a failed launch ends the stream too; the reason it gave is
+      // worth more on screen than "disconnected".
+      if (!sawFailure) latest.textContent = dnWizardT('progress.disconnected');
+    };
+  };
 
   document.querySelectorAll('button[data-next], button[data-back]').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -79,13 +226,8 @@
           openchronicle_choice: openchronicleChoice,
         };
         show('setting-up');
-        const list = document.getElementById('progress-list');
         const latest = document.getElementById('progress-latest');
-        const elapsed = document.getElementById('progress-elapsed');
-        const startTs = Date.now();
-        setInterval(() => {
-          elapsed.textContent = Math.round((Date.now() - startTs) / 1000) + 's';
-        }, 500);
+        startSetupClock();
 
         // Save config first
         // v0.5.10 — retry-aware save. Previously a 500 here showed
@@ -98,11 +240,12 @@
             body: JSON.stringify(payload),
           });
           if (!resp.ok) {
-            let detail = `HTTP ${resp.status}`;
+            // v0.8.130 — a sentence, not a bare status code.
+            let detail = dnWizardT('error.http', {status: resp.status});
             try {
               const body = await resp.json();
-              if (body.error) detail = body.error;
-              else if (body.detail) detail = body.detail;
+              if (body.error) detail = fromTable(SAVE_ERROR_KEYS, body.error);
+              else if (body.detail) detail = fromTable(SAVE_ERROR_KEYS, body.detail);
             } catch (_) { /* not JSON */ }
             throw new Error(detail);
           }
@@ -112,20 +255,20 @@
         try {
           await attemptSave();
         } catch (err) {
-          latest.textContent = `Failed to save config: ${err.message}`;
+          latest.textContent = dnWizardT('progress.saveFailed', {message: err.message});
           const retryBtn = document.createElement('button');
-          retryBtn.textContent = 'Retry';
+          retryBtn.textContent = dnWizardT('common.retry');
           retryBtn.className = 'primary';
           retryBtn.style.marginTop = '12px';
           retryBtn.addEventListener('click', async () => {
-            latest.textContent = 'Retrying…';
+            latest.textContent = dnWizardT('progress.retrying');
             retryBtn.remove();
             try {
               await attemptSave();
-              latest.textContent = 'starting…';
+              latest.textContent = dnWizardT('progress.starting');
               // Continue with the progress stream below
             } catch (err2) {
-              latest.textContent = `Failed again: ${err2.message}`;
+              latest.textContent = dnWizardT('progress.retryFailed', {message: err2.message});
               latest.parentElement.appendChild(retryBtn);
             }
           });
@@ -133,27 +276,7 @@
           return;
         }
 
-        // Then subscribe to progress
-        const es = new EventSource('/api/progress');
-        const items = {};
-        es.onmessage = (ev) => {
-          const evt = JSON.parse(ev.data);
-          let li = items[evt.step];
-          if (!li) {
-            li = document.createElement('li');
-            li.textContent = evt.step.replaceAll('.', ' › ');
-            list.appendChild(li);
-            items[evt.step] = li;
-          }
-          li.dataset.status = evt.status;
-          if (evt.message) latest.textContent = evt.message;
-          if (evt.step === 'ready' && evt.status === 'done') {
-            es.close();
-          }
-        };
-        es.onerror = () => {
-          latest.textContent = '(progress stream disconnected)';
-        };
+        followProgress();
       } else {
         show(target);
       }
@@ -161,4 +284,12 @@
   });
 
   show('welcome');
+  if (new URLSearchParams(location.search).get('screen') === 'setting-up') {
+    // v0.8.130 — the launcher passes the theme chosen in the wizard.
+    const wanted = new URLSearchParams(location.search).get('theme');
+    if (wanted && THEMES.some(theme => theme.id === wanted)) setTheme(wanted);
+    show('setting-up');
+    startSetupClock();
+    followProgress();
+  }
 })();

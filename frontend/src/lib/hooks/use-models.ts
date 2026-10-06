@@ -139,18 +139,29 @@ export function useAutoAssignCapability() {
       if (assignedCount > 0) {
         toast({
           title: t('common.success'),
-          description: `Re-evaluated ${assignedCount} slot${assignedCount === 1 ? '' : 's'}` +
-            (missingCount > 0 ? ` (${missingCount} slot${missingCount === 1 ? '' : 's'} have no eligible model)` : ''),
+          description: missingCount > 0
+            ? assignedCount === 1
+              ? (missingCount === 1
+                ? t('settings.useModels.reevaluatedOneMissingOne', { count: assignedCount, missing: missingCount })
+                : t('settings.useModels.reevaluatedOneMissingOther', { count: assignedCount, missing: missingCount }))
+              : (missingCount === 1
+                ? t('settings.useModels.reevaluatedOtherMissingOne', { count: assignedCount, missing: missingCount })
+                : t('settings.useModels.reevaluatedOtherMissingOther', { count: assignedCount, missing: missingCount }))
+            : assignedCount === 1
+              ? t('settings.useModels.reevaluatedOne', { count: assignedCount })
+              : t('settings.useModels.reevaluatedOther', { count: assignedCount }),
         })
       } else if (missingCount > 0) {
         toast({
-          title: 'No changes',
-          description: `${missingCount} slot${missingCount === 1 ? ' has' : 's have'} no eligible model.`,
+          title: t('settings.useModels.noChanges'),
+          description: missingCount === 1
+            ? t('settings.useModels.noEligibleOne', { count: missingCount })
+            : t('settings.useModels.noEligibleOther', { count: missingCount }),
         })
       } else {
         toast({
-          title: 'No changes',
-          description: 'All slots are already assigned. Use Reset to force re-evaluation.',
+          title: t('settings.useModels.noChanges'),
+          description: t('settings.useModels.allSlotsAssigned'),
         })
       }
     },

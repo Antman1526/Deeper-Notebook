@@ -41,6 +41,7 @@ import {
 } from '@/components/ui/select'
 import { useDeleteCredential } from '@/lib/hooks/use-credentials'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { localCredentialLabel } from '@/lib/local-credential-label'
 import { Credential } from '@/lib/api/credentials'
 
 interface DeleteCredentialDialogProps {
@@ -92,7 +93,7 @@ export function DeleteCredentialDialog({
         <DialogHeader>
           <DialogTitle>{t('apiKeys.deleteConfig')}</DialogTitle>
           <DialogDescription>
-            {t('apiKeys.deleteConfigConfirm').replace('{name}', credential.name)}
+            {t('apiKeys.deleteConfigConfirm').replace('{name}', localCredentialLabel(credential.name, t))}
           </DialogDescription>
         </DialogHeader>
 
@@ -100,13 +101,13 @@ export function DeleteCredentialDialog({
           <Alert>
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              This credential has {credential.model_count} linked model(s).
+              {t('settings.deleteCredentialDialog.linkedModels', { count: credential.model_count })}
               {otherCredentials.length > 0 && (
                 <div className="mt-2">
-                  <Label>Migrate models to:</Label>
+                  <Label>{t('settings.deleteCredentialDialog.migrateTo')}</Label>
                   <Select value={migrateToId} onValueChange={setMigrateToId}>
                     <SelectTrigger className="mt-1">
-                      <SelectValue placeholder="Select credential" />
+                      <SelectValue placeholder={t('settings.deleteCredentialDialog.selectCredential')} />
                     </SelectTrigger>
                     <SelectContent>
                       {otherCredentials.map((c) => (
@@ -131,7 +132,7 @@ export function DeleteCredentialDialog({
               {deleteCredential.isPending && (
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
               )}
-              Migrate & Delete
+              {t('settings.deleteCredentialDialog.migrateAndDelete')}
             </Button>
           )}
           <Button
@@ -147,7 +148,7 @@ export function DeleteCredentialDialog({
               <Loader2 className="h-4 w-4 animate-spin mr-2" />
             )}
             {credential.model_count > 0
-              ? 'Delete with Models'
+              ? t('settings.deleteCredentialDialog.deleteWithModels')
               : t('common.delete')}
           </Button>
         </DialogFooter>

@@ -4,12 +4,19 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { ConnectionError } from '@/lib/types/config'
 import { ConnectionErrorOverlay } from '@/components/errors/ConnectionErrorOverlay'
 import { getConfig, resetConfig } from '@/lib/config'
+import { useTranslation } from '@/lib/hooks/use-translation'
 
 interface ConnectionGuardProps {
   children: React.ReactNode
 }
 
 export function ConnectionGuard({ children }: ConnectionGuardProps) {
+  const { t } = useTranslation()
+  // Kept in a ref so checkConnection stays a stable callback (no re-check on language change).
+  const tRef = useRef(t)
+  useEffect(() => {
+    tRef.current = t
+  }, [t])
   const [error, setError] = useState<ConnectionError | null>(null)
   const [isChecking, setIsChecking] = useState(true)
   // Use a ref to track checking status to avoid dependency cycles
@@ -81,7 +88,7 @@ export function ConnectionGuard({ children }: ConnectionGuardProps) {
     // Budget exhausted — surface the appropriate error. An unreachable API wins
     // over a reachable-but-offline DB (the more fundamental failure).
     if (lastError) {
-      const errorMessage = lastError instanceof Error ? lastError.message : 'Unknown error'
+      const errorMessage = lastError instanceof Error ? lastError.message : tRef.current('common.connectionGuard.unknownError')
       const attemptedUrl =
         typeof window !== 'undefined'
           ? `${window.location.origin}/api/config`
@@ -89,7 +96,7 @@ export function ConnectionGuard({ children }: ConnectionGuardProps) {
       setError({
         type: 'api-unreachable',
         details: {
-          message: 'Unable to connect to API',
+          message: tRef.current('common.connectionGuard.unableToConnect'),
           technicalMessage: errorMessage,
           stack: lastError instanceof Error ? lastError.stack : undefined,
           attemptedUrl,
@@ -98,7 +105,7 @@ export function ConnectionGuard({ children }: ConnectionGuardProps) {
     } else if (dbOfflineUrl) {
       setError({
         type: 'database-offline',
-        details: { message: 'Database is offline', attemptedUrl: dbOfflineUrl },
+        details: { message: tRef.current('common.connectionGuard.databaseOffline'), attemptedUrl: dbOfflineUrl },
       })
     }
 
@@ -165,7 +172,7 @@ export function ConnectionGuard({ children }: ConnectionGuardProps) {
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3 text-muted-foreground">
           <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
-          <span className="text-sm">Connecting…</span>
+          <span className="text-sm">{t('common.connectionGuard.connecting')}</span>
         </div>
       </div>
     )

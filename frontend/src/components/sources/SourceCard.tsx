@@ -1,9 +1,7 @@
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react'
+import React, { Fragment, useState, useEffect, useRef } from 'react'
 import { SourceListResponse } from '@/lib/types/api'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import {
@@ -25,7 +23,6 @@ import {
   AlertTriangle,
   Loader2,
   Unlink,
-  Share2,
   Podcast
 } from 'lucide-react'
 import { useSourceStatus } from '@/lib/hooks/use-sources'
@@ -63,43 +60,44 @@ const SOURCE_TYPE_ICONS = {
   deep_research_report: FileText,
 } as const
 
+// v0.8.130 — status colours from theme tokens: info for in-flight, success for done (UI audit Phase 1)
 const getStatusConfig = (t: TFunction) => ({
   new: {
     icon: Clock,
-    color: 'text-blue-700 dark:text-blue-300',
-    bgColor: 'bg-blue-50 dark:bg-blue-950/40',
-    borderColor: 'border-blue-200 dark:border-blue-900/50',
+    color: 'text-info-ink',
+    bgColor: 'bg-info-soft',
+    borderColor: 'border-info/30',
     label: t('sources.statusProcessing'),
     description: t('sources.statusPreparingDesc')
   },
   queued: {
     icon: Clock,
-    color: 'text-blue-700 dark:text-blue-300',
-    bgColor: 'bg-blue-50 dark:bg-blue-950/40',
-    borderColor: 'border-blue-200 dark:border-blue-900/50',
+    color: 'text-info-ink',
+    bgColor: 'bg-info-soft',
+    borderColor: 'border-info/30',
     label: t('sources.statusQueued'),
     description: t('sources.statusQueuedDesc')
   },
   running: {
     icon: Loader2,
-    color: 'text-blue-700 dark:text-blue-300',
-    bgColor: 'bg-blue-50 dark:bg-blue-950/40',
-    borderColor: 'border-blue-200 dark:border-blue-900/50',
+    color: 'text-info-ink',
+    bgColor: 'bg-info-soft',
+    borderColor: 'border-info/30',
     label: t('sources.statusProcessing'),
     description: t('sources.statusProcessingDesc')
   },
   completed: {
     icon: CheckCircle,
-    color: 'text-emerald-700 dark:text-emerald-300',
-    bgColor: 'bg-emerald-50 dark:bg-emerald-950/40',
-    borderColor: 'border-emerald-200 dark:border-emerald-900/50',
+    color: 'text-success-ink',
+    bgColor: 'bg-success-soft',
+    borderColor: 'border-success/30',
     label: t('sources.statusCompleted'),
     description: t('sources.statusCompletedDesc')
   },
   failed: {
     icon: AlertTriangle,
-    color: 'text-destructive',
-    bgColor: 'bg-destructive/10',
+    color: 'text-destructive-ink',
+    bgColor: 'bg-destructive-soft',
     borderColor: 'border-destructive/30',
     label: t('sources.statusFailed'),
     description: t('sources.statusFailedDesc')
@@ -136,8 +134,8 @@ function fileNameFromPath(path: string | undefined): string | null {
 function getSourceTypeLabel(sourceType: SourceType, t: TFunction): string {
   if (sourceType === 'link') return t('sources.addUrl')
   if (sourceType === 'upload') return t('sources.uploadFile')
-  if (sourceType === 'web_import') return 'Web import'
-  if (sourceType === 'deep_research_report') return 'Deep research'
+  if (sourceType === 'web_import') return t('sources.sourceCard.webImport')
+  if (sourceType === 'deep_research_report') return t('sources.sourceCard.deepResearch')
   return t('sources.enterText')
 }
 
@@ -205,7 +203,10 @@ export function SourceCard({
   const { t } = useTranslation()
   const sourceVisualsEnabled = useSourceVisualsEnabled()
   const visualCoversEnabled = isVisualSystemV2Enabled() && sourceVisualsEnabled
-  const shouldShowVisualCover = visualCoversEnabled && (showVisualCover ?? true)
+  // v0.8.130 — Phase 2d: only when there is an image or a visual status to show; the
+  // bare fallback just repeated the title above the row.
+  const hasVisualContent = source.visual != null || source.visual_status != null
+  const shouldShowVisualCover = visualCoversEnabled && (showVisualCover ?? true) && hasVisualContent
   const openPodcastReview = usePodcastStudioStore((state) => state.open)
   const statusConfigMap = getStatusConfig(t)
   const resolvedNotebookId =
@@ -301,16 +302,16 @@ export function SourceCard({
   const hasLowExtractedText = isCompleted && source.extraction_quality === 'low_text'
   const canRetry = !isFileUnavailable
   const podcastDisabledReason = !isCompleted
-    ? 'Source processing must finish before it can become a podcast.'
+    ? t('sources.sourceCard.podcastNeedsProcessing')
     : isFileUnavailable
-      ? 'The original source file is unavailable.'
+      ? t('sources.sourceCard.podcastFileUnavailable')
       : hasNoExtractedText
-        ? 'No readable source content is available.'
+        ? t('sources.sourceCard.podcastNoContent')
         : undefined
   const insightsPodcastDisabledReason = !isCompleted
-    ? 'Source processing must finish before its insights can become a podcast.'
+    ? t('sources.sourceCard.insightsPodcastNeedsProcessing')
     : source.insights_count <= 0
-      ? 'No source insights are available.'
+      ? t('sources.sourceCard.insightsPodcastNone')
       : undefined
   const progressPercent = getProgressPercent(statusData?.processing_info ?? source.processing_info)
   const notebookCount = source.notebook_count ?? 0
@@ -341,163 +342,107 @@ export function SourceCard({
     }
   }
 
+  // v0.8.130 — Phase 2d: metadata as one quiet line of text (the pills wrapped a card to
+  // ~110px). Each item stays its own element so it can be read and matched on its own.
+  const metaItems: React.ReactNode[] = [
+    !isCompleted && (
+      <span key="status" className={cn('font-medium', statusConfig.color)}>
+        {statusLoading && shouldFetchStatus ? t('sources.checking') : statusConfig.label}
+      </span>
+    ),
+    <span key="type">{getSourceTypeLabel(sourceType, t)}</span>,
+    isCompleted && source.insights_count > 0 && (
+      <span key="insights">{t('sources.insightsCount').replace('{count}', source.insights_count.toString())}</span>
+    ),
+    isShared && <span key="shared">{notebookCount > 1 ? t('sources.sourceCard.sharedWithCount', { count: notebookCount }) : t('sources.sourceCard.shared')}</span>,
+    provenanceLabel && <span key="provenance">{provenanceLabel}</span>,
+    ...(isCompleted && source.topics ? source.topics.slice(0, 2).map((topic) => <span key={`topic-${topic}`}>{topic}</span>) : []),
+    isCompleted && source.topics && source.topics.length > 2 && <span key="topics-more">+{source.topics.length - 2}</span>,
+  ].filter(Boolean)
+  const warnings = [
+    isFileUnavailable && t('sources.fileUnavailable'),
+    hasNoExtractedText && t('sources.noExtractedText'),
+    hasLowExtractedText && t('sources.lowExtractedText'),
+  ].filter((warning): warning is string => Boolean(warning))
+
   return (
-    <Card
+    // v0.8.130 — Phase 2d: a flat row (NotebookLM's source list) instead of a bordered,
+    // shadowed card. The context toggle leads the row, the actions float over its end on
+    // hover (inline on touch screens), so a 20% column still has room for the title.
+    <div
+      data-dn-source-row=""
       className={cn(
-        'group relative cursor-pointer rounded-xl border border-border/50 bg-card/95 transition-all duration-200 ease-out',
-        'ring-1 ring-border/30 hover:ring-primary/40 hover:border-border/80 hover:shadow-md active:scale-[0.99]',
-        'shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)] dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.03)]',
+        'group relative -mx-2 cursor-pointer rounded-lg px-2 py-1.5 transition-colors hover:bg-accent',
         className
       )}
       onClick={handleCardClick}
     >
-      <CardContent className="px-3.5 py-2.5">
-        {/* Header with status indicator */}
-        <div className="flex items-start justify-between gap-3 mb-1">
-          <div className="flex-1 min-w-0">
-            {shouldShowVisualCover && (
-              <div className="mb-2">
-                <SourceCover source={source} variant="compact" />
-              </div>
-            )}
-            {/* Status badge - only show if not completed */}
+      {shouldShowVisualCover && (
+        <div className="mb-2">
+          <SourceCover source={source} variant="compact" />
+        </div>
+      )}
+      <div className="flex items-center gap-2">
+        {onContextModeChange && contextMode ? (
+          <ContextToggle
+            mode={contextMode}
+            hasInsights={source.insights_count > 0}
+            onChange={onContextModeChange}
+          />
+        ) : (
+          <span className="flex size-8 flex-none items-center justify-center text-muted-foreground">
+            <SourceTypeIcon className="h-4 w-4" />
+          </span>
+        )}
+        <div className="min-w-0 flex-1">
+          {/* v0.8.130 — Phase 4b: h3 under the column's h2 (h4 skipped a level). */}
+          <h3
+            className="truncate text-sm font-medium leading-5 transition-colors group-hover:text-primary"
+            title={title}
+          >
+            {title}
+          </h3>
+          <p className="truncate text-xs leading-5 text-muted-foreground">
             {!isCompleted && (
-              <div className="flex items-center gap-2 mb-2">
-                <div className={cn(
-                  'flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium',
-                  statusConfig.bgColor,
-                  statusConfig.color
-                )}>
-                  <StatusIcon className={cn(
-                    'h-3 w-3',
-                    isProcessing && 'animate-spin'
-                  )} />
-                  {statusLoading && shouldFetchStatus ? t('sources.checking') : statusConfig.label}
-                </div>
-
-                {/* Source type indicator */}
-                <div className="flex items-center gap-1 text-muted-foreground">
-                  <SourceTypeIcon className="h-3 w-3" />
-                  <span className="text-xs capitalize">{t('common.source')}</span>
-                </div>
-              </div>
+              <StatusIcon className={cn('mr-1 inline h-3 w-3 align-[-2px]', statusConfig.color, isProcessing && 'animate-spin')} />
             )}
+            {metaItems.map((item, index) => (
+              <Fragment key={index}>
+                {index > 0 && <span aria-hidden="true"> · </span>}
+                {item}
+              </Fragment>
+            ))}
+          </p>
+          {warnings.map((warning) => (
+            <p key={warning} className="flex items-center gap-1 text-xs leading-5 text-destructive-ink">
+              <AlertTriangle className="h-3 w-3 flex-none" />
+              <span>{warning}</span>
+            </p>
+          ))}
+          {/* Processing message for active statuses */}
+          {statusData?.message && (isProcessing || isFailed) && (
+            <p className="text-xs italic text-muted-foreground">
+              {statusData.message}
+            </p>
+          )}
+          {/* v0.8.88 — auto-summary preview (opt-in source auto-summary). */}
+          {isCompleted && source.summary_preview && (
+            <p className="truncate text-xs italic text-muted-foreground">
+              {source.summary_preview}
+            </p>
+          )}
+        </div>
 
-            {/* Title */}
-            <div className={cn('mb-1.5', !isCompleted && 'mb-1')}>
-              <h4
-                className="text-sm font-medium leading-snug line-clamp-2 break-words transition-colors group-hover:text-primary"
-                title={title}
-              >
-                {title}
-              </h4>
-            </div>
-
-            {/* Processing message for active statuses */}
-            {statusData?.message && (isProcessing || isFailed) && (
-              <p className="text-xs text-muted-foreground mb-2 italic">
-                {statusData.message}
-              </p>
-            )}
-
-            {/* Metadata badges */}
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {/* Source type badge */}
-              <Badge variant="secondary" className="text-[11px] rounded-full px-2 py-0.5 flex items-center gap-1">
-                <SourceTypeIcon className="h-3 w-3" />
-                {getSourceTypeLabel(sourceType, t)}
-              </Badge>
-
-              {isShared && (
-                <Badge variant="outline" className="text-[11px] rounded-full px-2 py-0.5 flex items-center gap-1 border-border/60 bg-muted/20">
-                  <Share2 className="h-3 w-3" />
-                  {notebookCount > 1 ? `Shared with ${notebookCount}` : 'Shared'}
-                </Badge>
-              )}
-
-              {provenanceLabel && (
-                <Badge variant="outline" className="text-[11px] rounded-full px-2 py-0.5 max-w-[180px] truncate border-border/60 bg-muted/20">
-                  {provenanceLabel}
-                </Badge>
-              )}
-
-              {isFileUnavailable && (
-                <Badge
-                  variant="outline"
-                  className="text-[11px] rounded-full px-2 py-0.5 flex items-center gap-1 border-destructive/50 text-destructive bg-destructive/10"
-                >
-                  <AlertTriangle className="h-3 w-3" />
-                  {t('sources.fileUnavailable')}
-                </Badge>
-              )}
-
-              {hasNoExtractedText && (
-                <Badge
-                  variant="outline"
-                  className="text-[11px] rounded-full px-2 py-0.5 flex items-center gap-1 border-destructive/50 text-destructive bg-destructive/10"
-                >
-                  <AlertTriangle className="h-3 w-3" />
-                  {t('sources.noExtractedText')}
-                </Badge>
-              )}
-
-              {hasLowExtractedText && (
-                <Badge
-                  variant="outline"
-                  className="text-[11px] rounded-full px-2 py-0.5 flex items-center gap-1 border-amber-500/60 text-amber-700 dark:text-amber-300 bg-amber-500/10"
-                >
-                  <AlertTriangle className="h-3 w-3" />
-                  {t('sources.lowExtractedText')}
-                </Badge>
-              )}
-
-              {isCompleted && source.insights_count > 0 && (
-                <Badge variant="outline" className="text-[11px] rounded-full px-2 py-0.5 border-border/60 bg-muted/20">
-                  {t('sources.insightsCount').replace('{count}', source.insights_count.toString())}
-                </Badge>
-              )}
-              {source.topics && source.topics.length > 0 && isCompleted && (
-                <>
-                  {source.topics.slice(0, 2).map((topic, index) => (
-                    <Badge key={index} variant="outline" className="text-[11px] rounded-full px-2 py-0.5 border-border/60 bg-muted/20">
-                      {topic}
-                    </Badge>
-                  ))}
-                  {source.topics.length > 2 && (
-                    <Badge variant="outline" className="text-[11px] rounded-full px-2 py-0.5 border-border/60 bg-muted/20">
-                      +{source.topics.length - 2}
-                    </Badge>
-                  )}
-                </>
-              )}
-            </div>
-            {/* v0.8.88 — auto-summary preview (opt-in source auto-summary). */}
-            {isCompleted && source.summary_preview && (
-              <p className="mt-1 line-clamp-1 text-xs italic text-muted-foreground">
-                {source.summary_preview}
-              </p>
-            )}
-          </div>
-
-          {/* Context toggle and actions */}
-          <div className="flex items-center gap-1">
-            {/* Context toggle - only show if handler provided */}
-            {onContextModeChange && contextMode && (
-              <ContextToggle
-                mode={contextMode}
-                hasInsights={source.insights_count > 0}
-                onChange={onContextModeChange}
-              />
-            )}
-
+          {/* Actions: floats over the row's end on hover/focus; inline where hover is unavailable */}
+          <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 [@media(hover:none)]:static [@media(hover:none)]:translate-y-0 [@media(hover:none)]:opacity-100">
             {/* Actions dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
                   size="sm"
-                  aria-label="Source actions"
-                  className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity"
+                  aria-label={t('sources.sourceCard.sourceActions')}
+                  className="h-8 w-8 rounded-md bg-card p-0 shadow-xs"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <MoreVertical className="h-4 w-4" />
@@ -549,8 +494,8 @@ export function SourceCard({
               >
                 <Podcast className="h-4 w-4 mr-2" />
                 {podcastDisabledReason
-                  ? `Turn source into podcast — ${podcastDisabledReason}`
-                  : 'Turn source into podcast'}
+                  ? t('sources.sourceCard.turnIntoPodcastDisabled', { reason: podcastDisabledReason })
+                  : t('sources.sourceCard.turnIntoPodcast')}
               </DropdownMenuItem>
 
               <DropdownMenuItem
@@ -566,8 +511,8 @@ export function SourceCard({
               >
                 <Podcast className="h-4 w-4 mr-2" />
                 {insightsPodcastDisabledReason
-                  ? `Turn source insights into podcast — ${insightsPodcastDisabledReason}`
-                  : 'Turn source insights into podcast'}
+                  ? t('sources.sourceCard.turnInsightsIntoPodcastDisabled', { reason: insightsPodcastDisabledReason })
+                  : t('sources.sourceCard.turnInsightsIntoPodcast')}
               </DropdownMenuItem>
 
               <DropdownMenuSeparator />
@@ -588,7 +533,7 @@ export function SourceCard({
           </div>
         </div>
         {isFailed && (
-          <div className="flex gap-2 pt-2 border-t">
+          <div className="flex gap-2 pt-1.5 pl-10">
             <Button
               variant="outline"
               size="sm"
@@ -607,7 +552,7 @@ export function SourceCard({
 
         {/* Processing progress indicator */}
         {isProcessing && progressPercent !== null && (
-          <div className="mt-3 pt-2 border-t">
+          <div className="mt-1.5 pl-10">
             <div className="flex justify-between items-center mb-1">
               <span className="text-xs text-muted-foreground">{t('common.progress')}</span>
               <span className="text-xs text-muted-foreground">
@@ -617,7 +562,6 @@ export function SourceCard({
             <Progress value={progressPercent} className="h-1.5" />
           </div>
         )}
-      </CardContent>
-    </Card>
+    </div>
   )
 }

@@ -39,7 +39,8 @@ function boundedSourceId(value: unknown): string | null {
   return normalized.length > 0 && normalized.length <= 512 ? normalized : null
 }
 
-const createSourceSchema = z.object({
+// Built per render-language so the validation messages are translated (zod runs outside React).
+const buildCreateSourceSchema = (t: (key: string) => string) => z.object({
   type: z.enum(['link', 'upload', 'text']),
   title: z.string().optional(),
   url: z.string().optional(),
@@ -64,7 +65,7 @@ const createSourceSchema = z.object({
   }
   return true
 }, {
-  message: 'Please provide the required content for the selected source type',
+  message: t('sources.addSourceDialog.requiredContent'),
   path: ['type'],
 }).refine((data) => {
   // Make title mandatory for text sources
@@ -73,11 +74,11 @@ const createSourceSchema = z.object({
   }
   return true
 }, {
-  message: 'Title is required for text sources',
+  message: t('sources.addSourceDialog.titleRequired'),
   path: ['title'],
 })
 
-type CreateSourceFormData = z.infer<typeof createSourceSchema>
+type CreateSourceFormData = z.infer<ReturnType<typeof buildCreateSourceSchema>>
 
 interface AddSourceDialogProps {
   open: boolean
@@ -116,9 +117,11 @@ export function AddSourceDialog({
   const { t } = useTranslation()
 
   const WIZARD_STEPS: readonly WizardStep[] = [
-    { number: 1, title: t('sources.addSource'), description: t('sources.processDescription') },
-    { number: 2, title: t('navigation.notebooks'), description: t('notebooks.searchPlaceholder') },
-    { number: 3, title: t('navigation.process'), description: t('sources.processDescription') },
+    // v0.8.130 — The dialog header carries the one sentence about AI processing; repeating
+    // it (or a search placeholder) under every step title only added noise.
+    { number: 1, title: t('sources.addSource') },
+    { number: 2, title: t('navigation.notebooks') },
+    { number: 3, title: t('navigation.process') },
   ]
 
   // Simplified state management
@@ -145,6 +148,7 @@ export function AddSourceDialog({
   const { data: settings } = useSettings()
 
   // Form setup
+  const createSourceSchema = useMemo(() => buildCreateSourceSchema(t), [t])
   const {
     register,
     handleSubmit,
@@ -569,15 +573,16 @@ export function AddSourceDialog({
             {batchProgress && (
               <>
                 <div className="w-full bg-muted rounded-full h-2">
+                  {/* v0.8.130 — named transitions, status colours from theme tokens (UI audit Phase 1) */}
                   <div
-                    className="bg-primary h-2 rounded-full transition-all duration-300"
+                    className="bg-primary h-2 rounded-full transition-[width] duration-300"
                     style={{ width: `${progressPercent}%` }}
                   />
                 </div>
 
                 <div className="flex items-center justify-between text-sm">
                   <div className="flex items-center gap-4">
-                    <span className="flex items-center gap-1.5 text-green-600">
+                    <span className="flex items-center gap-1.5 text-success-ink">
                       <CheckCircleIcon className="h-4 w-4" />
                       {batchProgress.completed} {t('common.completed')}
                     </span>
@@ -605,7 +610,7 @@ export function AddSourceDialog({
             {!batchProgress && processingStatus?.progress && (
               <div className="w-full bg-muted rounded-full h-2">
                 <div
-                  className="bg-primary h-2 rounded-full transition-all duration-300"
+                  className="bg-primary h-2 rounded-full transition-[width] duration-300"
                   style={{ width: `${processingStatus.progress}%` }}
                 />
               </div>

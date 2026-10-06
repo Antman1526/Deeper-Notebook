@@ -4,6 +4,22 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { VaultPage } from '@/lib/api/vault'
 
+// These assertions rely on interpolated titles/levels in accessible names, which an identity `t`
+// would drop. Resolve just those keys to their English.
+vi.mock('@/lib/hooks/use-translation', () => {
+  const en: Record<string, string> = {
+    'knowledge.headingLevel': 'Level {{level}} {{title}}',
+    'knowledge.vaultDocumentView.readingView': '{{title}} reading view',
+    'knowledge.vaultDocumentView.sourceView': '{{title}} source',
+    'knowledge.vaultDocumentView.livePreviewView': '{{title}} live preview',
+    'knowledge.vaultSourceView.source': '{{title}} source',
+    'knowledge.vaultLivePreview.livePreview': '{{title}} live preview',
+  }
+  const t = (key: string, options?: Record<string, unknown>) => (en[key] ?? key)
+    .replace(/\{\{(\w+)\}\}/g, (_match, name: string) => String(options?.[name] ?? ''))
+  return { useTranslation: () => ({ t, language: 'en-US', setLanguage: vi.fn() }) }
+})
+
 import { VaultDocumentView } from './VaultDocumentView'
 
 const pageFixture: VaultPage = {
@@ -102,7 +118,7 @@ describe('VaultDocumentView', () => {
     } else {
       expect(screen.getByRole('textbox', { name: accessibleName })).toBeInTheDocument()
     }
-    expect(screen.getByLabelText('Note details')).toBeInTheDocument()
+    expect(screen.getByLabelText('knowledge.overlay.noteDetails')).toBeInTheDocument()
   })
 
   it.each(['reading', 'source', 'live-preview'] as const)(

@@ -5,6 +5,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { sourcesApi } from '@/lib/api/sources'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { SOURCE_KIND_KEYS, enumLabel, spacedEnum } from '@/lib/enum-labels'
+import { useTranslation } from '@/lib/hooks/use-translation'
 
 export interface StudySourceLink {
   source_id: string
@@ -60,22 +62,22 @@ function sourceKind(source: StudySourceOption): string {
 }
 
 function readiness(source: StudySourceOption): {
-  label: string
+  labelKey: string
   variant: 'default' | 'secondary' | 'destructive' | 'outline'
 } {
-  if (source.status === 'failed') return { label: 'Unavailable', variant: 'destructive' }
+  if (source.status === 'failed') return { labelKey: 'study.studySourcePicker.status.unavailable', variant: 'destructive' }
   if (
     PROCESSING_STATUSES.has(source.status ?? '') ||
     source.extraction_quality === 'pending' ||
     source.extraction_quality === 'no_text' ||
     source.extraction_quality === 'low_text'
   ) {
-    return { label: 'Processing', variant: 'secondary' }
+    return { labelKey: 'study.studySourcePicker.status.processing', variant: 'secondary' }
   }
   if (source.status === 'completed' || source.extraction_quality === 'ok') {
-    return { label: 'Ready', variant: 'default' }
+    return { labelKey: 'study.studySourcePicker.status.ready', variant: 'default' }
   }
-  return { label: 'Checking', variant: 'outline' }
+  return { labelKey: 'study.studySourcePicker.status.checking', variant: 'outline' }
 }
 
 /** Pick an existing source; upload remains owned by the existing dialog. */
@@ -88,6 +90,7 @@ export function StudySourcePicker({
   sources: providedSources,
   className,
 }: StudySourcePickerProps) {
+  const { t } = useTranslation()
   const [loadedSources, setLoadedSources] = useState<StudySourceOption[]>([])
   const [fetchState, setFetchState] = useState<'loading' | 'ready' | 'error'>(
     providedSources === undefined ? 'loading' : 'ready',
@@ -195,8 +198,8 @@ export function StudySourcePicker({
   )
 
   const failedSourceTitle = linkError
-    ? sources.find((source) => source.id === linkError.sourceId)?.title?.trim() || 'source'
-    : 'source'
+    ? sources.find((source) => source.id === linkError.sourceId)?.title?.trim() || t('study.studySourcePicker.sourceFallback')
+    : t('study.studySourcePicker.sourceFallback')
 
   const retryFailedLink = useCallback(() => {
     if (linkError) void linkSource(linkError.sourceId)
@@ -229,10 +232,10 @@ export function StudySourcePicker({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 id="study-source-picker-title" className="text-base font-semibold">
-            Learning sources
+            {t('study.studySourcePicker.heading')}
           </h2>
           <p className="text-sm text-muted-foreground">
-            Reuse a source from your library or add one with the existing source dialog.
+            {t('study.studySourcePicker.description')}
           </p>
         </div>
         <Button
@@ -240,21 +243,21 @@ export function StudySourcePicker({
           variant="outline"
           onClick={() => onOpenUpload(handleSourceCreated, handleSourcesCreated)}
         >
-          Upload PDF or video
+          {t('study.studySourcePicker.upload')}
         </Button>
       </div>
 
       {fetchState === 'loading' ? (
         <p role="status" className="rounded-md border p-4 text-sm text-muted-foreground">
-          Loading sources…
+          {t('study.studySourcePicker.loading')}
         </p>
       ) : fetchState === 'error' ? (
         <div className="space-y-3 rounded-md border border-destructive/40 p-4">
           <p role="alert" className="text-sm text-destructive">
-            Unable to load sources.
+            {t('study.studySourcePicker.loadError')}
           </p>
           <Button type="button" variant="outline" onClick={() => setRetryCount((count) => count + 1)}>
-            Retry sources
+            {t('study.studySourcePicker.retrySources')}
           </Button>
         </div>
       ) : (
@@ -262,7 +265,7 @@ export function StudySourcePicker({
           {linkError ? (
             <div className="space-y-3 rounded-md border border-destructive/40 p-4">
               <p role="alert" className="text-sm text-destructive">
-                Unable to link source.
+                {t('study.studySourcePicker.linkError')}
               </p>
               <div className="flex flex-wrap gap-2">
                 <Button
@@ -271,22 +274,22 @@ export function StudySourcePicker({
                   disabled={pendingIds.has(linkError.sourceId)}
                   onClick={retryFailedLink}
                 >
-                  Retry link {failedSourceTitle}
+                  {t('study.studySourcePicker.retryLink', { title: failedSourceTitle })}
                 </Button>
                 <Button
                   type="button"
                   variant="ghost"
-                  aria-label="Dismiss link error"
+                  aria-label={t('study.studySourcePicker.dismissLinkError')}
                   onClick={() => setLinkError(null)}
                 >
-                  Dismiss
+                  {t('study.studySourcePicker.dismiss')}
                 </Button>
               </div>
             </div>
           ) : null}
           {sources.length === 0 ? (
             <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-              No sources are available yet.
+              {t('study.studySourcePicker.empty')}
             </p>
           ) : (
             <ul role="list" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -302,11 +305,11 @@ export function StudySourcePicker({
                   >
                     <div className="min-w-0 space-y-2">
                       <p className="truncate font-medium" title={source.title ?? undefined}>
-                        {source.title?.trim() || 'Untitled source'}
+                        {source.title?.trim() || t('study.studySourcePicker.untitled')}
                       </p>
                       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                        <span className="capitalize">{sourceKind(source).replaceAll('_', ' ')}</span>
-                        <Badge variant={state.variant}>{state.label}</Badge>
+                        <span className="capitalize">{enumLabel(t, SOURCE_KIND_KEYS, sourceKind(source), spacedEnum(sourceKind(source)))}</span>
+                        <Badge variant={state.variant}>{t(state.labelKey)}</Badge>
                       </div>
                     </div>
                     <Button
@@ -314,10 +317,12 @@ export function StudySourcePicker({
                       variant={linked ? 'secondary' : 'default'}
                       size="sm"
                       disabled={linked || pending}
-                      aria-label={linked ? `${source.title || 'Source'} linked` : `Link ${source.title || 'source'}`}
+                      aria-label={linked
+                        ? t('study.studySourcePicker.linkedAria', { title: source.title || t('study.studySourcePicker.sourceFallbackCapital') })
+                        : t('study.studySourcePicker.linkAria', { title: source.title || t('study.studySourcePicker.sourceFallback') })}
                       onClick={() => void linkSource(id)}
                     >
-                      {linked ? 'Linked' : pending ? 'Linking…' : 'Link source'}
+                      {linked ? t('study.studySourcePicker.linked') : pending ? t('study.studySourcePicker.linking') : t('study.studySourcePicker.link')}
                     </Button>
                   </li>
                 )

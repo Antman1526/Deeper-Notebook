@@ -58,7 +58,9 @@ export function useMCPServers() {
     queryKey: MCP_QUERY_KEYS.all,
     queryFn: async () => {
       const res = await apiClient.get<MCPServer[]>('/mcp')
-      return res.data
+      // v0.8.130 — consumers `.filter` this list; a non-array body (an error
+      // object, `{}`) crashed the notebook view into the Recovery Center.
+      return Array.isArray(res.data) ? res.data : []
     },
   })
 }

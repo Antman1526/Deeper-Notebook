@@ -93,3 +93,61 @@ describe('ChatColumn', () => {
     }))
   })
 })
+
+// v0.8.130 — starter questions are for an EMPTY chat. They used to be fetched as
+// soon as sources arrived, before the saved session had loaded, so whether a chat
+// with history fired the request depended on which response came back first.
+// Now the fetch waits until the chat history is known.
+vi.mock('@/lib/api/notebooks', () => ({
+  notebooksApi: { suggestedQuestions: vi.fn(async () => ['What changed?']) },
+}))
+
+describe('ChatColumn starter questions', () => {
+  const props = {
+    notebookId: 'test-notebook',
+    contextSelections: { sources: { 'source:1': 'full' as const }, notes: {} },
+    sources: [{ id: 'source:1', title: 'One' }] as unknown as Parameters<typeof ChatColumn>[0]['sources'],
+    sourcesLoading: false,
+  }
+  const chatMock = (overrides: Record<string, unknown>) =>
+    ({ ...createChatMock(), ...overrides }) as unknown as ReturnType<typeof useNotebookChat>
+
+  it('waits for the chat history before fetching them', async () => {
+    const { notebooksApi } = await import('@/lib/api/notebooks')
+    vi.mocked(notebooksApi.suggestedQuestions).mockClear()
+    vi.mocked(useNotes).mockReturnValue(createNotesMock())
+    vi.mocked(useNotebookChat).mockReturnValue(chatMock({ historyLoaded: false }))
+
+    renderWithClient(<ChatColumn {...props} />)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(notebooksApi.suggestedQuestions).not.toHaveBeenCalled()
+  })
+
+  it('does not fetch them when the saved session already has messages', async () => {
+    const { notebooksApi } = await import('@/lib/api/notebooks')
+    vi.mocked(notebooksApi.suggestedQuestions).mockClear()
+    vi.mocked(useNotes).mockReturnValue(createNotesMock())
+    vi.mocked(useNotebookChat).mockReturnValue(chatMock({
+      historyLoaded: true,
+      currentSession: { id: 's1', messages: [{ id: 'm1', type: 'human', content: 'Hi' }] },
+    }))
+
+    renderWithClient(<ChatColumn {...props} />)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(notebooksApi.suggestedQuestions).not.toHaveBeenCalled()
+  })
+
+  it('fetches them once for an empty chat', async () => {
+    const { notebooksApi } = await import('@/lib/api/notebooks')
+    vi.mocked(notebooksApi.suggestedQuestions).mockClear()
+    vi.mocked(useNotes).mockReturnValue(createNotesMock())
+    vi.mocked(useNotebookChat).mockReturnValue(chatMock({ historyLoaded: true }))
+
+    renderWithClient(<ChatColumn {...props} />)
+
+    await vi.waitFor(() => expect(notebooksApi.suggestedQuestions).toHaveBeenCalledTimes(1))
+    expect(notebooksApi.suggestedQuestions).toHaveBeenCalledWith('test-notebook', 4)
+  })
+})

@@ -5,6 +5,15 @@ import { describe, expect, it, vi } from 'vitest'
 import { SourceGallery } from './SourceGallery'
 import type { SourceListResponse } from '@/lib/types/api'
 
+// Keys come back unchanged; interpolated values are appended so names that
+// embed a source title stay distinguishable.
+vi.mock('@/lib/hooks/use-translation', () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: Record<string, unknown>) =>
+      opts ? `${key} ${Object.values(opts).join(' ')}` : key,
+  }),
+}))
+
 const timestamp = '2026-08-15T12:00:00Z'
 const css = readFileSync('src/components/deeper-notebook/source-gallery/source-gallery.css', 'utf8')
 
@@ -44,8 +53,8 @@ describe('SourceGallery', () => {
     expect(screen.getByTestId('source-gallery-card-source:two')).toHaveAttribute('data-featured', 'true')
     expect(screen.getByTestId('source-gallery-card-source:one')).toHaveAttribute('data-featured', 'false')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Select First source' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Open First source' }))
+    fireEvent.click(screen.getByRole('button', { name: 'workspace.sourceGallery.selectLabel First source' }))
+    fireEvent.click(screen.getByRole('button', { name: 'workspace.sourceCover.openLabel First source' }))
     expect(onSelect).toHaveBeenCalledWith('source:one')
     expect(onOpen).toHaveBeenCalledWith('source:one')
   })
@@ -56,8 +65,8 @@ describe('SourceGallery', () => {
 
     render(<SourceGallery sources={sources} onDelete={onDelete} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Actions for First source' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete source' }))
+    fireEvent.click(screen.getByRole('button', { name: 'workspace.sourceCoverActions.actionsLabel First source' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'workspace.sourceCoverActions.deleteSource' }))
 
     expect(onDelete).toHaveBeenCalledOnce()
     expect(onDelete).toHaveBeenCalledWith('source:one')
@@ -65,7 +74,9 @@ describe('SourceGallery', () => {
 
   it('provides the bounded container, compact reflow, target, contrast, and no-motion CSS contract', () => {
     expect(css).toContain('container: source-gallery / inline-size')
-    expect(css).toContain('repeat(auto-fit, minmax(min(100%, 14rem), 1fr))')
+    // v0.8.130 — Phase 3a: auto-fill keeps a lone source card-sized (auto-fit stretched it
+    // across the row); the bounded, reflowing track itself is unchanged.
+    expect(css).toContain('repeat(auto-fill, minmax(min(100%, 14rem), 1fr))')
     expect(css).toContain('@container source-gallery (max-width: 34rem)')
     expect(css).toMatch(
       /@container source-gallery \(max-width: 34rem\)[\s\S]*?\.dn-source-cover \{[\s\S]*?grid-column: 1 \/ -1/,

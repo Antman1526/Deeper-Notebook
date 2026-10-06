@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { studyAnkiApi } from '@/lib/api/study-anki'
-import { QUERY_KEYS } from '@/lib/api/query-client'
+import { QUERY_KEYS, shouldRetryIdempotentMutation } from '@/lib/api/query-client'
 import type { AnkiHttpOptions } from '@/lib/types/study-anki'
 
 export function useStudyAnkiImportPreview() {
@@ -27,6 +27,9 @@ export function useStudyAnkiPublish() {
   return useMutation({
     mutationFn: ({ planId, jobId, requestId, options }: { planId: string; jobId: string; requestId: string; options?: AnkiHttpOptions }) =>
       studyAnkiApi.publish(planId, jobId, requestId, options),
+    // v0.8.130 — requestId is an idempotency key carried in the variables (the same on
+    // every attempt), so a lost request may be repeated; the default never repeats a POST.
+    retry: shouldRetryIdempotentMutation,
     onSuccess: async (_result, { planId }) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: QUERY_KEYS.studyPlan(planId) }),

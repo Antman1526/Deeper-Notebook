@@ -8,9 +8,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, FileText, Link2, ChevronDown, Loader2, ListChecks, Compass } from 'lucide-react'
+import { Plus, FileText, Link2, Loader2, MoreHorizontal, Sparkles, Compass } from 'lucide-react'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { EmptyState } from '@/components/common/EmptyState'
 import { AddSourceDialog } from '@/components/sources/AddSourceDialog'
@@ -73,6 +74,7 @@ export function SourcesColumn({
   const showVisualCover = isVisualSystemV2Enabled() && sourceVisualsEnabled
   const sourcesLabel = t('navigation.sources')
   const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [embedDialogOpen, setEmbedDialogOpen] = useState(false) // v0.8.130 — opened from Source options
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [addExistingDialogOpen, setAddExistingDialogOpen] = useState(false)
   // v0.8.87 — Discover sources (guarded web search) dialog.
@@ -203,6 +205,7 @@ export function SourcesColumn({
         collapsedLabel={t('navigation.sources')}
       >
         <Card
+          data-dn-column=""
           className="relative h-full flex flex-col flex-1 overflow-hidden"
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
@@ -215,60 +218,73 @@ export function SourcesColumn({
               </p>
             </div>
           )}
-          <CardHeader className="pb-3 flex-shrink-0">
-            <div className="flex items-center justify-between gap-2">
-              <CardTitle className="text-lg">{t('navigation.sources')}</CardTitle>
-              <div className="flex items-center gap-2">
-                {onBulkContextModeChange && sources && sources.length > 0 && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm" title={t('sources.bulkContext')}>
-                        <ListChecks className="h-4 w-4" />
-                        <ChevronDown className="h-4 w-4 ml-1" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => onBulkContextModeChange('insights')}>
-                        {t('sources.includeAllInsights')}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => onBulkContextModeChange('full')}>
-                        {t('sources.includeAllFull')}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => onBulkContextModeChange('exclude')}>
-                        {t('sources.excludeAllFromContext')}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-                <BulkVectorizeButton notebookId={notebookId} />
-                <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
-                  <DropdownMenuTrigger asChild>
-                    <Button size="sm">
-                      <Plus className="h-4 w-4 mr-2" />
-                      {t('sources.addSource')}
-                      <ChevronDown className="h-4 w-4 ml-2" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => { setDropdownOpen(false); setAddDialogOpen(true); }}>
-                      <Plus className="h-4 w-4 mr-2" />
-                      {t('sources.addSource')}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => { setDropdownOpen(false); setAddExistingDialogOpen(true); }}>
-                      <Link2 className="h-4 w-4 mr-2" />
-                      {t('sources.addExistingTitle')}
-                    </DropdownMenuItem>
-                    {/* v0.8.87 — Discover: guarded web search → add link sources. */}
-                    <DropdownMenuItem onClick={() => { setDropdownOpen(false); setDiscoverDialogOpen(true); }}>
-                      <Compass className="h-4 w-4 mr-2" />
-                      {t('sources.discover', { defaultValue: 'Discover sources' })}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                {collapseButton}
-              </div>
+          <CardHeader className="flex-shrink-0">
+            {/* v0.8.130 — Phase 2b: the header holds the title and collapse only. With the
+                actions beside it, "Sources" truncated to "So…" (1440px) or "S" (1024px). */}
+            <div className="flex items-center gap-1">
+              {/* v0.8.130 — Phase 4b: the column title is the h2 its cards sit under. */}
+              <CardTitle role="heading" aria-level={2} className="min-w-0 flex-1 truncate text-base font-medium">{t('navigation.sources')}</CardTitle>
+              {collapseButton}
             </div>
           </CardHeader>
+
+          {/* v0.8.130 — Phase 2b: a full-width Add row (NotebookLM's "+ Add sources"), with bulk
+              context and Embed all in one options menu beside it. It also replaces the empty
+              state's own Add button, so the page keeps a single "Add Source" control. */}
+          <div data-dn-column-actions="" className="flex flex-none items-center gap-2 px-4 pt-3">
+            <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
+              <DropdownMenuTrigger asChild>
+                {/* v0.8.130 — visible "Add" (NotebookLM's label); "Add Source" truncated in a 20% column. */}
+                <Button variant="outline" className="min-w-0 flex-1 rounded-md" aria-label={t('sources.addSource')}>
+                  <Plus className="h-4 w-4" />
+                  <span className="truncate">{t('common.add')}</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onClick={() => { setDropdownOpen(false); setAddDialogOpen(true); }}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  {t('sources.addSource')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => { setDropdownOpen(false); setAddExistingDialogOpen(true); }}>
+                  <Link2 className="h-4 w-4 mr-2" />
+                  {t('sources.addExistingTitle')}
+                </DropdownMenuItem>
+                {/* v0.8.87 — Discover: guarded web search → add link sources. */}
+                <DropdownMenuItem onClick={() => { setDropdownOpen(false); setDiscoverDialogOpen(true); }}>
+                  <Compass className="h-4 w-4 mr-2" />
+                  {t('sources.discover', { defaultValue: 'Discover sources' })}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="size-8" aria-label={t('sources.sourceOptions')} title={t('sources.sourceOptions')}>
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {onBulkContextModeChange && sources && sources.length > 0 && (
+                  <>
+                    <DropdownMenuItem onClick={() => onBulkContextModeChange('insights')}>
+                      {t('sources.includeAllInsights')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onBulkContextModeChange('full')}>
+                      {t('sources.includeAllFull')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onBulkContextModeChange('exclude')}>
+                      {t('sources.excludeAllFromContext')}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
+                <DropdownMenuItem onClick={() => setEmbedDialogOpen(true)}>
+                  <Sparkles className="h-4 w-4 mr-2" />
+                  {t('notebooks.bulkVectorize.button')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <BulkVectorizeButton notebookId={notebookId} open={embedDialogOpen} onOpenChange={setEmbedDialogOpen} hideTrigger />
+          </div>
 
           {/* v0.7.45 — body splits into three render paths:
               1. Loading: spinner (unchanged)
@@ -289,15 +305,8 @@ export function SourcesColumn({
                 icon={FileText}
                 title={t('sources.noSourcesYet')}
                 description={t('sources.createFirstSource')}
-                action={
-                  // v0.8.75 — actionable empty state (improvement roadmap,
-                  // Batch 1): a clear CTA to add the first source instead of a
-                  // dead-end message. Opens the existing AddSourceDialog.
-                  <Button size="sm" onClick={() => setAddDialogOpen(true)}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    {t('sources.addSource')}
-                  </Button>
-                }
+                // v0.8.130 — Phase 2b: the column's Add row is the call to action (v0.8.75's
+                // empty-state button duplicated it).
               />
             ) : sources.length >= VIRTUALIZE_THRESHOLD ? (
               <VirtualizedListAuto

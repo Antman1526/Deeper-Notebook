@@ -17,6 +17,15 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from deeper_notebook.graphs import chat
 
+
+@pytest.fixture(autouse=True)
+def _isolate_chat_caps(unset_setting):
+    unset_setting(
+        "DEEPER_NOTEBOOK_CHAT_HISTORY_CHAR_CAP",
+        "DEEPER_NOTEBOOK_CHAT_MESSAGE_CHAR_CAP",
+    )
+
+
 # ---------------------------------------------------------------------------
 # _msg_char_len — defensive against many message shapes
 # ---------------------------------------------------------------------------
@@ -57,14 +66,12 @@ def _make_history(n_turns: int, content_size: int = 200) -> list:
     return out
 
 
-def test_trim_returns_empty_when_input_empty(monkeypatch):
-    monkeypatch.delenv("DEEPER_NOTEBOOK_CHAT_HISTORY_CHAR_CAP", raising=False)
+def test_trim_returns_empty_when_input_empty():
     assert chat._trim_message_history([]) == []
 
 
-def test_trim_returns_untouched_when_under_cap(monkeypatch):
+def test_trim_returns_untouched_when_under_cap():
     """Under the cap → no marker, no slicing, same list returned."""
-    monkeypatch.delenv("DEEPER_NOTEBOOK_CHAT_HISTORY_CHAR_CAP", raising=False)
     msgs = _make_history(3, content_size=100)  # ~6 × 102 = 612 chars
     out = chat._trim_message_history(msgs)
     assert out == msgs
@@ -74,11 +81,8 @@ def test_trim_returns_untouched_when_under_cap(monkeypatch):
     )
 
 
-def test_trim_drops_oldest_when_over_cap(monkeypatch):
+def test_trim_drops_oldest_when_over_cap():
     """Over the cap → oldest dropped, most-recent kept, marker prepended."""
-    monkeypatch.delenv(
-        "DEEPER_NOTEBOOK_CHAT_HISTORY_CHAR_CAP", raising=False
-    )  # 12_000 default
     msgs = _make_history(50, content_size=500)  # ~50_000 chars total
     out = chat._trim_message_history(msgs)
 
@@ -97,7 +101,7 @@ def test_trim_drops_oldest_when_over_cap(monkeypatch):
     assert len(out) - 1 < len(msgs)
 
 
-def test_trim_keeps_last_message_even_if_oversize(monkeypatch):
+def test_trim_keeps_last_message_even_if_oversize():
     """A single oversize current-turn message is KEPT (we never drop
     the most recent), but as of v0.7.66 its content is now truncated
     to the per-message cap so a 50k-char paste can't blow past a
@@ -105,8 +109,6 @@ def test_trim_keeps_last_message_even_if_oversize(monkeypatch):
     the conversation; truncating it preserves the turn while
     respecting the model's budget.
     """
-    monkeypatch.delenv("DEEPER_NOTEBOOK_CHAT_HISTORY_CHAR_CAP", raising=False)
-    monkeypatch.delenv("DEEPER_NOTEBOOK_CHAT_MESSAGE_CHAR_CAP", raising=False)
     huge = HumanMessage(content="X" * 30_000)  # 2.5x the history cap
     out = chat._trim_message_history([huge])
     # Still exactly one message, no history marker prepended (nothing dropped).
@@ -160,10 +162,9 @@ def test_trim_falls_back_when_cap_too_low(monkeypatch):
     assert len(out) > 5
 
 
-def test_trim_preserves_message_order(monkeypatch):
+def test_trim_preserves_message_order():
     """The order of kept messages must match the original order — we
     drop from the front, never reorder."""
-    monkeypatch.delenv("DEEPER_NOTEBOOK_CHAT_HISTORY_CHAR_CAP", raising=False)
     msgs = _make_history(40, content_size=500)
     out = chat._trim_message_history(msgs)
     kept = out[1:]  # skip the marker
@@ -189,7 +190,6 @@ async def test_call_model_invokes_trimming(monkeypatch):
     LLM round trip is `await model.ainvoke()` instead of
     `model.invoke()`. The trimmer is invoked the same way; only the
     test's call-site needs `await`."""
-    monkeypatch.delenv("DEEPER_NOTEBOOK_CHAT_HISTORY_CHAR_CAP", raising=False)
     # This test owns history trimming, not the separately covered default-on
     # Agent FSM terminal instruction. Keep its two-message payload authority.
     monkeypatch.setenv("DEEPER_NOTEBOOK_AGENT_FSM", "0")

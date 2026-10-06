@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { ModelRoutePlanPanel } from '@/components/local-models/ModelRoutePlanPanel'
 import { useLocalModelSettings, useLocalModelsHealth, useModelRoutePlan } from '@/lib/hooks/use-local-models'
 import { useModelDefaults, useModels } from '@/lib/hooks/use-models'
+import { useTranslation } from '@/lib/hooks/use-translation'
 import {
   getLocalResearchReadinessReason,
   getResearchModeAvailability,
@@ -21,6 +22,7 @@ export function KnowledgeAskPane({
   selectedDocumentIds,
   readinessReason = null,
 }: KnowledgeAskPaneProps) {
+  const { t } = useTranslation()
   const [question, setQuestion] = useState('')
   const localModelsHealth = useLocalModelsHealth()
   const { data: modelDefaults } = useModelDefaults()
@@ -33,11 +35,18 @@ export function KnowledgeAskPane({
     defaultChatModel
       ? { id: defaultChatModel.id, credentialId: defaultChatModel.credential ?? null }
       : null,
+    t,
   )
-  const selectionLabel = `${selectedDocumentIds.length} selected document${selectedDocumentIds.length === 1 ? '' : 's'}`
+  const selectionLabel = t(
+    selectedDocumentIds.length === 1
+      ? 'knowledge.knowledgeAskPane.selectedDocumentOne'
+      : 'knowledge.knowledgeAskPane.selectedDocumentOther',
+    { count: selectedDocumentIds.length },
+  )
   const readiness = getResearchModeAvailability('ask', {
     target: { kind: 'ask' },
     askReadinessReason: readinessReason ?? localReadinessReason,
+    t,
   })
   const settings = useLocalModelSettings()
   const researchRoute = useModelRoutePlan(settings.data ? {
@@ -45,26 +54,26 @@ export function KnowledgeAskPane({
     role_override_model_id: settings.data.role_overrides.research_chat ?? null, modalities: ['text'],
   } : null)
   const scopeReason = selectedDocumentIds.length > 0
-    ? 'Scoped Ask is unavailable until selection-aware chat is available.'
-    : 'Select one or more documents before starting a scoped Ask.'
+    ? t('knowledge.knowledgeAskPane.scopedUnavailable')
+    : t('knowledge.knowledgeAskPane.selectDocuments')
 
   return (
-    <section aria-label="Knowledge Ask" className="space-y-4">
+    <section aria-label={t('knowledge.knowledgeAskPane.region')} className="space-y-4">
       <div>
-        <h2 className="text-xl font-semibold">Ask</h2>
+        <h2 className="text-xl font-semibold">{t('knowledge.knowledgeAskPane.title')}</h2>
         <p className="text-sm text-muted-foreground">{selectionLabel}</p>
       </div>
       {readiness.reason && <p role="status" className="text-sm text-muted-foreground">{readiness.reason}</p>}
-      <ModelRoutePlanPanel title="Research Chat route" plan={researchRoute.data} isError={settings.isError || researchRoute.isError} isLoading={settings.isLoading || researchRoute.isLoading} />
+      <ModelRoutePlanPanel routeId="research-chat-route" title={t('knowledge.knowledgeAskPane.researchChatRoute')} plan={researchRoute.data} isError={settings.isError || researchRoute.isError} isLoading={settings.isLoading || researchRoute.isLoading} />
       <p className="text-sm text-muted-foreground">{scopeReason}</p>
       <Textarea
-        aria-label="Question for selected knowledge"
+        aria-label={t('knowledge.knowledgeAskPane.questionLabel')}
         value={question}
         onChange={(event) => setQuestion(event.target.value)}
-        placeholder="Ask about the selected knowledge"
+        placeholder={t('knowledge.knowledgeAskPane.questionPlaceholder')}
       />
       <Button type="button" disabled>
-        Ask selected knowledge
+        {t('knowledge.knowledgeAskPane.askSelected')}
       </Button>
     </section>
   )

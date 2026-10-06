@@ -23,8 +23,8 @@ describe('TransformationsPage', () => {
   it('keeps the prompt editor and transformation list inside a Create folio', () => {
     render(<TransformationsPage />)
     const routeFrameRole = isLuminousFolioEnabled() ? 'main' : 'region'
-    expect(screen.getByRole(routeFrameRole, { name: 'Transformations' })).toBeInTheDocument()
-    expect(screen.getByText('Create')).toBeInTheDocument()
+    expect(screen.getByRole(routeFrameRole, { name: 'workspace.systemRouteFrames.titleTransformations' })).toBeInTheDocument()
+    expect(screen.getByText('workspace.systemRouteFrames.eyebrowCreate')).toBeInTheDocument()
     expect(screen.getByText('Prompt editor')).toBeInTheDocument()
     expect(screen.getByText('Transformation list')).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: /Transformations/ })).toHaveClass('min-w-0', 'flex-1')

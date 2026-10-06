@@ -12,6 +12,17 @@ const saveSyllabus = vi.fn()
 const approveSyllabus = vi.fn()
 const refresh = vi.fn()
 
+// Interpolated values are part of what these tests assert (version numbers,
+// unit titles, counts), so this mock renders `key(value1,value2)` rather than
+// the bare key used by the global setup mock.
+vi.mock('@/lib/hooks/use-translation', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown>) => (
+      options ? `${key}(${Object.values(options).join(',')})` : key
+    ),
+  }),
+}))
+
 vi.mock('@/lib/hooks/use-study-plans', () => ({
   useSaveStudySyllabus: () => ({ mutateAsync: saveSyllabus, isPending: false }),
   useApproveStudySyllabus: () => ({ mutateAsync: approveSyllabus, isPending: false }),
@@ -94,13 +105,13 @@ describe('SyllabusEditor', () => {
   it('shows source coverage and gaps and approves only the displayed version after confirmation', async () => {
     render(<SyllabusEditor plan={PLAN} syllabus={SYLLABUS} readiness={READY} onRefresh={refresh} />)
 
-    expect(screen.getByText('2 of 2 sources covered')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Approve syllabus version 2' })).toBeInTheDocument()
+    expect(screen.getByText('study.syllabusEditor.coverageCount(2,2)')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'study.syllabusEditor.approveVersion(2)' })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Approve syllabus version 2' }))
-    expect(screen.getByText('Approve syllabus version 2?')).toBeInTheDocument()
-    expect(screen.getByText(/Version 2[\s\S]*2 of 2 sources covered/)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm approval' }))
+    fireEvent.click(screen.getByRole('button', { name: 'study.syllabusEditor.approveVersion(2)' }))
+    expect(screen.getByText('study.syllabusEditor.approveDialogTitle(2)')).toBeInTheDocument()
+    expect(screen.getByText('study.syllabusEditor.approveDialogDescription(2,2,2)')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'study.syllabusEditor.confirmApproval' }))
 
     await waitFor(() => expect(approveSyllabus).toHaveBeenCalledWith({
       planId: PLAN.plan_id,
@@ -119,14 +130,14 @@ describe('SyllabusEditor', () => {
     }
     render(<SyllabusEditor plan={PLAN} syllabus={SYLLABUS} readiness={blocked} onRefresh={refresh} />)
 
-    expect(screen.getByText(/Approval blocked/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Approve syllabus version 2' })).toBeDisabled()
+    expect(screen.getByText('study.syllabusEditor.block.sourceNotReady')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'study.syllabusEditor.approveVersion(2)' })).toBeDisabled()
   })
 
   it('reorders units with keyboard-accessible buttons and saves an immutable next version', async () => {
     render(<SyllabusEditor plan={PLAN} syllabus={SYLLABUS} readiness={READY} onRefresh={refresh} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Move Practice up' }))
+    fireEvent.click(screen.getByRole('button', { name: 'study.syllabusEditor.moveUpAria(Practice)' }))
 
     await waitFor(() => expect(saveSyllabus).toHaveBeenCalledWith({
       planId: PLAN.plan_id,
@@ -137,16 +148,16 @@ describe('SyllabusEditor', () => {
         units: [SYLLABUS.units[1], SYLLABUS.units[0]],
       }),
     }))
-    expect(screen.getByText('Version 3 is immutable')).toBeInTheDocument()
+    expect(screen.getByText('study.syllabusEditor.versionImmutable(3)')).toBeInTheDocument()
   })
 
   it('binds approval to the newly saved immutable version and monotonic revision', async () => {
     render(<SyllabusEditor plan={PLAN} syllabus={SYLLABUS} readiness={READY} onRefresh={refresh} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Move Practice up' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Approve syllabus version 3' })).toBeEnabled())
-    fireEvent.click(screen.getByRole('button', { name: 'Approve syllabus version 3' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm approval' }))
+    fireEvent.click(screen.getByRole('button', { name: 'study.syllabusEditor.moveUpAria(Practice)' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'study.syllabusEditor.approveVersion(3)' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'study.syllabusEditor.approveVersion(3)' }))
+    fireEvent.click(screen.getByRole('button', { name: 'study.syllabusEditor.confirmApproval' }))
 
     await waitFor(() => expect(approveSyllabus).toHaveBeenCalledWith({
       planId: PLAN.plan_id,
@@ -158,14 +169,14 @@ describe('SyllabusEditor', () => {
     approveSyllabus.mockRejectedValueOnce({ response: { status: 409 } })
     render(<SyllabusEditor plan={PLAN} syllabus={SYLLABUS} readiness={READY} onRefresh={refresh} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Approve syllabus version 2' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm approval' }))
+    fireEvent.click(screen.getByRole('button', { name: 'study.syllabusEditor.approveVersion(2)' }))
+    fireEvent.click(screen.getByRole('button', { name: 'study.syllabusEditor.confirmApproval' }))
 
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent('This syllabus changed elsewhere')
-      expect(screen.getByRole('button', { name: 'Refresh syllabus' })).toBeInTheDocument()
+      expect(screen.getByRole('alert')).toHaveTextContent('study.syllabusEditor.errors.changedElsewhere')
+      expect(screen.getByRole('button', { name: 'study.syllabusEditor.refreshSyllabus' })).toBeInTheDocument()
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh syllabus' }))
+    fireEvent.click(screen.getByRole('button', { name: 'study.syllabusEditor.refreshSyllabus' }))
     expect(refresh).toHaveBeenCalledOnce()
   })
 })

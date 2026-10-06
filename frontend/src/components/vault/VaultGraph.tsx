@@ -131,18 +131,18 @@ export function VaultGraph({ graph, unresolved, onNavigate, viewport, onMoveEnd,
         ? { kind: 'graph_selection', documentIds: podcastDocumentIds }
         : undefined}
       destination="quick"
-      label="Turn graph into podcast"
+      label={t('knowledge.vaultGraph.turnGraphIntoPodcast')}
       disabledReason={podcastDocumentIds.length > 0
         ? undefined
-        : 'This graph has no unified document selection yet.'}
+        : t('knowledge.vaultGraph.noDocumentSelection')}
       onOpen={openPodcastReview}
     />}
     legend={<ul className="space-y-1 text-sm">
-      <li>{graph?.nodes.length ?? 0} connected source{(graph?.nodes.length ?? 0) === 1 ? '' : 's'}</li>
-      <li>{liveRelationKinds.length} relation type{liveRelationKinds.length === 1 ? '' : 's'}</li>
-      {unresolved.length ? <li>{unresolved.length} unresolved link{unresolved.length === 1 ? '' : 's'}</li> : null}
+      <li>{t((graph?.nodes.length ?? 0) === 1 ? 'knowledge.vaultGraph.connectedSourceOne' : 'knowledge.vaultGraph.connectedSourceOther', { count: graph?.nodes.length ?? 0 })}</li>
+      <li>{t(liveRelationKinds.length === 1 ? 'knowledge.vaultGraph.relationTypeOne' : 'knowledge.vaultGraph.relationTypeOther', { count: liveRelationKinds.length })}</li>
+      {unresolved.length ? <li>{t(unresolved.length === 1 ? 'knowledge.vaultGraph.unresolvedLinkOne' : 'knowledge.vaultGraph.unresolvedLinkOther', { count: unresolved.length })}</li> : null}
     </ul>}
     canvas={<div ref={wrapperRef} className="vault-flow h-[480px] overflow-hidden rounded-md border" aria-label={t('knowledge.localGraph')} aria-describedby={keyboardHintId} onKeyDown={handleKeyDown}><p id={keyboardHintId} className="sr-only">{t('knowledge.graphKeyboardHint')}</p><ReactFlow nodes={nodes} edges={edges} viewport={viewport} fitView={!viewport} nodesConnectable={false} nodesDraggable={false} onConnect={() => undefined} onMoveEnd={(_event, nextViewport) => onMoveEnd?.(nextViewport)} onNodeClick={(_event: MouseEvent, node) => { if (!node.id.startsWith('unresolved:')) onNavigate(node.id) }} proOptions={{ hideAttribution: true }}><Background /><Controls showInteractive={false} /></ReactFlow></div>}
-    inspector={<p className="text-sm text-muted-foreground">Open a connected note to inspect it in the existing workspace.</p>}
+    inspector={<p className="text-sm text-muted-foreground">{t('knowledge.vaultGraph.openConnectedNote')}</p>}
   />
 }

@@ -94,7 +94,9 @@ test.describe('visual system matrix contract', () => {
     })
     // Navigation mounts the dashboard hook once; this test then probes the
     // same handler directly, so the fixture must record both exact calls.
-    expect(fixture.ledger.seen['GET /api/features']).toBe(2)
+    // v0.8.130 — polled: the page's own request can land just after the probe's
+    // (it failed once under load with 1 of the 2 exact calls recorded).
+    await expect.poll(() => fixture.ledger.seen['GET /api/features']).toBe(2)
     expect(fixture.ledger.unexpected).toEqual([])
   })
 
@@ -488,10 +490,10 @@ test.describe('visual system matrix contract', () => {
     )
     expect(Object.values(LOWER_CONTENT_SELECTOR_BY_ROUTE)).not.toContain('main')
     expect(LOWER_CONTENT_SELECTOR_BY_ROUTE['/notebooks']).toBe(
-      'main [aria-label$="Archived Notebooks"]',
+      'main [aria-label$="Archived notebooks"]',
     )
     expect(LOWER_CONTENT_SELECTOR_BY_ROUTE['/knowledge']).toBe(
-      'main.research-core-editorial-workspace [role="tabpanel"][aria-label^="Knowledge pane"]',
+      'section.research-core-editorial-workspace [role="tabpanel"][aria-label^="Knowledge pane"]',
     )
     expect(LOWER_CONTENT_SELECTOR_BY_ROUTE['/sources']).toBe(
       'main [data-dn-source-gallery="true"] [role="listitem"]:last-child button:last-child',
@@ -550,16 +552,16 @@ const LOWER_CONTENT_SELECTOR_BY_ROUTE = {
   '/login': 'main form',
   '/': 'main [aria-labelledby="workspace-recent-title"]',
   '/setup-wizard': 'main [data-testid="continue-button"]',
-  '/notebooks': 'main [aria-label$="Archived Notebooks"]',
+  '/notebooks': 'main [aria-label$="Archived notebooks"]',
   '/notebooks/[id]': 'main textarea[name="chat-message"]:visible',
   '/sources': 'main [data-dn-source-gallery="true"] [role="listitem"]:last-child button:last-child',
   '/sources/[id]': 'main textarea[name="chat-message"]',
-  '/knowledge': 'main.research-core-editorial-workspace [role="tabpanel"][aria-label^="Knowledge pane"]',
+  '/knowledge': 'section.research-core-editorial-workspace [role="tabpanel"][aria-label^="Knowledge pane"]',
   '/search': 'main #ask-question',
   '/capture': 'main input[aria-label="Capture folder path"]',
   '/studio': 'main #studio-links',
   '/podcasts': 'main [role="tabpanel"][data-state="active"]',
-  '/podcasts/studio': 'main [aria-label="Production Review"]',
+  '/podcasts/studio': 'main [aria-label="Production review"]',
   '/study': 'main section[aria-labelledby="study-review-heading"] > :last-child',
   '/study/plans/[planId]': 'main [role="tabpanel"][data-state="active"]',
   '/transformations': 'main [role="tabpanel"][data-state="active"]',
@@ -1165,7 +1167,7 @@ test('explicit rollback preserves the legacy route and shell contract', async ({
       } else if (pathname === '/') {
         await expect(rollbackPage.locator('[data-dn-horizon-page="true"]')).toBeVisible()
         await expect(rollbackPage.getByRole('link', { name: 'Studio', exact: true })).toHaveAttribute('href', '/studio')
-        await expect(rollbackPage.getByRole('button', { name: 'New Notebook', exact: true })).toBeVisible()
+        await expect(rollbackPage.getByRole('button', { name: 'New notebook', exact: true })).toBeVisible()
         await expect(rollbackPage.getByRole('button', { name: 'Podcast', exact: true })).toBeVisible()
         await expect(rollbackPage.getByRole('link', { name: 'Ask', exact: true })).toHaveAttribute('href', '/search')
         await rollbackPage.getByRole('button', { name: 'Switch theme' }).click()

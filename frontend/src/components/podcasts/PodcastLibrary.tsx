@@ -5,9 +5,40 @@ import { useMemo, useState } from 'react'
 import { EpisodeCard } from '@/components/podcasts/EpisodeCard'
 import { EpisodeLab } from '@/components/podcasts/EpisodeLab'
 import { Button } from '@/components/ui/button'
+import { useTranslation } from '@/lib/hooks/use-translation'
 import type { PodcastEpisode } from '@/lib/types/podcasts'
 
 export type LibraryGroup = 'Continue Production' | 'Ready to Review' | 'Completed' | 'Needs Attention'
+/** Display keys for each group; the group names themselves stay stable identifiers. */
+const LIBRARY_GROUP_LABEL_KEYS: Record<LibraryGroup, string> = {
+  'Continue Production': 'podcasts.podcastLibrary.groupContinueProduction',
+  'Ready to Review': 'podcasts.podcastLibrary.groupReadyToReview',
+  Completed: 'podcasts.podcastLibrary.groupCompleted',
+  'Needs Attention': 'podcasts.podcastLibrary.groupNeedsAttention',
+}
+
+const LIBRARY_FORMAT_LABEL_KEYS: Record<string, string> = {
+  deep_dive: 'podcasts.podcastLibrary.formatDeepDive',
+  brief: 'podcasts.podcastLibrary.formatBrief',
+  critique: 'podcasts.podcastLibrary.formatCritique',
+  debate: 'podcasts.podcastLibrary.formatDebate',
+}
+
+const LIBRARY_STAGE_LABEL_KEYS: Record<string, string> = {
+  awaiting_review: 'podcasts.podcastLibrary.stageAwaitingReview',
+  generating_outline: 'podcasts.podcastLibrary.stageGeneratingOutline',
+  generating_transcript: 'podcasts.podcastLibrary.stageGeneratingTranscript',
+  generating_audio: 'podcasts.podcastLibrary.stageGeneratingAudio',
+  combining_audio: 'podcasts.podcastLibrary.stageCombiningAudio',
+  completed: 'podcasts.podcastLibrary.stageCompleted',
+  failed: 'podcasts.podcastLibrary.stageFailed',
+  cancelled: 'podcasts.podcastLibrary.stageCancelled',
+  running: 'podcasts.podcastLibrary.stageRunning',
+  processing: 'podcasts.podcastLibrary.stageProcessing',
+  pending: 'podcasts.podcastLibrary.stagePending',
+  submitted: 'podcasts.podcastLibrary.stageSubmitted',
+}
+
 type LibraryDateFilter = 'all' | 'seven_days' | 'thirty_days' | 'older'
 type LibraryAuthorityFilter = 'all' | 'app_owned' | 'external_read_only'
 
@@ -126,6 +157,7 @@ export function PodcastLibrary({ episodes, onDelete, onRetry, onCancel, retrying
   retrying?: boolean
   onCitationClick?: (citationId: string) => void
 }) {
+  const { t } = useTranslation()
   const [format, setFormat] = useState('all')
   const [profile, setProfile] = useState('all')
   const [stage, setStage] = useState('all')
@@ -137,17 +169,18 @@ export function PodcastLibrary({ episodes, onDelete, onRetry, onCancel, retrying
   const filtered = filterEpisodesForLibrary(episodes, { format, profile, stage, date, authority })
   const groups = groupEpisodesForLibrary(filtered)
   const labEpisode = episodes.find((episode) => episode.id === labEpisodeId) ?? null
-  return <section aria-label="Podcast Library" className="space-y-6">
+  return <section aria-label={t('podcasts.podcastLibrary.title')} className="space-y-6">
     <div className="flex flex-wrap gap-3 rounded-md border p-3">
-      <label className="grid gap-1 text-sm">Format<select aria-label="Format filter" value={format} onChange={event => setFormat(event.target.value)} className="h-9 rounded-md border bg-background px-2"><option value="all">All formats</option>{['deep_dive', 'brief', 'critique', 'debate'].map(value => <option key={value} value={value}>{value.replace('_', ' ')}</option>)}</select></label>
-      <label className="grid gap-1 text-sm">Profile<select aria-label="Profile filter" value={profile} onChange={event => setProfile(event.target.value)} className="h-9 rounded-md border bg-background px-2"><option value="all">All profiles</option>{profiles.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
-      <label className="grid gap-1 text-sm">Production stage<select aria-label="Production stage filter" value={stage} onChange={event => setStage(event.target.value)} className="h-9 rounded-md border bg-background px-2"><option value="all">All stages</option>{stageOptions.map(value => <option key={value} value={value}>{value.replaceAll('_', ' ')}</option>)}</select></label>
-      <label className="grid gap-1 text-sm">Created<select aria-label="Created date filter" value={date} onChange={event => setDate(event.target.value as LibraryDateFilter)} className="h-9 rounded-md border bg-background px-2"><option value="all">Any date</option><option value="seven_days">Past 7 days</option><option value="thirty_days">Past 30 days</option><option value="older">Older than 30 days</option></select></label>
-      <label className="grid gap-1 text-sm">Selection authority<select aria-label="Selection authority filter" value={authority} onChange={event => setAuthority(event.target.value as LibraryAuthorityFilter)} className="h-9 rounded-md border bg-background px-2"><option value="all">All authority</option><option value="app_owned">App-owned</option><option value="external_read_only">External read-only</option></select></label>
-      <Button type="button" size="sm" variant="outline" disabled title="Evidence-state filters arrive in Phase 3">Evidence filters — Phase 3</Button>
+      <label className="grid gap-1 text-sm">{t('podcasts.podcastLibrary.format')}<select aria-label={t('podcasts.podcastLibrary.formatFilter')} value={format} onChange={event => setFormat(event.target.value)} className="h-9 rounded-md border bg-background px-2"><option value="all">{t('podcasts.podcastLibrary.allFormats')}</option>{['deep_dive', 'brief', 'critique', 'debate'].map(value => <option key={value} value={value}>{t(LIBRARY_FORMAT_LABEL_KEYS[value])}</option>)}</select></label>
+      <label className="grid gap-1 text-sm">{t('podcasts.podcastLibrary.profile')}<select aria-label={t('podcasts.podcastLibrary.profileFilter')} value={profile} onChange={event => setProfile(event.target.value)} className="h-9 rounded-md border bg-background px-2"><option value="all">{t('podcasts.podcastLibrary.allProfiles')}</option>{profiles.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
+      <label className="grid gap-1 text-sm">{t('podcasts.podcastLibrary.productionStage')}<select aria-label={t('podcasts.podcastLibrary.productionStageFilter')} value={stage} onChange={event => setStage(event.target.value)} className="h-9 rounded-md border bg-background px-2"><option value="all">{t('podcasts.podcastLibrary.allStages')}</option>{stageOptions.map(value => <option key={value} value={value}>{LIBRARY_STAGE_LABEL_KEYS[value] ? t(LIBRARY_STAGE_LABEL_KEYS[value]) : value.replaceAll('_', ' ')}</option>)}</select></label>
+      <label className="grid gap-1 text-sm">{t('podcasts.podcastLibrary.created')}<select aria-label={t('podcasts.podcastLibrary.createdDateFilter')} value={date} onChange={event => setDate(event.target.value as LibraryDateFilter)} className="h-9 rounded-md border bg-background px-2"><option value="all">{t('podcasts.podcastLibrary.anyDate')}</option><option value="seven_days">{t('podcasts.podcastLibrary.past7Days')}</option><option value="thirty_days">{t('podcasts.podcastLibrary.past30Days')}</option><option value="older">{t('podcasts.podcastLibrary.olderThan30Days')}</option></select></label>
+      <label className="grid gap-1 text-sm">{t('podcasts.podcastLibrary.selectionAuthority')}<select aria-label={t('podcasts.podcastLibrary.selectionAuthorityFilter')} value={authority} onChange={event => setAuthority(event.target.value as LibraryAuthorityFilter)} className="h-9 rounded-md border bg-background px-2"><option value="all">{t('podcasts.podcastLibrary.allAuthority')}</option><option value="app_owned">{t('podcasts.podcastLibrary.appOwned')}</option><option value="external_read_only">{t('podcasts.podcastLibrary.externalReadOnly')}</option></select></label>
+      {/* v0.8.130 — was "Evidence filters — Phase 3": the teaser stays, the internal roadmap label goes. */}
+      <Button type="button" size="sm" variant="outline" disabled title={t('podcasts.podcastLibrary.evidenceFiltersUnavailable')}>{t('podcasts.podcastLibrary.evidenceFiltersComingSoon')}</Button>
     </div>
-    {(Object.entries(groups) as Array<[LibraryGroup, PodcastEpisode[]]>).map(([title, items]) => items.length > 0 && <section key={title} aria-label={title} className="space-y-3"><h2 className="text-lg font-semibold">{title}</h2><div className="space-y-4">{items.map(episode => <div key={episode.id} className="space-y-2"><Button type="button" size="sm" variant="outline" aria-label={`Open Episode Lab for ${episode.name}`} onClick={() => setLabEpisodeId(episode.id)}>Open Episode Lab</Button><EpisodeCard episode={episode} onDelete={onDelete} onRetry={onRetry} retrying={retrying} /></div>)}</div></section>)}
+    {(Object.entries(groups) as Array<[LibraryGroup, PodcastEpisode[]]>).map(([title, items]) => items.length > 0 && <section key={title} aria-label={t(LIBRARY_GROUP_LABEL_KEYS[title])} className="space-y-3"><h2 className="text-lg font-semibold">{t(LIBRARY_GROUP_LABEL_KEYS[title])}</h2><div className="space-y-4">{items.map(episode => <div key={episode.id} className="space-y-2"><Button type="button" size="sm" variant="outline" aria-label={t('podcasts.podcastLibrary.openEpisodeLabFor', { name: episode.name })} onClick={() => setLabEpisodeId(episode.id)}>{t('podcasts.podcastLibrary.openEpisodeLab')}</Button><EpisodeCard episode={episode} onDelete={onDelete} onRetry={onRetry} retrying={retrying} /></div>)}</div></section>)}
     {labEpisode ? <EpisodeLab episode={labEpisode} onClose={() => setLabEpisodeId(null)} onRetry={onRetry} onCancel={onCancel} onCitationClick={onCitationClick} retrying={retrying} /> : null}
-    {filtered.length === 0 && <p className="rounded-md border border-dashed p-6 text-sm text-muted-foreground">{episodes.length === 0 ? 'No podcast episodes yet.' : 'No episodes match these production filters.'}</p>}
+    {filtered.length === 0 && <p className="rounded-md border border-dashed p-6 text-sm text-muted-foreground">{episodes.length === 0 ? t('podcasts.podcastLibrary.noEpisodes') : t('podcasts.podcastLibrary.noMatchingEpisodes')}</p>}
   </section>
 }

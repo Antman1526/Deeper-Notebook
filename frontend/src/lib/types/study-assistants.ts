@@ -40,7 +40,8 @@ export const TUTOR_MODES = [
 export type TutorMode = typeof TUTOR_MODES[number]
 
 export interface TutorModeConfig {
-  label: string
+  /** i18n key for the mode's display label; translate with t() where it renders. */
+  labelKey: string
   role: StudyAssistantRole
   authority: StudyAuthority
   model_route: 'local' | 'cloud'
@@ -53,20 +54,20 @@ export interface TutorModeConfig {
  * explicit Task 11 request authorities; no mode is sent to the API.
  */
 export const TUTOR_MODE_CONFIG: Record<TutorMode, TutorModeConfig> = {
-  teach_me: { label: 'Teach me', role: 'concept_explainer', authority: 'coach', model_route: 'local', source_only: false, requires_web_permission: false },
-  ask_question: { label: 'Ask a question', role: 'source_guide', authority: 'ask', model_route: 'local', source_only: true, requires_web_permission: false },
-  quiz_me: { label: 'Quiz me', role: 'practice_coach', authority: 'coach', model_route: 'local', source_only: false, requires_web_permission: false },
-  socratic: { label: 'Socratic mode', role: 'socratic_tutor', authority: 'coach', model_route: 'local', source_only: false, requires_web_permission: false },
-  solve_with_me: { label: 'Solve it with me', role: 'concept_explainer', authority: 'coach', model_route: 'local', source_only: false, requires_web_permission: false },
-  hint: { label: 'Give me a hint', role: 'practice_coach', authority: 'coach', model_route: 'local', source_only: false, requires_web_permission: false },
-  explain_mistake: { label: 'Explain my mistake', role: 'practice_coach', authority: 'coach', model_route: 'local', source_only: false, requires_web_permission: false },
-  oral_exam: { label: 'Oral exam', role: 'exam_coach', authority: 'coach', model_route: 'local', source_only: false, requires_web_permission: false },
-  practice_test: { label: 'Build a practice test', role: 'exam_coach', authority: 'create', model_route: 'local', source_only: false, requires_web_permission: false },
-  plan_today: { label: "Plan today's session", role: 'study_director', authority: 'plan', model_route: 'local', source_only: false, requires_web_permission: false },
-  review_writing: { label: 'Review this writing', role: 'writing_coach', authority: 'coach', model_route: 'local', source_only: false, requires_web_permission: false },
-  flashcards: { label: 'Turn this into flashcards', role: 'memory_coach', authority: 'create', model_route: 'local', source_only: false, requires_web_permission: false },
-  create_project: { label: 'Create a project', role: 'project_mentor', authority: 'create', model_route: 'local', source_only: false, requires_web_permission: false },
-  research_gap: { label: 'Research this gap', role: 'research_scout', authority: 'ask', model_route: 'cloud', source_only: false, requires_web_permission: true },
+  teach_me: { labelKey: 'study.studyAssistants.modes.teachMe', role: 'concept_explainer', authority: 'coach', model_route: 'local', source_only: false, requires_web_permission: false },
+  ask_question: { labelKey: 'study.studyAssistants.modes.askQuestion', role: 'source_guide', authority: 'ask', model_route: 'local', source_only: true, requires_web_permission: false },
+  quiz_me: { labelKey: 'study.studyAssistants.modes.quizMe', role: 'practice_coach', authority: 'coach', model_route: 'local', source_only: false, requires_web_permission: false },
+  socratic: { labelKey: 'study.studyAssistants.modes.socratic', role: 'socratic_tutor', authority: 'coach', model_route: 'local', source_only: false, requires_web_permission: false },
+  solve_with_me: { labelKey: 'study.studyAssistants.modes.solveWithMe', role: 'concept_explainer', authority: 'coach', model_route: 'local', source_only: false, requires_web_permission: false },
+  hint: { labelKey: 'study.studyAssistants.modes.hint', role: 'practice_coach', authority: 'coach', model_route: 'local', source_only: false, requires_web_permission: false },
+  explain_mistake: { labelKey: 'study.studyAssistants.modes.explainMistake', role: 'practice_coach', authority: 'coach', model_route: 'local', source_only: false, requires_web_permission: false },
+  oral_exam: { labelKey: 'study.studyAssistants.modes.oralExam', role: 'exam_coach', authority: 'coach', model_route: 'local', source_only: false, requires_web_permission: false },
+  practice_test: { labelKey: 'study.studyAssistants.modes.practiceTest', role: 'exam_coach', authority: 'create', model_route: 'local', source_only: false, requires_web_permission: false },
+  plan_today: { labelKey: 'study.studyAssistants.modes.planToday', role: 'study_director', authority: 'plan', model_route: 'local', source_only: false, requires_web_permission: false },
+  review_writing: { labelKey: 'study.studyAssistants.modes.reviewWriting', role: 'writing_coach', authority: 'coach', model_route: 'local', source_only: false, requires_web_permission: false },
+  flashcards: { labelKey: 'study.studyAssistants.modes.flashcards', role: 'memory_coach', authority: 'create', model_route: 'local', source_only: false, requires_web_permission: false },
+  create_project: { labelKey: 'study.studyAssistants.modes.createProject', role: 'project_mentor', authority: 'create', model_route: 'local', source_only: false, requires_web_permission: false },
+  research_gap: { labelKey: 'study.studyAssistants.modes.researchGap', role: 'research_scout', authority: 'ask', model_route: 'cloud', source_only: false, requires_web_permission: true },
 }
 
 /**

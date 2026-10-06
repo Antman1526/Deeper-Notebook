@@ -3,6 +3,7 @@
 import { useMemo } from 'react'
 
 import type { VaultLink } from '@/lib/api/vault'
+import { useTranslation } from '@/lib/hooks/use-translation'
 import { livePreviewExtension } from '@/lib/vault/live-preview'
 
 import { VaultCodeMirror } from './VaultCodeMirror'
@@ -22,15 +23,16 @@ export function VaultLivePreview({
   onNavigate,
   onSelectionChange,
 }: VaultLivePreviewProps) {
+  const { t } = useTranslation()
   const extensions = useMemo(
     () => [livePreviewExtension({ links, onNavigate, source: markdown })],
     [links, markdown, onNavigate],
   )
 
   return (
-    <section className="dn-vault-live-preview" aria-label={`${title} live preview`}>
+    <section className="dn-vault-live-preview" aria-label={t('knowledge.vaultLivePreview.livePreview', { title })}>
       <VaultCodeMirror
-        ariaLabel={`${title} live preview`}
+        ariaLabel={t('knowledge.vaultLivePreview.livePreview', { title })}
         markdown={markdown}
         extensions={extensions}
         onSelectionChange={onSelectionChange}

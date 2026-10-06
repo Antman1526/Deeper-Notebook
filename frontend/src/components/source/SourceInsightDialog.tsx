@@ -78,7 +78,7 @@ export function SourceInsightDialog({ open, onOpenChange, insight, onDelete }: S
             <span>{t('sources.sourceInsight')}</span>
             <div className="flex items-center gap-2">
               {displayInsight?.insight_type && (
-                <Badge variant="outline" className="text-xs uppercase">
+                <Badge variant="outline" className="text-xs">
                   {displayInsight.insight_type}
                 </Badge>
               )}

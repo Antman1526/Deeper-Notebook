@@ -5,6 +5,7 @@ import { Minus, Plus, RotateCcw } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import type { VaultCanvasDocument, VaultFile } from '@/lib/api/vault'
+import { useTranslation } from '@/lib/hooks/use-translation'
 
 type CanvasNavigate = (
   vaultId: string,
@@ -42,6 +43,7 @@ export function CanvasViewer({
   files = [],
   onNavigate,
 }: CanvasViewerProps) {
+  const { t } = useTranslation()
   const [zoom, setZoom] = useState(1)
   const [offset, setOffset] = useState({ x: 0, y: 0 })
   const dragOrigin = useRef<{ x: number; y: number; offsetX: number; offsetY: number } | null>(null)
@@ -57,12 +59,12 @@ export function CanvasViewer({
     }]),
   ), [canvas?.nodes])
 
-  if (isLoading) return <div role="status" className="p-6 text-sm text-muted-foreground">Loading Canvas…</div>
+  if (isLoading) return <div role="status" className="p-6 text-sm text-muted-foreground">{t('knowledge.canvasViewer.loading')}</div>
   if (error || !canvas) {
     return (
       <div role="alert" className="m-4 rounded-md border border-destructive/30 p-4 text-sm">
-        <p>The Canvas source is unavailable or no longer valid.</p>
-        {onRetry && <Button type="button" className="mt-3" variant="outline" onClick={onRetry}>Retry Canvas</Button>}
+        <p>{t('knowledge.canvasViewer.unavailable')}</p>
+        {onRetry && <Button type="button" className="mt-3" variant="outline" onClick={onRetry}>{t('knowledge.canvasViewer.retry')}</Button>}
       </div>
     )
   }
@@ -75,19 +77,19 @@ export function CanvasViewer({
   }
 
   return (
-    <section aria-label="Canvas viewer" className="flex h-full min-h-0 flex-col" tabIndex={0}>
-      <div role="toolbar" aria-label="Canvas controls" className="flex items-center gap-2 border-b px-3 py-2">
-        <Button type="button" size="icon" variant="ghost" aria-label="Zoom out" onClick={() => setZoom((value) => Math.max(0.5, value - 0.1))}>
+    <section aria-label={t('knowledge.canvasViewer.viewer')} className="flex h-full min-h-0 flex-col" tabIndex={0}>
+      <div role="toolbar" aria-label={t('knowledge.canvasViewer.controls')} className="flex items-center gap-2 border-b px-3 py-2">
+        <Button type="button" size="icon" variant="ghost" aria-label={t('knowledge.canvasViewer.zoomOut')} onClick={() => setZoom((value) => Math.max(0.5, value - 0.1))}>
           <Minus className="size-4" aria-hidden="true" />
         </Button>
         <span aria-live="polite" className="min-w-12 text-center text-xs text-muted-foreground">{Math.round(zoom * 100)}%</span>
-        <Button type="button" size="icon" variant="ghost" aria-label="Zoom in" onClick={() => setZoom((value) => Math.min(2, value + 0.1))}>
+        <Button type="button" size="icon" variant="ghost" aria-label={t('knowledge.canvasViewer.zoomIn')} onClick={() => setZoom((value) => Math.min(2, value + 0.1))}>
           <Plus className="size-4" aria-hidden="true" />
         </Button>
-        <Button type="button" size="icon" variant="ghost" aria-label="Reset Canvas view" onClick={() => { setZoom(1); setOffset({ x: 0, y: 0 }) }}>
+        <Button type="button" size="icon" variant="ghost" aria-label={t('knowledge.canvasViewer.resetView')} onClick={() => { setZoom(1); setOffset({ x: 0, y: 0 }) }}>
           <RotateCcw className="size-4" aria-hidden="true" />
         </Button>
-        <span className="ml-auto text-xs text-muted-foreground">Source {canvas.source_hash.slice(0, 12)}</span>
+        <span className="ml-auto text-xs text-muted-foreground">{t('knowledge.canvasViewer.source', { hash: canvas.source_hash.slice(0, 12) })}</span>
       </div>
       <div
         className="relative min-h-64 flex-1 overflow-hidden bg-muted/20"
@@ -111,7 +113,7 @@ export function CanvasViewer({
               return <line key={edge.id} x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke="currentColor" className="text-muted-foreground" />
             })}
           </svg>
-          <ul aria-label="Canvas nodes" className="relative m-0 list-none p-0">
+          <ul aria-label={t('knowledge.canvasViewer.nodes')} className="relative m-0 list-none p-0">
             {canvas.nodes.map((node) => {
               const style = { left: node.x, top: node.y, width: node.width, height: node.height }
               const file = node.file_path ? fileByPath.get(node.file_path) : undefined

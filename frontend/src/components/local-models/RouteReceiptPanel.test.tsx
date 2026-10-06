@@ -20,11 +20,11 @@ describe('RouteReceiptPanel', () => {
 
     expect(screen.getByText('model:qwen')).toBeInTheDocument()
     expect(screen.getByText('model:llama')).toBeInTheDocument()
-    expect(screen.getByText(/source synthesis/i)).toBeInTheDocument()
+    expect(screen.getByText('settings.modelRoles.sourceSynthesis')).toBeInTheDocument()
   })
 
   it('keeps an unavailable receipt endpoint quiet and explicit', () => {
     render(<RouteReceiptPanel receipts={[]} isLoading={false} isError />)
-    expect(screen.getByText(/not exposed by this runtime/i)).toBeInTheDocument()
+    expect(screen.getByText('settings.routeReceiptPanel.notExposed')).toBeInTheDocument()
   })
 })

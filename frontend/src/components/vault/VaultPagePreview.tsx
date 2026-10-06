@@ -12,6 +12,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { VaultLink, VaultPage } from '@/lib/api/vault'
 import { useVaultPagePreview } from '@/lib/hooks/use-vault'
+import { useTranslation } from '@/lib/hooks/use-translation'
 
 const previewIntentDelayMs = 250
 const excerptLimit = 240
@@ -59,6 +60,7 @@ export function VaultPagePreview({
   trigger,
   onNavigate,
 }: VaultPagePreviewProps) {
+  const { t } = useTranslation()
   const targetNoteId = link.resolved ? link.target_note_id : null
   const canOpen = Boolean(
     targetNoteId && isCanonicalRelativePath(link.target_relative_path),
@@ -201,7 +203,7 @@ export function VaultPagePreview({
       </span>
       {canDisplay && page && path && (
         <PopoverContent
-          aria-label={`${page.note.title || link.target_text} preview`}
+          aria-label={t('knowledge.pagePreview', { title: page.note.title || link.target_text })}
           className="w-80 space-y-3"
         >
           <div>
@@ -221,7 +223,7 @@ export function VaultPagePreview({
             </div>
           )}
           <p className="text-xs text-muted-foreground">
-            {page.outgoing_links.length} outgoing · {page.backlinks.length} backlinks
+            {t('knowledge.vaultPagePreview.linkCounts', { outgoing: page.outgoing_links.length, backlinks: page.backlinks.length })}
           </p>
         </PopoverContent>
       )}

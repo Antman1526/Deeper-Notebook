@@ -37,7 +37,7 @@ import {
 } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import apiClient from '@/lib/api/client'
+import apiClient, { isErrorReported } from '@/lib/api/client'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useCreateMCPServer, useMCPServers } from '@/lib/hooks/use-mcp-servers'
 import { toast } from 'sonner'
@@ -116,6 +116,8 @@ export function RecommendationsPanel() {
       // defensive.)
       queryClient.invalidateQueries({ queryKey: ['mcp', 'servers'] })
     } catch (err: unknown) {
+      // v0.8.130 — the mutation's own onError already told the user; don't toast twice.
+      if (isErrorReported(err)) return
       const msg = err instanceof Error ? err.message : 'Unknown error'
       toast.error(
         t('mcp.recommendations.connectError', {
@@ -165,16 +167,17 @@ export function RecommendationsPanel() {
                   </div>
                   <div className="flex items-center gap-1 flex-wrap">
                     {rec.tags.map(tag => (
+                      // v0.8.130 — 12px type floor (UI audit Phase 1)
                       <Badge
                         key={tag}
                         variant={tag === 'recommended' ? 'default' : 'secondary'}
-                        className="text-[10px]"
+                        className="text-xs"
                       >
                         {tag}
                       </Badge>
                     ))}
                     {rec.replaces && (
-                      <Badge variant="outline" className="text-[10px]">
+                      <Badge variant="outline" className="text-xs">
                         {t('mcp.recommendations.replaces', {
                           defaultValue: 'Replaces {{name}}',
                           name: rec.replaces,
@@ -185,7 +188,7 @@ export function RecommendationsPanel() {
                 </div>
               </CardHeader>
               <CardContent className="pt-0 space-y-3">
-                <p className="text-[10px] text-muted-foreground font-mono break-all">
+                <p className="text-xs text-muted-foreground font-mono break-all">
                   {rec.default_url}
                 </p>
                 <div className="flex items-center gap-2">

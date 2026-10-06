@@ -25,7 +25,7 @@ from typing import IO, TYPE_CHECKING, Callable
 import httpx
 
 from deeper_notebook.environment import normalize_product_environment, resolve_env
-from desktop.data_root import active_data_root
+from desktop.data_root import active_data_root, backup_directory
 
 if TYPE_CHECKING:
     from desktop.progress import ProgressBus
@@ -34,6 +34,37 @@ from desktop import launcher_prefs  # v0.8.6 — file-backed preference layer
 from desktop.config import Config
 from desktop.paths import user_home
 from desktop.ports import find_free_ports
+
+
+def _signal_sidecar_tree(proc, signum: int) -> None:
+    """v0.8.130 — signal a sidecar and everything it started.
+
+    POSIX: its process group, as before. Windows has no process groups in this
+    sense (os.getpgid / os.killpg do not exist there; calling them raised
+    AttributeError, which the restart path did not catch, so restarting a model
+    service crashed). There it is `taskkill /T`, forced for the firm signal, as
+    stop_all() does. Raises OSError when nothing was signalled, which is what
+    the callers already handle.
+    """
+    if sys.platform == "win32":
+        forced = signum != signal.SIGTERM
+        args = ["taskkill", *(["/F"] if forced else []), "/T", "/PID", str(proc.pid)]
+        try:
+            result = subprocess.run(
+                args,
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+            )
+        except OSError:
+            raise
+        except Exception as exc:  # timeout and the like
+            raise OSError(str(exc)) from exc
+        if result.returncode != 0:
+            raise ProcessLookupError(proc.pid)
+        return
+    os.killpg(os.getpgid(proc.pid), signum)
 
 # v0.6.5 — debugging supervised-child failures was painful: every optional
 # service had `except Exception: pass`, so a misconfigured Piper voice path
@@ -1178,6 +1209,14 @@ class Supervisor:
 
         proc = subprocess.Popen(args, **popen_kwargs)
         self._procs.append(proc)
+        # v0.8.130 — so the orphan guard can stop this service if the launcher
+        # dies without running stop_all(). A no-op unless a guard is running.
+        try:
+            from desktop import orphan_guard
+
+            orphan_guard.register(getattr(proc, "pid", None))
+        except Exception:  # noqa: BLE001 — the guard is a safeguard, not a dependency
+            pass
 
         if self.debug_mode and proc.stdout is not None and proc.stderr is not None:
             self._start_drainers(proc, name)
@@ -1427,7 +1466,7 @@ class Supervisor:
             ok = db_repair.auto_repair(
                 surreal_bin=self.bin_dir / f"surreal-{self.surreal_arch}{ext}",
                 data_dir=active_data_root() / "surreal_data",
-                backup_dir=user_home() / "onp-backups",
+                backup_dir=backup_directory(),
                 surreal_user=self.cfg.surreal_user,
                 surreal_password=self.cfg.surreal_password,
                 ts=time.strftime("%Y%m%d-%H%M%S"),
@@ -1514,7 +1553,7 @@ class Supervisor:
 
     def _start_periodic_export(self, surreal_port: int) -> None:
         """v0.8.67m — Periodically export the RUNNING SurrealDB to
-        ~/onp-backups so a corruption or accidental delete is recoverable.
+        this install's backup folder so a corruption or accidental delete is recoverable.
         Default every 24h, keep the newest 7; tunable via DEEPER_NOTEBOOK_AUTO_EXPORT_HOURS
         (0 disables) and DEEPER_NOTEBOOK_AUTO_EXPORT_KEEP. Sleeps the interval FIRST, so it
         never adds boot I/O and is inert in fast-finishing tests. Failures log
@@ -1548,7 +1587,7 @@ class Supervisor:
 
         ext = ".exe" if self.surreal_arch.startswith("windows") else ""
         binary = self.bin_dir / f"surreal-{self.surreal_arch}{ext}"
-        backup_dir = user_home() / "onp-backups"
+        backup_dir = backup_directory()
         user = self.cfg.surreal_user
         password = self.cfg.surreal_password
 
@@ -1799,8 +1838,7 @@ class Supervisor:
         stopped = old is None or old.poll() is not None
         if old is not None and not stopped:
             try:
-                pgid = _os.getpgid(old.pid)
-                _os.killpg(pgid, _signal.SIGTERM)
+                _signal_sidecar_tree(old, _signal.SIGTERM)
             except (OSError, ProcessLookupError):
                 # Already dead or never had a group — try a plain kill.
                 try:
@@ -1812,8 +1850,7 @@ class Supervisor:
                 stopped = True
             except subprocess.TimeoutExpired:
                 try:
-                    pgid = _os.getpgid(old.pid)
-                    _os.killpg(pgid, _signal.SIGKILL)
+                    _signal_sidecar_tree(old, getattr(_signal, "SIGKILL", 9))
                 except (OSError, ProcessLookupError):
                     return False, (
                         f"Sidecar {kind!r} could not be confirmed stopped; "

@@ -5,6 +5,7 @@ import { Mic, Square, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
+import { useTranslation } from '@/lib/hooks/use-translation'
 
 interface AudioDictateButtonProps {
   onTranscribed: (text: string) => void
@@ -21,6 +22,7 @@ export function AudioDictateButton({
   disabled = false,
   title,
 }: AudioDictateButtonProps) {
+  const { t } = useTranslation()
   const [isRecording, setIsRecording] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
@@ -39,7 +41,7 @@ export function AudioDictateButton({
 
   const startRecording = async () => {
     if (typeof window === 'undefined' || !navigator?.mediaDevices?.getUserMedia) {
-      toast.error('Microphone recording is not supported in this environment')
+      toast.error(t('common.audioDictateButton.notSupported'))
       return
     }
 
@@ -93,19 +95,19 @@ export function AudioDictateButton({
 
           if (!response.ok) {
             const errData = await response.json().catch(() => ({}))
-            throw new Error(errData.detail || 'Dictation transcription failed')
+            throw new Error(errData.detail || t('common.audioDictateButton.transcriptionFailed'))
           }
 
           const data = await response.json()
           if (data.text && data.text.trim()) {
             onTranscribed(data.text.trim())
-            toast.success('Dictation transcribed')
+            toast.success(t('common.audioDictateButton.transcribed'))
           } else {
-            toast.info('No speech detected')
+            toast.info(t('common.audioDictateButton.noSpeech'))
           }
         } catch (error: unknown) {
           console.error('Audio dictation error:', error)
-          toast.error(error instanceof Error ? error.message : 'Failed to transcribe audio')
+          toast.error(error instanceof Error ? error.message : t('common.audioDictateButton.transcribeFailed'))
         } finally {
           setIsProcessing(false)
         }
@@ -115,7 +117,7 @@ export function AudioDictateButton({
       setIsRecording(true)
     } catch (err: unknown) {
       console.error('Microphone access error:', err)
-      toast.error('Microphone access denied or audio input unavailable')
+      toast.error(t('common.audioDictateButton.micDenied'))
     }
   }
 
@@ -144,7 +146,7 @@ export function AudioDictateButton({
         size={size}
         disabled
         className={cn('h-8 w-8 text-muted-foreground', className)}
-        aria-label="Transcribing audio"
+        aria-label={t('common.audioDictateButton.transcribingAudio')}
       >
         <Loader2 className="h-4 w-4 animate-spin text-primary" />
       </Button>
@@ -159,16 +161,18 @@ export function AudioDictateButton({
       onClick={handleClick}
       disabled={disabled}
       className={cn(
-        'h-8 w-8 transition-all duration-200',
+        // v0.8.130 — status colours from theme tokens (UI audit Phase 1); opacity is
+        // listed so the disabled fade still animates.
+        'h-8 w-8 transition-[color,background-color,box-shadow,opacity] duration-200',
         isRecording
-          ? 'animate-pulse bg-red-600 text-white hover:bg-red-700 shadow-xs ring-2 ring-red-500/40'
+          ? 'animate-pulse bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-xs ring-2 ring-destructive/40'
           : 'text-muted-foreground hover:text-foreground hover:bg-muted/70',
         className
       )}
       title={
-        title || (isRecording ? 'Click to stop recording' : 'Dictate with local speech-to-text')
+        title || (isRecording ? t('common.audioDictateButton.clickToStop') : t('common.audioDictateButton.dictateLocal'))
       }
-      aria-label={isRecording ? 'Stop recording dictation' : 'Start audio dictation'}
+      aria-label={isRecording ? t('common.audioDictateButton.stopDictation') : t('common.audioDictateButton.startDictation')}
     >
       {isRecording ? <Square className="h-3.5 w-3.5 fill-current" /> : <Mic className="h-4 w-4" />}
     </Button>

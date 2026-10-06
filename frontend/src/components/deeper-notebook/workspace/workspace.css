@@ -5,6 +5,13 @@
  * creation, utilities, guided tips, audio, and focus behavior remain owned by
  * their existing components.
  */
+/* v0.8.130 — premium pass: the V2 shell is the plain paper (--dn-shell mixed in 16%
+   indigo, which showed as a lavender band above the phone layout). The pre-V2 shell
+   keeps the token. */
+[data-dn-visual-system='v2'] {
+  --dn-shell: var(--background);
+}
+
 .dn-workspace-shell {
   position: relative;
   display: grid;
@@ -31,10 +38,12 @@
   grid-area: body;
   position: relative;
   display: grid;
+  /* v0.8.130 — two columns. A third "lens" rail used to reserve 17.5rem–20rem of dead space
+   * on every route at 1536px and wider. */
   grid-template-areas:
-    "command command command"
-    "navigator canvas lens";
-  grid-template-columns: minmax(15rem, 17rem) minmax(0, 1fr) minmax(17.5rem, 20rem);
+    "command command"
+    "navigator canvas";
+  grid-template-columns: minmax(15rem, 17rem) minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
   min-height: 100dvh;
@@ -60,8 +69,76 @@
   padding: var(--dn-space-6);
 }
 
-.dn-workspace-shell-body > .dn-context-lens {
-  grid-area: lens;
+/* v0.8.130 — Phase 2a: the notebook workspace fills the canvas instead of scrolling
+   inside it. Its columns scroll; the canvas does not, so nothing (the chat's
+   scroll-to-bottom included) can scroll the page away from the title bar. */
+.dn-workspace-canvas:has([data-dn-notebook-workspace]) {
+  overflow: hidden;
+  padding: var(--dn-space-3) var(--dn-space-4);
+}
+
+.dn-workspace-canvas > [data-dn-notebook-workspace] {
+  height: 100%;
+}
+
+/* v0.8.130 — notebook layer (user decision 2026-10-01): the desk is dotted paper,
+   the Notes column is ruled with a margin rule, and reading text (answers, notes)
+   is set in the book serif. Textures stay faint and drop out in high contrast. */
+:root {
+  --dn-paper-dot: color-mix(in oklab, var(--foreground) 10%, transparent);
+  --dn-paper-rule: color-mix(in oklab, var(--foreground) 7%, transparent);
+  --dn-paper-margin: color-mix(in oklab, var(--primary) 24%, transparent);
+}
+
+.dn-workspace-canvas {
+  background-color: var(--dn-canvas);
+  background-image: radial-gradient(var(--dn-paper-dot) 1px, transparent 1.2px);
+  background-size: 22px 22px;
+}
+
+[data-dn-ruled] {
+  background-image:
+    linear-gradient(to right, transparent 2.25rem, var(--dn-paper-margin) 2.25rem, var(--dn-paper-margin) calc(2.25rem + 1px), transparent calc(2.25rem + 1px)),
+    repeating-linear-gradient(to bottom, transparent 0, transparent 27px, var(--dn-paper-rule) 27px, var(--dn-paper-rule) 28px);
+  background-attachment: local;
+}
+
+html[data-theme^='high-contrast'] .dn-workspace-canvas,
+html[data-theme^='high-contrast'] [data-dn-ruled] {
+  background-image: none;
+}
+
+[data-dn-message='ai'],
+[data-dn-reading] {
+  font-family: var(--font-dn-editorial), Georgia, serif;
+}
+
+[data-dn-message='ai'] :is(p, li) {
+  font-size: 1.0625rem;
+  line-height: 1.7;
+}
+
+/* v0.8.130 — Phase 2b: the columns are borderless rounded surfaces on the tinted
+   canvas (NotebookLM's three cards), with a hairline under a compact header row. */
+[data-dn-notebook-workspace] [data-dn-column] {
+  gap: 0;
+  border-color: transparent;
+  border-radius: var(--radius-xl);
+  padding-block: 0;
+  box-shadow: none;
+}
+
+[data-dn-notebook-workspace] [data-dn-column] > [data-slot='card-header'] {
+  padding: 0.625rem 0.75rem 0.625rem 1rem;
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+  /* The implicit auto track sizes to content, so the title could never truncate
+     and pushed the actions past the card edge. */
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* `:not(.p-0)`: this unlayered rule overrode the chat's own p-0 and padded it twice. */
+[data-dn-notebook-workspace] [data-dn-column] > [data-slot='card-content']:not(.p-0) {
+  padding: 0.75rem 1rem;
 }
 
 .dn-workspace-shell > .dn-shell-utilities {
@@ -176,30 +253,6 @@
 
   .dn-workspace-shell .dn-navigator-toggle {
     display: none;
-  }
-
-  .dn-workspace-shell .dn-context-lens {
-    display: none;
-  }
-
-  .dn-workspace-shell .dn-context-lens.is-open {
-    position: fixed;
-    right: 0;
-    bottom: 0;
-    left: 4.25rem;
-    z-index: 5;
-    display: block;
-    max-height: min(55vh, 30rem);
-    border: 1px solid var(--dn-glass-border);
-    box-shadow: var(--dn-elevation-md);
-  }
-
-  .dn-workspace-shell .dn-context-lens-toggle {
-    position: fixed;
-    right: var(--dn-space-3);
-    bottom: var(--dn-space-3);
-    z-index: 6;
-    display: inline-flex;
   }
 
   .dn-workspace-canvas {
@@ -338,73 +391,13 @@
   }
 }
 
-/* Keep medium desktop canvases useful. A persistent navigator, context lens,
- * and three-pane notebook workspace cannot all remain readable at once below
- * 1536px. Preserve the familiar Context lens control, but present the lens as
- * an on-demand drawer until the shell has enough inline space for three rails. */
-@media (min-width: 1024px) and (max-width: 1535px) {
-  .dn-workspace-shell-body {
-    grid-template-areas:
-      "command command"
-      "navigator canvas";
-    grid-template-columns: minmax(15rem, 17rem) minmax(0, 1fr);
-  }
-
-  .dn-workspace-shell .dn-context-lens {
-    position: fixed;
-    inset: 4.25rem 0 0 auto;
-    z-index: 5;
-    display: block;
-    width: min(20rem, calc(100vw - 5rem));
-    border-left: 1px solid var(--dn-glass-border);
-    box-shadow: var(--dn-elevation-md);
-    visibility: hidden;
-    opacity: 0;
-    pointer-events: none;
-    transform: translateX(calc(100% + 1rem));
-    transition:
-      transform var(--dn-motion-interface),
-      opacity var(--dn-motion-interface),
-      visibility 0s linear 200ms;
-  }
-
-  .dn-workspace-shell .dn-context-lens.is-open {
-    visibility: visible;
-    opacity: 1;
-    pointer-events: auto;
-    transform: translateX(0);
-    transition-delay: 0s;
-  }
-
-  .dn-workspace-shell .dn-context-lens-toggle {
-    position: fixed;
-    right: var(--dn-space-4);
-    bottom: var(--dn-space-4);
-    z-index: 6;
-    display: inline-flex;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .dn-workspace-shell .dn-context-lens {
-      transition: none;
-    }
-  }
-}
-
 @media (min-width: 1024px) {
   html[data-dn-focus-mode="true"] .dn-workspace-shell {
     grid-template-columns: var(--dn-focus-rail) minmax(0, 1fr);
   }
 
   html[data-dn-focus-mode="true"] .dn-workspace-shell-body {
-    grid-template-columns: var(--dn-focus-rail) minmax(0, 1fr) var(--dn-focus-rail);
-  }
-
-  /* The shared Focus reveal is wider than V2's right rail; anchor it to the
-   * track's inward edge so the full lens stays inside the shell viewport. */
-  html[data-dn-focus-mode="true"] .dn-workspace-shell-body > .dn-context-lens.is-open,
-  html[data-dn-focus-mode="true"] .dn-workspace-shell-body > .dn-context-lens:focus-within {
-    justify-self: end;
+    grid-template-columns: var(--dn-focus-rail) minmax(0, 1fr);
   }
 }
 
@@ -426,17 +419,17 @@
   box-shadow: var(--dn-shadow-medium);
 }
 
-.dn-workspace-auth-eyebrow {
+.dn-workspace-auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
   margin: 0;
-  color: var(--primary);
-  font-size: var(--dn-text-xs);
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font-size: var(--dn-text-sm);
+  font-weight: 600;
 }
 
 .dn-workspace-auth-title {
-  margin-block: 0.75rem 0;
+  margin-block: 1.75rem 0.5rem;
   font-size: clamp(1.75rem, 5vw, 2.75rem);
   line-height: 1.08;
 }
@@ -451,30 +444,14 @@
 
 .dn-workspace-auth-content {
   min-width: 0;
-  min-block-size: 16rem;
+  /* v0.8.130 — Phase 3c: the embedded form is 190px at every width (it was a 255px
+   * card); the reservation keeps the spinner-to-form swap from moving the panel. */
+  min-block-size: 12rem;
   margin-block-start: 1.5rem;
 }
 
-/* LoginForm keeps its own state and controls; this wrapper only normalizes its
- * legacy full-screen presentation inside the V2 frame. The frame's heading is
- * the one visible page heading. */
-.dn-workspace-auth-content h1 {
-  display: none;
-}
-
-.dn-workspace-auth-content > div {
-  min-height: 0;
-  padding: 0;
-  background: transparent;
-}
-
-.dn-workspace-auth-content > div > div {
-  width: 100%;
-  max-width: none;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
+/* v0.8.130 — Phase 3c: LoginForm renders embedded here (no card, no heading), so
+ * the overrides that flattened its full-screen card are gone. */
 
 .dn-workspace-page {
   container: dn-workspace / inline-size;
@@ -490,14 +467,116 @@
   color: var(--foreground);
 }
 
-@media (max-width: 767px), (max-height: 700px) {
-  /* Setup health data replaces a short loading state with five wrapped rows.
-   * Keep the V2 card's content track reserved in narrow or short windows so
-   * the CTA does not jump while the existing health hook resolves. The legacy
-   * route remains untouched. */
-  [data-dn-visual-system='v2'] .dn-workspace-setup-card-content {
-    min-block-size: 55rem;
+/* v0.8.130 — Phase 3c: the first-run summary. Its height no longer depends on the
+ * health response (the checks are behind "Show details" and the attention line is
+ * always laid out), so the old 55rem reservation for the six-row table is gone. */
+.dn-first-run {
+  display: grid;
+  gap: 0.75rem;
+  inline-size: 100%;
+  max-inline-size: 44rem;
+}
+
+[data-dn-visual-system='v2'] .dn-workspace-setup-card-content.dn-first-run-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.dn-first-run-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  border-radius: 999px;
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+
+.dn-first-run-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.dn-first-run-body {
+  /* Two lines whatever the state, so "Checking your setup" and the answer that
+   * replaces it lay out at the same height. */
+  min-block-size: 3.1em;
+  margin-block: 0.375rem 0;
+  color: var(--muted-foreground);
+  line-height: 1.55;
+}
+
+@container dn-workspace (max-width: 30rem) {
+  [data-dn-visual-system='v2'] .dn-workspace-setup-card-content.dn-first-run-summary {
+    flex-direction: column;
   }
+
+  .dn-first-run-body {
+    min-block-size: 4.65em;
+  }
+}
+
+.dn-first-run-attention {
+  margin-block: 0.5rem 0;
+  font-size: var(--dn-text-sm);
+  font-weight: 500;
+}
+
+.dn-first-run-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-block-start: 1.25rem;
+}
+
+/* Same 44px target as the other action groups, enabled or not, so the row does not
+ * grow when the check returns and the buttons enable. */
+.dn-first-run-actions > :is(button, a) {
+  min-height: 44px;
+}
+
+.dn-first-run-disclosure {
+  gap: 0.375rem;
+  color: var(--muted-foreground);
+}
+
+.dn-first-run-checks {
+  display: grid;
+  margin-block-start: 0.5rem;
+  padding: 0 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--dn-radius-card);
+  background: var(--dn-panel);
+}
+
+.dn-first-run-check {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding-block: 0.875rem;
+}
+
+.dn-first-run-check + .dn-first-run-check {
+  border-block-start: 1px solid var(--border);
+}
+
+.dn-first-run-check > svg {
+  margin-block-start: 0.1875rem;
+}
+
+.dn-first-run-hint {
+  display: block;
+  margin-block-start: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: var(--dn-radius-control);
+  background: var(--muted);
+  font-size: var(--dn-text-xs);
+  line-height: 1.5;
 }
 
 .dn-workspace-page-header,
@@ -523,15 +602,34 @@
   min-inline-size: 0;
 }
 
+/* v0.8.130 — Phase 3a: the page grid's gap only separated the header from this
+   wrapper, so the hero, runtime status and Today sections touched (0px apart).
+   Home only: on the setup wizard the grid shifted its reserved loading layout
+   (CLS 0.066 against the matrix's 0.05). */
+.dn-workspace-home .dn-workspace-page-content {
+  display: grid;
+  align-content: start;
+  gap: clamp(1.25rem, 3cqi, 2rem);
+}
+
+/* v0.8.130 — Phase 3a: in V2 the runtime status is a neutral card; the Context-lens
+   tint made a healthy status read as a selected (or error) block. The pre-V2
+   presentation keeps its tint. */
+[data-dn-visual-system='v2'] [data-dn-runtime-status] {
+  background: var(--card);
+}
+
+/* v0.8.130 — premium pass: quiet grey sentence-case eyebrows (were indigo, bold,
+   tracked uppercase). */
 .dn-workspace-page-eyebrow,
 .dn-workspace-hero-eyebrow,
 .dn-state-panel-kind {
   margin-block: 0 0.5rem;
-  color: var(--primary);
+  color: var(--muted-foreground);
   font-size: var(--dn-text-xs);
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 .dn-workspace-page-title,
@@ -542,9 +640,10 @@
   overflow-wrap: anywhere;
 }
 
+/* v0.8.130 — display step of the type scale (32/40); 44px was sized for the serif. */
 .dn-workspace-page-title {
-  font-size: clamp(1.75rem, 4cqi, 2.75rem);
-  line-height: 1.08;
+  font-size: clamp(1.75rem, 4cqi, 2rem);
+  line-height: 1.25;
 }
 
 .dn-workspace-page-description,
@@ -675,7 +774,8 @@
   border: 1px solid var(--border);
   border-radius: var(--dn-radius-hero);
   background: var(--dn-panel);
-  box-shadow: var(--dn-shadow-low), inset 0 1px 1px 0 rgba(255, 255, 255, 0.05);
+  /* v0.8.130 — premium pass: flat (no low shadow + inset white highlight). */
+  box-shadow: none;
   position: relative;
   isolation: isolate;
 }
@@ -684,17 +784,7 @@
   grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
 }
 
-.dn-workspace-hero::before {
-  content: "";
-  position: absolute;
-  top: -40%;
-  right: -15%;
-  width: 65%;
-  height: 180%;
-  background: radial-gradient(circle, color-mix(in oklab, var(--primary) 12%, transparent), transparent 70%);
-  pointer-events: none;
-  z-index: 0;
-}
+/* v0.8.130 — premium pass: the hero's radial indigo glow is gone. */
 
 .dn-workspace-hero-media {
   min-width: 0;
@@ -719,9 +809,10 @@
   z-index: 1;
 }
 
+/* v0.8.130 — headline step of the type scale (24/32). */
 .dn-workspace-hero-title {
-  font-size: clamp(1.5rem, 3cqi, 2.25rem);
-  line-height: 1.12;
+  font-size: clamp(1.375rem, 3cqi, 1.5rem);
+  line-height: 1.33;
 }
 
 .dn-visual-card-grid {
@@ -752,19 +843,15 @@
   border: 1px solid var(--border);
   border-radius: var(--dn-radius-card);
   background: var(--dn-panel);
-  box-shadow: var(--dn-shadow-low), inset 0 1px 1px 0 rgba(255, 255, 255, 0.05);
+  /* v0.8.130 — premium pass: flat; hover only darkens the hairline (it lifted 2px
+     with a springy ease, a shadow and an indigo glow). */
+  box-shadow: none;
   position: relative;
-  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease, border-color 0.2s ease;
+  transition: border-color 0.15s ease;
 }
 
 .dn-visual-card:hover {
-  transform: translateY(-2px);
-  border-color: color-mix(in oklab, var(--primary) 35%, var(--border));
-  box-shadow: var(--dn-shadow-md), 0 0 20px -6px color-mix(in oklab, var(--primary) 18%, transparent);
-}
-
-.dn-visual-card:active {
-  transform: scale(0.99);
+  border-color: color-mix(in oklab, var(--foreground) 22%, var(--border));
 }
 
 .dn-visual-card-media {
@@ -891,25 +978,25 @@
   outline-offset: 2px;
 }
 
+/* v0.8.130 — only what the hover state changes, on the standard easing. */
 .dn-visual-card-action,
 .dn-workspace-secondary-link,
 .dn-workspace-notebook-link {
-  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  transition-property: border-color, background-color, transform;
+  transition-duration: 0.18s;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
 }
 
 .dn-workspace-secondary-link:hover,
 .dn-workspace-notebook-link:hover,
 .dn-visual-card-action:hover {
-  border-color: var(--primary);
-  background: var(--dn-selection);
-  transform: translateY(-1px);
+  /* v0.8.130 — premium pass: the neutral state layer and a darker hairline (was an
+     indigo border, a selection tint and a 1px lift). */
+  border-color: color-mix(in oklab, var(--foreground) 22%, var(--border));
+  background: var(--accent);
 }
 
-.dn-workspace-secondary-link:active,
-.dn-workspace-notebook-link:active,
-.dn-visual-card-action:active {
-  transform: scale(0.98);
-}
+/* v0.8.130 — the press-scale is gone, as everywhere else (UI audit 4.2). */
 
 @media (max-width: 52rem) {
   .dn-workspace-hero {
@@ -929,15 +1016,17 @@
 }
 
 /* V2 presentation raises reachable controls without changing legacy or disabled behavior. */
-[data-dn-visual-system='v2'] a[href]:not([aria-disabled='true']) {
+/* v0.8.130 — Phase 3b: rail links fill their row like navigator links did. */
+/* v0.8.130 — stationery: the home shelf's bound books lay themselves out (stationery.css). */
+[data-dn-visual-system='v2'] a[href]:not([aria-disabled='true']):not(.dn-navigator-link):not(.dn-rail-link):not(.dn-rail-brand):not(.dn-command-health):not([data-dn-cover]) {
   display: inline-flex;
   max-inline-size: 100%;
   align-items: center;
   flex-wrap: wrap;
 }
 
-[data-dn-visual-system='v2'] .dn-instrument-dock .dn-dock-create > button > span:not(.sr-only),
-[data-dn-visual-system='v2'] .dn-instrument-dock .dn-dock-utilities > button > span:not(.sr-only),
+[data-dn-visual-system='v2'] .dn-instrument-dock .dn-dock-create > button > .dn-dock-label,
+[data-dn-visual-system='v2'] .dn-instrument-dock .dn-dock-utilities > button > .dn-dock-label,
 [data-dn-visual-system='v2'] .dn-instrument-dock .dn-dock-utility-row button > .sr-only {
   display: none;
 }
@@ -984,6 +1073,123 @@
 ):not(:disabled):not([aria-disabled='true']) {
   min-inline-size: 2.75rem;
   min-block-size: 2.75rem;
+}
+
+/* v0.8.130 — checkboxes and radios keep that 44px target but draw a 16px box in its
+ * middle; filling the target, they read as large filled squares (the Checkbox
+ * component everywhere in V2, native inputs too). The control itself is transparent;
+ * negative inline margins give the box the footprint of a 16px control, so it lines
+ * up with the text around it. Focus is drawn on the box. Space a checkbox from its
+ * label with flex `gap`: the margins here replace margin-based `space-x-*` spacing. */
+[data-dn-visual-system='v2'] :is(
+  [data-slot='checkbox'],
+  [data-slot='radio-group-item'],
+  input[type='checkbox'],
+  input[type='radio']
+):not(:disabled):not([aria-disabled='true']) {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  margin-inline: calc((1rem - 2.75rem) / 2);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+[data-dn-visual-system='v2'] :is(input[type='checkbox'], input[type='radio']):not(:disabled) {
+  appearance: none;
+  margin-block: 0;
+  cursor: pointer;
+}
+
+/* Beside multi-line text (a source candidate), the box centres on the first line
+ * (20px) rather than on the 44px target: the target overhangs above and below. */
+[data-dn-visual-system='v2'] input[data-dn-checkbox-on-first-line]:not(:disabled) {
+  margin-block: -0.75rem -1rem;
+}
+
+[data-dn-visual-system='v2'] :is(
+  [data-slot='checkbox'],
+  [data-slot='radio-group-item'],
+  input[type='checkbox'],
+  input[type='radio']
+):not(:disabled):not([aria-disabled='true'])::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  box-sizing: border-box;
+  inline-size: 1rem;
+  block-size: 1rem;
+  border: 1px solid var(--input);
+  border-radius: 4px;
+  background: var(--background);
+}
+
+[data-dn-visual-system='v2'] :is([data-slot='radio-group-item'], input[type='radio']):not(:disabled)::before {
+  border-radius: 999px;
+}
+
+[data-dn-visual-system='v2'] :is(
+  [data-slot='checkbox'][data-state='checked'],
+  [data-slot='checkbox'][data-state='indeterminate'],
+  input[type='checkbox']:checked
+):not(:disabled)::before {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+[data-dn-visual-system='v2'] :is([data-slot='radio-group-item'][data-state='checked'], input[type='radio']:checked):not(:disabled)::before {
+  border-color: var(--primary);
+}
+
+/* The component's own indicator (check icon, radio dot) sits above the drawn box. */
+[data-dn-visual-system='v2'] :is([data-slot='checkbox-indicator'], [data-slot='radio-group-indicator']) {
+  position: relative;
+  z-index: 1;
+}
+
+/* Native inputs draw their own mark. */
+[data-dn-visual-system='v2'] input[type='checkbox']:checked:not(:disabled)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  inline-size: 0.3125rem;
+  block-size: 0.5625rem;
+  border: solid var(--primary-foreground);
+  border-width: 0 2px 2px 0;
+  transform: translateY(-1px) rotate(45deg);
+}
+
+[data-dn-visual-system='v2'] input[type='radio']:checked:not(:disabled)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: 999px;
+  background: var(--primary);
+}
+
+[data-dn-visual-system='v2'] :is(
+  [data-slot='checkbox'],
+  [data-slot='radio-group-item'],
+  input[type='checkbox'],
+  input[type='radio']
+):not(:disabled):focus-visible {
+  outline: none;
+}
+
+[data-dn-visual-system='v2'] :is(
+  [data-slot='checkbox'],
+  [data-slot='radio-group-item'],
+  input[type='checkbox'],
+  input[type='radio']
+):not(:disabled):focus-visible::before {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1041,19 +1247,22 @@
   --dn-write-leading: 1.7;
 }
 
-/* The written voice: titles read as penned headings, not UI labels. Chrome
-   (nav, buttons, badges) deliberately stays sans — the notebook is the page,
-   not the desk around it. */
+/* v0.8.130 — sans headings (decision of 2026-09-30). Titles were set in a serif
+   "written voice"; they now use the body face, semibold, slightly tightened. The
+   serif remains only on the note editor's writing surface (vault.css). */
 .dn-workspace-shell .dn-workspace-page-title,
 .dn-workspace-shell .dn-workspace-hero-title,
 .dn-workspace-shell .dn-visual-card-title,
 .dn-workspace-shell .dn-state-panel-title {
-  font-family: var(--font-serif), 'Iowan Old Style', 'Palatino', Georgia, serif;
-  letter-spacing: -0.012em;
+  font-weight: 600;
+  letter-spacing: -0.02em;
 }
 
 .dn-workspace-shell .dn-workspace-canvas {
-  background: var(--dn-paper);
+  background-color: var(--dn-paper);
+  /* v0.8.130 — notebook layer: the dotted desk (this rule outranks the plain one). */
+  background-image: radial-gradient(var(--dn-paper-dot) 1px, transparent 1.2px);
+  background-size: 22px 22px;
 }
 
 /* High-contrast readers get clean, unruled fields. */
@@ -1061,6 +1270,9 @@
   .dn-workspace-shell {
     --dn-rule: transparent;
     --dn-paper: var(--background);
+    --dn-paper-dot: transparent;
+    --dn-paper-rule: transparent;
+    --dn-paper-margin: transparent;
   }
 }
 
@@ -1068,15 +1280,12 @@
    lift a single pixel under the pointer, panels ease their shadows, and the
    writing page's focus is a soft ink-in — transform/shadow/opacity only, so
    nothing reflows (CLS-safe). Reduced motion strips every transition. */
+/* v0.8.130 — premium pass: surfaces do not lift or cast on hover; only the
+   hairline darkens (see .dn-visual-card:hover). */
 .dn-workspace-shell .dn-visual-card,
 .dn-workspace-shell .dn-state-panel,
 .dn-workspace-shell .dn-workspace-hero {
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
-}
-
-.dn-workspace-shell .dn-visual-card:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--dn-elevation-md, 0 2px 12px rgb(0 0 0 / 0.12));
+  transition: border-color 0.15s ease;
 }
 
 .dn-workspace-shell .dn-vault-editor .cm-editor,
@@ -1128,4 +1337,280 @@
 
 :root[data-dn-density='compact'] .dn-workspace-shell .dn-workspace-canvas {
   padding: var(--dn-space-4);
+}
+
+/* v0.8.130 — Phase 3b: one rail. The V2 shell is "rail | body"; the body is the command
+   bar over the canvas. These rules come last so they replace the dock and navigator
+   grids above (those classes are only rendered by the Luminous and legacy shells now). */
+.dn-workspace-shell {
+  grid-template-areas: "rail body";
+  grid-template-columns: 15rem minmax(0, 1fr);
+}
+
+.dn-workspace-shell-body {
+  grid-template-areas:
+    "command"
+    "canvas";
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.dn-rail {
+  grid-area: rail;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--dn-space-3);
+  min-width: 0;
+  height: 100dvh;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  background: var(--background);
+  padding: var(--dn-space-4) var(--dn-space-3);
+}
+
+.dn-rail-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-height: 2.75rem;
+  padding-inline: 0.25rem;
+}
+
+.dn-rail-brand-mark {
+  display: inline-flex;
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: var(--dn-text-xs);
+  font-weight: 700;
+}
+
+.dn-rail-brand-name {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dn-rail-list,
+.dn-rail-sublist {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dn-rail-sublist {
+  margin-top: 2px;
+  padding-left: 1.85rem;
+}
+
+.dn-rail-link {
+  position: relative;
+  display: flex;
+  min-height: 2.5rem;
+  align-items: center;
+  gap: 0.65rem;
+  border-radius: var(--radius-md);
+  color: var(--muted-foreground);
+  padding: 0.45rem 0.6rem;
+  text-decoration: none;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.dn-rail-link:hover,
+.dn-rail-link.is-active {
+  background: var(--accent);
+  color: var(--foreground);
+}
+
+.dn-rail-link.is-active {
+  font-weight: 600;
+}
+
+.dn-rail-link.is-active::before {
+  content: "";
+  position: absolute;
+  inset: 0.5rem auto 0.5rem 0;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--primary);
+}
+
+.dn-rail-link--nested {
+  min-height: 2.25rem;
+  font-size: var(--dn-text-sm);
+}
+
+.dn-rail-footer {
+  display: grid;
+  gap: var(--dn-space-3);
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+  padding-top: var(--dn-space-3);
+}
+
+.dn-rail-utilities {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* The theme, language and Gmail controls bring full-width roots; one row of icons here. */
+.dn-rail-utilities > * {
+  flex: none;
+  width: auto;
+}
+
+.dn-rail-version {
+  margin: 0;
+  padding-inline: 0.25rem;
+  color: var(--muted-foreground);
+  font-size: var(--dn-text-xs);
+}
+
+.dn-skip-link {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 60;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  color: var(--foreground);
+  padding: 0.5rem 0.75rem;
+  /* Transparent and click-through until focused (not moved off-screen, which read as a
+     clipped control); still in the Tab order and the accessibility tree. */
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dn-skip-link:focus {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.dn-command-menu,
+.dn-rail-scrim,
+.dn-command-bar .dn-command-title--compact,
+.dn-command-health {
+  display: none;
+}
+
+/* v0.8.130 — model health in the bar while the rail is a sheet (it lists health). */
+.dn-command-health {
+  position: relative;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--dn-radius-control);
+  color: var(--muted-foreground);
+}
+
+.dn-command-health:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.dn-command-health-dot {
+  position: absolute;
+  inset-block-start: 0.6875rem;
+  inset-inline-end: 0.6875rem;
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px var(--background);
+}
+
+/* Below 1024px the rail is a sheet behind the command bar's Menu button. */
+@media (max-width: 1023px) {
+  .dn-workspace-shell {
+    grid-template-areas: "body";
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dn-rail {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 50;
+    width: min(17rem, 85vw);
+    visibility: hidden;
+    transform: translateX(-100%);
+    box-shadow: var(--elevation-lg);
+    transition: transform 0.2s ease, visibility 0s linear 0.2s;
+  }
+
+  .dn-rail.is-open {
+    visibility: visible;
+    transform: none;
+    transition: transform 0.2s ease;
+  }
+
+  .dn-rail-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 49;
+    display: block;
+    background: color-mix(in oklab, var(--foreground) 32%, transparent);
+  }
+
+  .dn-command-menu,
+  .dn-command-health {
+    display: inline-flex;
+  }
+
+  .dn-command-bar .dn-command-title--compact {
+    display: block;
+  }
+}
+
+/* On phones the product name keeps the room; the page title already says where you are. */
+@media (max-width: 767px) {
+  .dn-command-bar .dn-command-title--compact + .dn-command-kicker {
+    display: none;
+  }
+
+  /* v0.8.130 — 16px, so the whole name fits beside a model-health link. */
+  .dn-command-bar .dn-command-title--compact {
+    font-size: 1rem;
+  }
+}
+
+/* Focus mode: the rail folds to a strip and opens again on keyboard focus. */
+@media (min-width: 1024px) {
+  html[data-dn-focus-mode="true"] .dn-workspace-shell-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  html[data-dn-focus-mode="true"] .dn-rail {
+    width: var(--dn-focus-rail);
+    overflow: hidden;
+    padding-inline: 0.25rem;
+    opacity: 0.78;
+  }
+
+  html[data-dn-focus-mode="true"] .dn-rail:focus-within {
+    position: relative;
+    z-index: 5;
+    width: var(--dn-focus-reveal);
+    overflow: auto;
+    opacity: 1;
+    box-shadow: var(--elevation-md);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dn-rail,
+  .dn-rail.is-open {
+    transition: none;
+  }
 }

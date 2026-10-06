@@ -13,16 +13,19 @@
   --dn-selection: color-mix(in oklab, var(--primary) 22%, transparent);
   --dn-image-overlay: linear-gradient(to top, rgb(20 23 45 / 72%), transparent 72%);
   --dn-image-placeholder: color-mix(in oklab, var(--card) 84%, var(--primary) 16%);
-  --dn-image-generated-label: color-mix(in oklab, var(--card) 92%, var(--accent) 8%);
+  --dn-image-generated-label: color-mix(in oklab, var(--card) 92%, var(--brand-accent) 8%);
   --dn-evidence-supported: var(--success);
   --dn-evidence-mixed: var(--warning);
   --dn-evidence-unsupported: var(--destructive);
-  --dn-radius-control: 0.75rem;
-  --dn-radius-card: 1rem;
-  --dn-radius-hero: 1.5rem;
-  --dn-shadow-low: var(--shadow-sm);
-  --dn-shadow-medium: var(--shadow-md);
-  --dn-evidence: var(--accent);
+  --dn-radius-control: 0.5rem; /* v0.8.130 — premium pass: 8px controls */
+  /* v0.8.130 — premium pass: 12px cards and hero (were 16px and 24px). */
+  --dn-radius-card: 0.75rem;
+  --dn-radius-hero: 0.75rem;
+  --dn-shadow-low: var(--elevation-sm);
+  --dn-shadow-medium: var(--elevation-md);
+  /* v0.8.130 — brand uses of the theme's second hue read --brand-accent; --accent
+   * is now the neutral hover/selected fill. */
+  --dn-evidence: var(--brand-accent);
   --dn-warning: var(--warning);
   --dn-editable: var(--primary);
   --dn-read-only: var(--muted-foreground);
@@ -30,7 +33,7 @@
   --dn-model-cloud: var(--info);
   --dn-graph-node: var(--primary);
   --dn-graph-edge: var(--muted-foreground);
-  --dn-graph-selected: var(--accent);
+  --dn-graph-selected: var(--brand-accent);
 
   /* Artifact viewers and graph surfaces consume these roles instead of
    * choosing a palette of their own. The fixed OKLCH status hue families
@@ -40,18 +43,21 @@
   --dn-artifact-ink: var(--foreground);
   --dn-artifact-muted: var(--muted-foreground);
   --dn-artifact-line: var(--border);
-  --dn-graph-source: color-mix(in oklab, var(--primary) 78%, var(--accent) 22%);
+  --dn-graph-source: color-mix(in oklab, var(--primary) 78%, var(--brand-accent) 22%);
   --dn-graph-source-foreground: var(--primary-foreground);
   --dn-graph-note: color-mix(in oklab, var(--warning) 76%, var(--foreground) 24%);
   --dn-graph-note-foreground: var(--warning-foreground);
   --dn-graph-fallback: color-mix(in oklab, var(--muted) 72%, var(--background) 28%);
   --dn-graph-fallback-foreground: var(--muted-foreground);
-  --dn-status-success: oklch(0.62 0.16 145);
-  --dn-status-success-foreground: oklch(0.97 0.02 145);
-  --dn-status-warning: oklch(0.71 0.17 70);
-  --dn-status-warning-foreground: oklch(0.2 0.05 70);
-  --dn-status-info: oklch(0.62 0.18 230);
-  --dn-status-info-foreground: oklch(0.97 0.02 230);
+  /* v0.8.130 — aliases of the canonical status roles in globals.css. These were a
+   * second, drifting copy of the same hues with their own dark and high-contrast
+   * overrides. */
+  --dn-status-success: var(--success);
+  --dn-status-success-foreground: var(--success-foreground);
+  --dn-status-warning: var(--warning);
+  --dn-status-warning-foreground: var(--warning-foreground);
+  --dn-status-info: var(--info);
+  --dn-status-info-foreground: var(--info-foreground);
 
   /* Soft translucent versions of the primary/accent colors for chips, hover
    * states, subtle highlights. Works on both light and dark themes. */
@@ -60,12 +66,13 @@
   --dn-surface-raised: color-mix(in oklab, var(--card) 92%, var(--primary) 8%);
   --dn-border-strong: color-mix(in oklab, var(--border) 72%, var(--primary) 28%);
 
-  /* Status colors not present in shadcn defaults */
-  --dn-success: oklch(0.65 0.18 145);
-  --dn-success-soft: color-mix(in oklab, var(--dn-success) 18%, transparent);
-  --dn-warning-soft: color-mix(in oklab, var(--dn-warning) 18%, transparent);
-  --dn-info: var(--primary);
-  --dn-info-soft: var(--dn-accent-soft);
+  /* v0.8.130 — aliases of the canonical status roles. `--dn-info` was the brand
+   * primary and `--dn-success` a third green. */
+  --dn-success: var(--success);
+  --dn-success-soft: var(--success-soft);
+  --dn-warning-soft: var(--warning-soft);
+  --dn-info: var(--info);
+  --dn-info-soft: var(--info-soft);
   --dn-model-gguf: oklch(0.57 0.18 245);
   --dn-model-mlx: oklch(0.62 0.16 175);
 
@@ -74,9 +81,9 @@
   --dn-folio-paper: color-mix(in oklab, var(--card) 88%, #F5F1E7 12%);
   --dn-folio-ink: var(--foreground);
   --dn-paper-edge: color-mix(in oklab, var(--border) 76%, #CBAE70 24%);
-  --dn-brass: color-mix(in oklab, var(--accent) 72%, #CBAE70 28%);
+  --dn-brass: color-mix(in oklab, var(--brand-accent) 72%, #CBAE70 28%);
   --dn-brass-soft: color-mix(in oklab, var(--dn-brass) 18%, transparent);
-  --dn-glow: color-mix(in oklab, var(--accent) 28%, transparent);
+  --dn-glow: color-mix(in oklab, var(--brand-accent) 28%, transparent);
   --dn-grain: color-mix(in oklab, var(--foreground) 4%, transparent);
   --dn-shell: color-mix(in oklab, var(--background) 84%, var(--primary) 16%);
   --dn-lens: color-mix(in oklab, var(--card) 76%, var(--primary) 24%);
@@ -101,15 +108,15 @@
 
   /* ── Aurora-glass system (v0.8.70) ──────────────────────────────────────
    * v0.8.72 — the in-app aurora is now THEME-AWARE: it derives from the live
-   * theme's --primary / --accent (set per [data-theme] by the desktop theme
-   * injection), so every theme gets a cohesive hero/glow in its own palette.
+   * theme's --primary / --brand-accent (v0.8.130: was --accent, now the neutral
+   * hover fill), so every theme gets a cohesive hero/glow in its own palette.
    * The hardcoded Research Core hues are final fallbacks if a theme somehow
    * leaves --primary/--accent unset. aurora-3 is a
    * harmonious blend of the two so the third gradient stop always fits.
    * All motion uses GPU-composited transform/opacity/filter only. */
   --dn-aurora-1: var(--primary, #2DD4BF);
-  --dn-aurora-2: var(--accent, #38BDF8);
-  --dn-aurora-3: color-mix(in oklab, var(--accent, #38BDF8) 55%, var(--primary, #2DD4BF));
+  --dn-aurora-2: var(--brand-accent, #38BDF8);
+  --dn-aurora-3: color-mix(in oklab, var(--brand-accent, #38BDF8) 55%, var(--primary, #2DD4BF));
 
   /* Soft outer glow keyed to the live theme primary. */
   --dn-glow-accent:
@@ -117,8 +124,9 @@
     0 10px 34px -8px color-mix(in oklab, var(--primary) 48%, transparent);
 
   /* Frosted-glass panel tokens. */
-  --dn-glass-bg: color-mix(in oklab, var(--card) 74%, transparent);
-  --dn-glass-border: color-mix(in oklab, var(--foreground) 12%, transparent);
+  /* v0.8.130 — premium pass: the glass tokens are solid (shell and lens surfaces). */
+  --dn-glass-bg: var(--background);
+  --dn-glass-border: var(--border);
   --dn-glass-blur: 14px;
 
   /* Motion roles: immediate/interface/narrative/ambient. */
@@ -129,25 +137,15 @@
 }
 
 .dark {
-  --dn-glass-bg: color-mix(in oklab, var(--card) 52%, transparent);
-  --dn-glass-border: color-mix(in oklab, var(--primary) 24%, var(--border));
-  --dn-status-success: oklch(0.7 0.15 145);
-  --dn-status-success-foreground: oklch(0.15 0.03 145);
-  --dn-status-warning: oklch(0.75 0.15 70);
-  --dn-status-warning-foreground: oklch(0.15 0.04 70);
-  --dn-status-info: oklch(0.7 0.15 230);
-  --dn-status-info-foreground: oklch(0.15 0.03 230);
+  --dn-glass-bg: var(--background);
+  --dn-glass-border: var(--border);
 }
 
-/* Frosted-glass surface for cards/headers that float above content. */
+/* v0.8.130 — premium pass: a solid surface with a hairline. It was frosted glass
+   (blur + saturate) with an inset white highlight. */
 .dn-glass {
-  background: var(--dn-glass-bg);
-  -webkit-backdrop-filter: blur(var(--dn-glass-blur)) saturate(1.4);
-  backdrop-filter: blur(var(--dn-glass-blur)) saturate(1.4);
-  border: 1px solid var(--dn-glass-border);
-  box-shadow:
-    var(--shadow-lg),
-    inset 0 1px 0 0 color-mix(in oklab, white 16%, transparent);
+  background: var(--card);
+  border: 1px solid var(--border);
 }
 
 /* Explicit display-preference guards keep ambient presentation outside the
@@ -177,13 +175,9 @@ html[data-dn-motion="reduced"] .dn-aurora-bg::before {
   transform: translate3d(0, 0, 0) scale(1.1);
 }
 
-/* Serif is reserved for authored folio hierarchy, never compact controls or
- * source/code text. */
-.dn-folio-title,
-.dn-folio-quote,
-.dn-editorial-summary {
-  font-family: var(--font-dn-editorial), Georgia, serif;
-}
+/* v0.8.130 — sans headings (decision of 2026-09-30): the folio title no longer
+ * switches to the serif, and the unused .dn-folio-quote / .dn-editorial-summary
+ * hooks are gone. */
 
 @media (prefers-reduced-motion: reduce) {
   .dn-aurora-bg::before {
@@ -249,12 +243,16 @@ html[data-dn-motion="reduced"] .dn-aurora-bg::before {
     --dn-graph-note-foreground: MarkText;
     --dn-graph-fallback: ButtonFace;
     --dn-graph-fallback-foreground: ButtonText;
-    --dn-status-success: Highlight;
-    --dn-status-success-foreground: HighlightText;
-    --dn-status-warning: Mark;
-    --dn-status-warning-foreground: MarkText;
-    --dn-status-info: LinkText;
-    --dn-status-info-foreground: Canvas;
+    /* v0.8.130 — canonical names; the --dn-status-* aliases follow them. */
+    --success: Highlight;
+    --success-foreground: HighlightText;
+    --success-ink: CanvasText;
+    --warning: Mark;
+    --warning-foreground: MarkText;
+    --warning-ink: CanvasText;
+    --info: LinkText;
+    --info-foreground: Canvas;
+    --info-ink: LinkText;
   }
   [data-dn-visual-system="v2"] * { forced-color-adjust: auto; }
   [data-dn-visual-system="v2"] :focus-visible { outline: 2px solid CanvasText; }

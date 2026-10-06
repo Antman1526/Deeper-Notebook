@@ -294,12 +294,12 @@ export function CommandPalette() {
       replaceWorkspace: page.context.replaceWorkspace ?? null,
       toggleMetrics: page.context.toggleMetrics ?? null,
       researchModeAvailability: page.context.researchModeAvailability ?? {
-        read: { available: false, reason: 'Research modes are unavailable' },
-        write: { available: false, reason: 'Research modes are unavailable' },
-        ask: { available: false, reason: 'Research modes are unavailable' },
-        search: { available: false, reason: 'Research modes are unavailable' },
-        graph: { available: false, reason: 'Research modes are unavailable' },
-        podcast: { available: false, reason: 'Research modes are unavailable' },
+        read: { available: false, reason: t('common.commandPalette.researchModesUnavailable') },
+        write: { available: false, reason: t('common.commandPalette.researchModesUnavailable') },
+        ask: { available: false, reason: t('common.commandPalette.researchModesUnavailable') },
+        search: { available: false, reason: t('common.commandPalette.researchModesUnavailable') },
+        graph: { available: false, reason: t('common.commandPalette.researchModesUnavailable') },
+        podcast: { available: false, reason: t('common.commandPalette.researchModesUnavailable') },
       },
       openResearchMode: page.context.openResearchMode ?? null,
       openPodcastFromSelection: activeTab?.knowledgeDocumentId
@@ -317,7 +317,7 @@ export function CommandPalette() {
         current.activateTab(currentPane.id, target.id)
       },
     }
-  }, [openPodcastReview, pageContext.generation])
+  }, [openPodcastReview, pageContext.generation, t])
 
   const knowledgeContext = buildKnowledgeContext()
   const knowledgeCommands = knowledgeContext
@@ -482,13 +482,13 @@ export function CommandPalette() {
                 </CommandItem>
               ))}
             </CommandGroup>
-            <CommandGroup heading="Workspace">
+            <CommandGroup heading={t('common.commandPalette.workspace')}>
               <CommandItem
                 value={`focus ${focusMode ? 'exit' : 'enter'} focus mode`}
                 onSelect={handleFocusMode}
               >
                 <Focus className="h-4 w-4" aria-hidden="true" />
-                <span>{focusMode ? 'Exit Focus mode' : 'Enter Focus mode'}</span>
+                <span>{focusMode ? t('common.commandPalette.exitFocusMode') : t('common.commandPalette.enterFocusMode')}</span>
               </CommandItem>
             </CommandGroup>
             {exactCandidates.length > 0 && (

@@ -32,8 +32,8 @@ describe('NotebooksPage', () => {
   it('keeps the notebook search, import, and creation controls in an Organize folio', () => {
     render(<NotebooksPage />)
 
-    expect(screen.getByRole('main', { name: 'Notebooks' })).toBeInTheDocument()
-    expect(screen.getByText('Organize')).toBeInTheDocument()
+    expect(screen.getByRole('main', { name: 'navigation.notebooks' })).toBeInTheDocument()
+    expect(screen.getByText('knowledge.knowledgeRouteFrames.organize')).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: 'Search notebooks' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Import' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'New Notebook' })).toBeInTheDocument()

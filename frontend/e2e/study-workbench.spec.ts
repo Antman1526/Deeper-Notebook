@@ -25,7 +25,8 @@ const studyWorkbenchEnabledBuild = !studyWorkbenchRollbackBuild
 
 function expectedStateCalls(state: StudyFixtureState): string[] {
   if (state === 'empty' || state === 'loading') {
-    return ['GET /api/study/cards/due', 'GET /api/study/plans']
+    // v0.8.130 — /study also mounts ExamLab (v0.8.97), which lists recent attempts.
+    return ['GET /api/study/cards/due', 'GET /api/study/plans', 'GET /api/study/exams/attempts']
   }
   if (state === 'error-retry') {
     return [
@@ -192,8 +193,13 @@ for (const state of STUDY_STATES) {
         failedResponses.push(`${response.status()} ${response.request().method()} ${canonicalStudyApiPath(new URL(response.url()).pathname)}`)
       }
     })
+    // Study requests still waiting for a response; navigating away aborts them.
+    const studyInFlight = new Set<object>()
+    page.on('requestfinished', (request) => studyInFlight.delete(request))
+    page.on('requestfailed', (request) => studyInFlight.delete(request))
     page.on('request', (request) => {
       const url = new URL(request.url())
+      if (url.pathname.startsWith('/api/study/')) studyInFlight.add(request)
       if (!['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) externalRequests.push(request.url())
       if (url.pathname.startsWith('/api/')) apiRequests.push(`${request.method()} ${canonicalStudyApiPath(url.pathname)}`)
     })
@@ -236,7 +242,15 @@ for (const state of STUDY_STATES) {
       if (state === 'approved' || state === 'generating' || state === 'active') {
         await expect(page.locator('main').getByText(state, { exact: true }).first()).toBeVisible()
       }
-      if (state === 'degraded-model') await expect(page.getByText(/degraded/i).first()).toBeVisible()
+      if (state === 'degraded-model') {
+        // v0.8.130 — model health sits in the rail footer; below 1024px, where the rail is
+        // a sheet, the command bar shows it instead (no menu to open).
+        if (viewport.width < 1024) {
+          await expect(page.getByRole('banner', { name: 'Command bar' }).getByRole('link', { name: 'Some local models need attention' })).toBeVisible()
+        } else {
+          await expect(page.getByRole('navigation', { name: 'Primary' }).getByText(/degraded/i).first()).toBeVisible()
+        }
+      }
       if (state === 'offline') await expect(page.getByTestId('network-status-badge').getByText(/offline/i)).toBeVisible()
       if (state === 'error-retry') {
         await expect(page.getByRole('alert')).toBeVisible()
@@ -249,6 +263,14 @@ for (const state of STUDY_STATES) {
         await expect(page.locator('h1')).toBeVisible()
         const planCallsAfterRetry = ledger.seen.filter((call) => call === `GET ${'/api/study/plans/' + STUDY_PLAN_ID}`).length
         expect(planCallsAfterRetry).toBeGreaterThan(planCallsBeforeRetry)
+        // v0.8.130 — let the retried plan requests finish before the next width
+        // navigates; under load the navigation aborted them and the ledger recorded
+        // them as failed. (networkidle cannot do this: it resolves at once if the page
+        // was idle earlier, as it was while showing the error.)
+        const width = String(viewport.width)
+        await expect.poll(() => callCounts(ledger.seenByViewport?.[width] ?? []))
+          .toEqual(callCounts(ledger.expectedByViewport?.[width] ?? []))
+        await expect.poll(() => studyInFlight.size).toBe(0)
       }
       if (state === 'tutor') {
         await expect(page.getByRole('region', { name: 'Tutor dock' })).toBeVisible()
@@ -293,9 +315,9 @@ for (const state of STUDY_STATES) {
               ...Array.from({ length: 2 }, () => `GET ${planApiPath}/sources/readiness`),
               ...Array.from({ length: 3 }, () => `GET ${planApiPath}/progress`),
             )
-            await page.getByText('Confirm explicit import into this Study Plan').click()
+            await page.getByText('Confirm explicit import into this study plan').click()
             await page.getByRole('button', { name: 'Import cards' }).click()
-            await expect(page.getByText('Cards imported into the native Study deck.')).toBeVisible()
+            await expect(page.getByText('Cards imported into the native study deck.')).toBeVisible()
           }
         }
       }

@@ -116,7 +116,8 @@ export function AskPanel({
 
         {/* Models Display */}
         {!hasEmbeddingModel ? (
-          <div className="flex items-center gap-2 p-3 text-sm text-amber-600 dark:text-amber-500 bg-amber-50 dark:bg-amber-950/20 rounded-md">
+          // v0.8.130 — status colours from theme tokens (UI audit Phase 1)
+          <div className="flex items-center gap-2 p-3 text-sm text-warning-ink bg-warning-soft rounded-md">
             <AlertCircle className="h-4 w-4" />
             <span>{t('searchPage.noEmbeddingModel')}</span>
           </div>
@@ -177,12 +178,12 @@ export function AskPanel({
                 {isDeepResearching ? (
                   <>
                     <LoadingSpinner size="sm" className="mr-1.5" />
-                    Deep Researching...
+                    {t('searchPage.askPanel.deepResearching')}
                   </>
                 ) : (
                   <>
                     <Sparkles className="h-4 w-4 text-primary" />
-                    Deep Research
+                    {t('searchPage.askPanel.deepResearch')}
                   </>
                 )}
               </Button>

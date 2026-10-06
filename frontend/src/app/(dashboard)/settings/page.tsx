@@ -1,6 +1,5 @@
 'use client'
 
-import { AppShell } from '@/components/layout/AppShell'
 import { SettingsForm } from './components/SettingsForm'
 // v0.7.136 — Read-only ObservabilityCard renders the GET /settings/observability
 // snapshot below the writable settings form. The two surfaces are
@@ -12,6 +11,7 @@ import { UpdatesCard } from './components/UpdatesCard'
 import { RetentionCard } from './components/RetentionCard'
 import { useSettings } from '@/lib/hooks/use-settings'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import { RefreshCw, Sparkles } from 'lucide-react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 // v0.8.70 — replay the launch "Aurora Reveal" intro on demand.
@@ -46,31 +46,36 @@ export default function SettingsPage() {
   // Container width: max-w-4xl (896px) → max-w-3xl (768px) feels less
   // sparse on wide monitors while still hitting the "roomy" target.
   return (
-    <AppShell>
+    <>
       <SystemRouteFrame
         route="/settings"
-        actions={<Button variant="outline" size="sm" aria-label="Refresh settings" onClick={() => refetch()}><RefreshCw className="h-4 w-4" /></Button>}
+        actions={<Button variant="outline" size="sm" aria-label={t('settings.settingsPage.refreshSettings')} onClick={() => refetch()}><RefreshCw className="h-4 w-4" /></Button>}
       >
         <div data-testid="settings-scroll-viewport" className="mx-auto max-w-3xl space-y-10 rounded-lg bg-[var(--dn-folio-paper)] p-4 sm:p-6">
 
             <section aria-labelledby="appearance-heading" className="space-y-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Appearance</p>
-                <h2 id="appearance-heading" className="mt-1 text-xl font-semibold">Choose your research environment</h2>
-                <p className="mt-1 text-sm text-muted-foreground">Preview a complete workspace theme, then apply it when it feels right.</p>
+                <p className="text-xs font-semibold text-muted-foreground">{t('settings.settingsPage.appearance')}</p>
+                <h2 id="appearance-heading" className="mt-1 text-xl font-semibold">{t('settings.settingsPage.chooseEnvironment')}</h2>
+                <p className="mt-1 text-sm text-muted-foreground">{t('settings.settingsPage.themePreviewHint')}</p>
               </div>
               <ThemeGallery />
               <DisplayPreferencesPanel />
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3">
                 <div>
-                  <p className="text-sm font-medium">Guided tips</p>
-                  <p className="text-sm text-muted-foreground">Show small contextual messages when you visit a section for the first time.</p>
+                  <p id="guided-tips-label" className="text-sm font-medium">{t('settings.settingsPage.guidedTips')}</p>
+                  <p id="guided-tips-description" className="text-sm text-muted-foreground">{t('settings.settingsPage.guidedTipsDescription')}</p>
                 </div>
-                <div className="flex gap-2">
-                  <Button type="button" variant="outline" role="switch" aria-checked={tipsEnabled} onClick={() => setTipsEnabled(!tipsEnabled)}>
-                    {tipsEnabled ? 'On' : 'Off'}
-                  </Button>
-                  <Button type="button" variant="ghost" onClick={replayAllTips}>Replay all tips</Button>
+                <div className="flex items-center gap-2">
+                  {/* v0.8.130 — a real switch, named by its heading. It was an outline
+                      button with role="switch" whose accessible name was "On"/"Off". */}
+                  <Switch
+                    aria-labelledby="guided-tips-label"
+                    aria-describedby="guided-tips-description"
+                    checked={tipsEnabled}
+                    onCheckedChange={setTipsEnabled}
+                  />
+                  <Button type="button" variant="ghost" onClick={replayAllTips}>{t('settings.settingsPage.replayAllTips')}</Button>
                 </div>
               </div>
             </section>
@@ -101,6 +106,6 @@ export default function SettingsPage() {
             <ObservabilityCard />
         </div>
       </SystemRouteFrame>
-    </AppShell>
+    </>
   )
 }

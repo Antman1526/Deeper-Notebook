@@ -4,6 +4,7 @@ import { defineConfig, devices } from '@playwright/test'
 // commonly occupied by the adjacent Paperclip workspace on this machine.
 const port = Number(process.env.PLAYWRIGHT_PORT ?? 3117)
 const baseURL = `http://127.0.0.1:${port}`
+const ROLLBACK_VISUAL_SPECS = ['e2e/luminous-folio-visual.spec.ts', 'e2e/theme-gallery-visual.spec.ts']
 
 export default defineConfig({
   testDir: './e2e',
@@ -23,7 +24,13 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   webServer: {
-    command: `npm run build && PORT=${port} npm run start`,
+    // v0.8.130 — PLAYWRIGHT_PREBUILT=1 skips the build: the rollback-visuals CI job builds
+    // in its own step (with V2 off), so the build is not bound by this server timeout.
+    // HOSTNAME pins the bind address to the baseURL host: Next reads it, and Docker (CI
+    // container jobs included) sets it to the container id, so the server was unreachable.
+    command: process.env.PLAYWRIGHT_PREBUILT === '1'
+      ? `HOSTNAME=127.0.0.1 PORT=${port} npm run start`
+      : `npm run build && HOSTNAME=127.0.0.1 PORT=${port} npm run start`,
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
@@ -36,6 +43,9 @@ export default defineConfig({
         'e2e/device/**',
         // Podcast Studio proof binds to the controlled native runtime on 65060.
         'e2e/podcast-intelligence-studio.spec.ts',
+        // Pre-V2 (rollback) presentation proofs: they need a build with
+        // NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2=0 and run in the rollback-visuals project.
+        ...ROLLBACK_VISUAL_SPECS,
         // Documentation screenshot harness — asserts nothing, costs ~50 s, and is
         // only run on demand when the user guide is regenerated. Setting
         // DOCS_CAPTURE_DIR (which a capture run needs anyway) opts it back in, so
@@ -52,6 +62,24 @@ export default defineConfig({
       metadata: {
         proof_boundary: 'mocked-browser',
         ci_gate: 'required-linux',
+      },
+    },
+    {
+      // v0.8.130 — the Luminous (pre-V2) snapshot suites. V2 is a build-time flag and has
+      // been the default since 2026-08-14, so these only render against a build made with
+      // NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2=0: `npm run test:e2e:rollback-visuals`, and the
+      // rollback-visuals CI job (Linux baselines come from the same Playwright image).
+      name: 'rollback-visuals',
+      testMatch: ROLLBACK_VISUAL_SPECS,
+      use: {
+        ...devices['Desktop Chrome'],
+        locale: 'en-US',
+        colorScheme: 'dark',
+        deviceScaleFactor: 1,
+      },
+      metadata: {
+        proof_boundary: 'mocked-browser-rollback',
+        ci_gate: 'required-linux-v2-off',
       },
     },
     {

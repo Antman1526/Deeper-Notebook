@@ -85,7 +85,7 @@ describe('Luminous Folio accessibility', () => {
       />,
     )
 
-    expect(screen.getByRole('group', { name: 'Evidence receipt' }).closest('label')).toBeNull()
+    expect(screen.getByRole('group', { name: 'research.evidenceReceipt.receipt' }).closest('label')).toBeNull()
   })
 })
 

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { useTranslation } from '@/lib/hooks/use-translation'
 
 export type OutlineStoryboardSegment = string | { id?: string; title?: string; name?: string; description?: string }
 
@@ -11,9 +12,9 @@ export interface OutlineStoryboardProps {
   onChange: (segments: OutlineStoryboardSegment[]) => void
 }
 
-function segmentTitle(segment: OutlineStoryboardSegment): string {
+function segmentTitle(segment: OutlineStoryboardSegment, untitled: string): string {
   if (typeof segment === 'string') return segment
-  return segment.title ?? segment.name ?? segment.id ?? 'Untitled segment'
+  return segment.title ?? segment.name ?? segment.id ?? untitled
 }
 
 interface SegmentIdentityState {
@@ -37,7 +38,9 @@ function reconcileIdentities(previous: SegmentIdentityState, labels: string[], s
 }
 
 export function OutlineStoryboard({ segments, onChange }: OutlineStoryboardProps) {
-  const labels = useMemo(() => segments.map(segmentTitle), [segments])
+  const { t } = useTranslation()
+  const untitledSegment = t('podcasts.outlineStoryboard.untitledSegment')
+  const labels = useMemo(() => segments.map((segment) => segmentTitle(segment, untitledSegment)), [segments, untitledSegment])
   const [announcement, setAnnouncement] = useState('')
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [identityState, setIdentityState] = useState<SegmentIdentityState>(() => reconcileIdentities({ labels: [], ids: [] }, labels, segments))
@@ -66,7 +69,7 @@ export function OutlineStoryboard({ segments, onChange }: OutlineStoryboardProps
     nextIds.splice(to, 0, movedId)
     setIdentityState({ labels: nextLabels, ids: nextIds })
     onChange(next)
-    setAnnouncement(`${moved} moved to position ${to + 1}`)
+    setAnnouncement(t('podcasts.outlineStoryboard.movedAnnouncement', { label: moved, position: to + 1 }))
     if (focusMovedItem) itemRefs.current[movedId]?.focus()
   }
 
@@ -81,12 +84,12 @@ export function OutlineStoryboard({ segments, onChange }: OutlineStoryboardProps
   }
 
   return (
-    <section data-region="outline-storyboard" aria-label="Outline Storyboard" className="space-y-3 rounded-md border p-4">
+    <section data-region="outline-storyboard" aria-label={t('podcasts.outlineStoryboard.title')} className="space-y-3 rounded-md border p-4">
       <header>
-        <h3 className="font-semibold">Outline Storyboard</h3>
-        <p className="mt-1 text-sm text-muted-foreground">Outline storyboard review is the current Phase-2 gate; cited storyboard artifacts arrive in Phase 3.</p>
+        <h3 className="font-semibold">{t('podcasts.outlineStoryboard.title')}</h3>
+        <p className="mt-1 text-sm text-muted-foreground">{t('podcasts.outlineStoryboard.description')}</p>
       </header>
-      <ol className="space-y-2" aria-label="Outline segments">
+      <ol className="space-y-2" aria-label={t('podcasts.outlineStoryboard.segments')}>
         {labels.map((label, index) => {
           const segmentId = segmentIds[index]
           return (
@@ -104,8 +107,8 @@ export function OutlineStoryboard({ segments, onChange }: OutlineStoryboardProps
           >
             <span>{label}</span>
             <span className="flex flex-wrap gap-2">
-              <Button ref={(element) => { buttonRefs.current[`${segmentId}:-1`] = element }} type="button" size="sm" variant="outline" disabled={index === 0} aria-label={`Move ${label} earlier`} onClick={() => move(index, -1)}>Move earlier</Button>
-              <Button ref={(element) => { buttonRefs.current[`${segmentId}:1`] = element }} type="button" size="sm" variant="outline" disabled={index === labels.length - 1} aria-label={`Move ${label} later`} onClick={() => move(index, 1)}>Move later</Button>
+              <Button ref={(element) => { buttonRefs.current[`${segmentId}:-1`] = element }} type="button" size="sm" variant="outline" disabled={index === 0} aria-label={t('podcasts.outlineStoryboard.moveEarlierLabel', { label })} onClick={() => move(index, -1)}>{t('podcasts.outlineStoryboard.moveEarlier')}</Button>
+              <Button ref={(element) => { buttonRefs.current[`${segmentId}:1`] = element }} type="button" size="sm" variant="outline" disabled={index === labels.length - 1} aria-label={t('podcasts.outlineStoryboard.moveLaterLabel', { label })} onClick={() => move(index, 1)}>{t('podcasts.outlineStoryboard.moveLater')}</Button>
             </span>
           </li>
           )

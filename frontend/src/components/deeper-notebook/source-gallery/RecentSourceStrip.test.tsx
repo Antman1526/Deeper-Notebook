@@ -5,6 +5,15 @@ import { sourcesApi } from '@/lib/api/sources'
 import type { SourceListResponse } from '@/lib/types/api'
 import { RecentSourceStrip } from './RecentSourceStrip'
 
+// Keys come back unchanged; interpolated values are appended so names that
+// embed a source title stay distinguishable.
+vi.mock('@/lib/hooks/use-translation', () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: Record<string, unknown>) =>
+      opts ? `${key} ${Object.values(opts).join(' ')}` : key,
+  }),
+}))
+
 const hash = 'a'.repeat(64)
 const opaqueToken = 'b'.repeat(64)
 
@@ -40,10 +49,10 @@ describe('RecentSourceStrip', () => {
 
     render(<RecentSourceStrip sources={[source]} />)
 
-    expect(screen.getByRole('region', { name: 'Recent visual sources' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Open Field notes' })).toHaveAttribute('href', '/sources/source%3Aone')
+    expect(screen.getByRole('region', { name: 'workspace.recentSourceStrip.ariaLabel' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'workspace.recentSourceStrip.openLabel Field notes' })).toHaveAttribute('href', '/sources/source%3Aone')
     expect(screen.getByRole('img', { name: /Handwritten field observations/ })).toBeVisible()
-    expect(screen.queryByRole('button', { name: /Refresh visual/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /workspace\.sourceCoverActions\.refreshVisual/ })).not.toBeInTheDocument()
     expect(list).not.toHaveBeenCalled()
 
     list.mockRestore()

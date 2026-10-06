@@ -12,6 +12,11 @@ from typing import Literal
 
 from desktop.data_root import active_data_root
 
+# v0.8.130 — indigo (Gemini-Forward) is the one brand (decision of 2026-09-30).
+# Fresh installs start here; an existing config.toml keeps its saved theme.
+# The API router's GET fallback mirrors this value (tests pin them together).
+DEFAULT_THEME = "gemini-forward-light"
+
 
 def _toml_string(v: str) -> str:
     """TOML-safe string serialization.
@@ -48,7 +53,7 @@ class Config:
     default_model: str
     surreal_user: str
     surreal_password: str
-    theme: str = "research-core-dark"
+    theme: str = DEFAULT_THEME
     openchronicle_choice: str = "skip"
     encryption_key: str = field(default_factory=lambda: secrets.token_urlsafe(32))
     execution_policy: Literal["strict_local", "local_preferred", "custom"] = (
@@ -114,7 +119,7 @@ def load_or_create(path: Path) -> Config:
             default_model="",
             surreal_user="root",
             surreal_password=secrets.token_urlsafe(24),
-            theme="research-core-dark",
+            theme=DEFAULT_THEME,
             openchronicle_choice="skip",
             encryption_key=secrets.token_urlsafe(32),
         )
@@ -133,7 +138,7 @@ def load_or_create(path: Path) -> Config:
         default_model=raw.get("default_model", ""),
         surreal_user=raw.get("surreal_user", "root"),
         surreal_password=raw["surreal_password"],
-        theme=raw.get("theme", "research-core-dark"),
+        theme=raw.get("theme", DEFAULT_THEME),
         openchronicle_choice=raw.get("openchronicle_choice", "skip"),
         encryption_key=encryption_key if encryption_key else secrets.token_urlsafe(32),
         execution_policy=raw.get("execution_policy", "strict_local"),

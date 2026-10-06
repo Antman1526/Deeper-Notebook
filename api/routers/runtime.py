@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
@@ -13,8 +14,14 @@ from api.runtime_snapshot import (
     RuntimeSnapshotProviders,
     build_runtime_snapshot,
 )
+from deeper_notebook.environment import resolve_env
+from deeper_notebook.knowledge_engine.service import enabled_setting
 
 router = APIRouter()
+# v0.8.130 — captured at import as a stand-in for "when this API process
+# started". Monotonic so a wall-clock change cannot fake or cancel the
+# auto-export startup grace.
+_PROCESS_STARTED = time.monotonic()
 MAX_VAULT_SUMMARY_MOUNTS = 256
 _SOURCE_FINGERPRINT_RE = re.compile(r"^[a-f0-9]{64}$")
 
@@ -66,7 +73,17 @@ async def _knowledge_summary(request: Request) -> dict[str, Any] | None:
     service = getattr(request.app.state, "knowledge_engine_service", None)
     status = getattr(service, "status", None)
     if not callable(status):
-        return None
+        # v0.8.130 — no service has two very different causes. The engine is
+        # off by default, and "switched off" must not surface as a fault, so
+        # say so explicitly. If the flag is on (the service failed to start)
+        # or cannot be read, keep returning None, which stays "unknown".
+        try:
+            switched_off = not enabled_setting(
+                "DEEPER_NOTEBOOK_KNOWLEDGE_ENGINE_SHADOW_ENABLED"
+            )
+        except Exception:
+            return None
+        return {"enabled": False} if switched_off else None
     projection = await status()
     if isinstance(projection, dict):
         return projection
@@ -75,6 +92,32 @@ async def _knowledge_summary(request: Request) -> dict[str, Any] | None:
         "unchanged": getattr(projection, "unchanged", None),
         "failed": getattr(projection, "failed", None),
     }
+
+
+def _process_uptime_seconds() -> float:
+    return time.monotonic() - _PROCESS_STARTED
+
+
+def _auto_export_expected() -> bool:
+    """Whether a desktop launcher is scheduled to take exports for this API."""
+    # v0.8.130 — exports are taken only by the desktop launcher's background
+    # thread (Launcher._start_periodic_export). Without a launcher, or with
+    # exports switched off, a missing or old export is not a fault. The
+    # launcher always sets the control-URL key for its children (empty when
+    # its control server failed, in which case exports still run), so the
+    # test is presence, not truthiness.
+    if resolve_env("DEEPER_NOTEBOOK_LAUNCHER_CONTROL_URL") is None:
+        return False
+    # The two switches below mirror the launcher's own parsing exactly; the
+    # API process inherits the launcher's environment, so it sees the same
+    # values.
+    if resolve_env("DEEPER_NOTEBOOK_DISABLE_DB_AUTOREPAIR"):
+        return False
+    try:
+        hours = float(resolve_env("DEEPER_NOTEBOOK_AUTO_EXPORT_HOURS", "24") or 24)
+    except ValueError:
+        hours = 24.0
+    return not hours <= 0
 
 
 def _providers_for_request(request: Request) -> RuntimeSnapshotProviders:
@@ -88,6 +131,12 @@ def _providers_for_request(request: Request) -> RuntimeSnapshotProviders:
     auto_export_provider = getattr(
         request.app.state, "runtime_auto_export_directory_provider", None
     )
+    uptime_provider = getattr(
+        request.app.state, "runtime_uptime_seconds_provider", None
+    )
+    expected_provider = getattr(
+        request.app.state, "runtime_auto_export_expected_provider", None
+    )
     return RuntimeSnapshotProviders(
         readiness=getattr(request.app.state, "runtime_readiness_provider", None),
         startup_receipts=getattr(
@@ -99,6 +148,8 @@ def _providers_for_request(request: Request) -> RuntimeSnapshotProviders:
         vault_summary=vault_provider or (lambda: _vault_summary(request)),
         knowledge_summary=knowledge_provider or (lambda: _knowledge_summary(request)),
         auto_export_directory=auto_export_provider,
+        uptime_seconds=uptime_provider or _process_uptime_seconds,
+        auto_export_expected=expected_provider or _auto_export_expected,
     )
 
 

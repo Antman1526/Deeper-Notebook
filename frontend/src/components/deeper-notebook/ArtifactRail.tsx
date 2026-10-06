@@ -1,5 +1,6 @@
 'use client'
 
+import { useConfirm } from '@/components/common/use-confirm'
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertCircle, ArrowRight, BookOpenCheck, CheckCircle2, Clock3, Cpu, Download, FileQuestion, GraduationCap, Layers3, ListChecks, Loader2, Map as MapIcon, Mic2, Newspaper, Play, Presentation, RefreshCw, Search, SlidersHorizontal, Table2, Trash2, Video } from 'lucide-react'
@@ -99,40 +100,73 @@ type QuickArtifactType =
 
 const QUICK_ARTIFACTS: Array<{
   type: QuickArtifactType
-  title: string
-  label: string
+  labelKey: string
   Icon: typeof Newspaper
 }> = [
-  { type: 'report', title: 'Report', label: 'Report', Icon: Newspaper },
-  { type: 'study_guide', title: 'Study guide', label: 'Study guide', Icon: BookOpenCheck },
-  { type: 'course_pack', title: 'Course Pack', label: 'Course Pack', Icon: GraduationCap },
-  { type: 'briefing', title: 'Briefing', label: 'Briefing', Icon: Newspaper },
-  { type: 'faq', title: 'FAQ', label: 'FAQ', Icon: FileQuestion },
-  { type: 'timeline', title: 'Timeline', label: 'Timeline', Icon: ListChecks },
-  { type: 'data_table', title: 'Data Table', label: 'Data Table', Icon: Table2 },
-  { type: 'mind_map', title: 'Mind map', label: 'Mind map', Icon: MapIcon },
-  { type: 'slide_deck', title: 'Slide deck', label: 'Slide deck', Icon: Presentation },
-  { type: 'infographic', title: 'Infographic', label: 'Infographic', Icon: Layers3 },
-  { type: 'podcast_outline', title: 'Podcast outline', label: 'Podcast outline', Icon: Mic2 },
-  { type: 'flashcards', title: 'Flashcards', label: 'Flashcards', Icon: ListChecks },
-  { type: 'quiz', title: 'Quiz', label: 'Quiz', Icon: FileQuestion },
+  { type: 'report', labelKey: 'artifacts.artifactRail.quickType.report', Icon: Newspaper },
+  { type: 'study_guide', labelKey: 'artifacts.artifactRail.quickType.studyGuide', Icon: BookOpenCheck },
+  { type: 'course_pack', labelKey: 'artifacts.artifactRail.quickType.coursePack', Icon: GraduationCap },
+  { type: 'briefing', labelKey: 'artifacts.artifactRail.quickType.briefing', Icon: Newspaper },
+  { type: 'faq', labelKey: 'artifacts.artifactRail.quickType.faq', Icon: FileQuestion },
+  { type: 'timeline', labelKey: 'artifacts.artifactRail.quickType.timeline', Icon: ListChecks },
+  { type: 'data_table', labelKey: 'artifacts.artifactRail.quickType.dataTable', Icon: Table2 },
+  { type: 'mind_map', labelKey: 'artifacts.artifactRail.quickType.mindMap', Icon: MapIcon },
+  { type: 'slide_deck', labelKey: 'artifacts.artifactRail.quickType.slideDeck', Icon: Presentation },
+  { type: 'infographic', labelKey: 'artifacts.artifactRail.quickType.infographic', Icon: Layers3 },
+  { type: 'podcast_outline', labelKey: 'artifacts.artifactRail.quickType.podcastOutline', Icon: Mic2 },
+  { type: 'flashcards', labelKey: 'artifacts.artifactRail.quickType.flashcards', Icon: ListChecks },
+  { type: 'quiz', labelKey: 'artifacts.artifactRail.quickType.quiz', Icon: FileQuestion },
 ]
 
 const RESEARCH_RUN_ARTIFACT = {
   type: 'research_run',
-  title: 'Research run',
-  label: 'Research run',
+  labelKey: 'artifacts.artifactRail.quickType.researchRun',
   Icon: Search,
 } satisfies {
   type: QuickArtifactType
-  title: string
-  label: string
+  labelKey: string
   Icon: typeof Newspaper
 }
 
-function artifactTypeLabel(type: StudioArtifactType): string {
-  if (type === 'course_pack' || type === 'training_guide') return 'Course Pack'
-  return type.replace(/_/g, ' ')
+type Translate = (key: string, options?: Record<string, unknown>) => string
+
+const ARTIFACT_TYPE_LABEL_KEYS: Partial<Record<StudioArtifactType, string>> = {
+  course_pack: 'artifacts.artifactRail.typeLabel.coursePack',
+  training_guide: 'artifacts.artifactRail.typeLabel.coursePack',
+  report: 'artifacts.artifactRail.typeLabel.report',
+  study_guide: 'artifacts.artifactRail.typeLabel.studyGuide',
+  briefing: 'artifacts.artifactRail.typeLabel.briefing',
+  faq: 'artifacts.artifactRail.typeLabel.faq',
+  flashcards: 'artifacts.artifactRail.typeLabel.flashcards',
+  quiz: 'artifacts.artifactRail.typeLabel.quiz',
+  data_table: 'artifacts.artifactRail.typeLabel.dataTable',
+  mind_map: 'artifacts.artifactRail.typeLabel.mindMap',
+  timeline: 'artifacts.artifactRail.typeLabel.timeline',
+  infographic: 'artifacts.artifactRail.typeLabel.infographic',
+  slide_deck: 'artifacts.artifactRail.typeLabel.slideDeck',
+  podcast_outline: 'artifacts.artifactRail.typeLabel.podcastOutline',
+  podcast_audio: 'artifacts.artifactRail.typeLabel.podcastAudio',
+  research_run: 'artifacts.artifactRail.typeLabel.researchRun',
+}
+
+function artifactTypeLabel(type: StudioArtifactType, t: Translate): string {
+  const key = ARTIFACT_TYPE_LABEL_KEYS[type]
+  return key ? t(key) : String(type).replace(/_/g, ' ')
+}
+
+const STATUS_LABEL_KEYS: Record<string, string> = {
+  pending: 'artifacts.artifactRail.status.pending',
+  running: 'artifacts.artifactRail.status.running',
+  completed: 'artifacts.artifactRail.status.completed',
+  failed: 'artifacts.artifactRail.status.failed',
+  cancelled: 'artifacts.artifactRail.status.cancelled',
+  queued: 'artifacts.artifactRail.status.queued',
+  awaiting_approval: 'artifacts.artifactRail.status.awaitingApproval',
+}
+
+function statusLabel(status: string, t: Translate): string {
+  const key = STATUS_LABEL_KEYS[status]
+  return key ? t(key) : status.replace(/_/g, ' ')
 }
 
 function statusClassName(status: StudioArtifact['status']): string {
@@ -174,17 +208,19 @@ function sourceTitle(source: SourceListResponse): string {
   return source.title || source.asset?.file_path || source.asset?.url || source.id
 }
 
-function sourceSelectionLabel(selectedCount: number): string {
-  if (selectedCount === 0) return 'All sources'
-  return `${selectedCount} ${selectedCount === 1 ? 'source' : 'sources'} selected`
+function sourceSelectionLabel(selectedCount: number, t: Translate): string {
+  if (selectedCount === 0) return t('artifacts.artifactRail.allSources')
+  return selectedCount === 1
+    ? t('artifacts.artifactRail.sourceSelectedOne', { count: selectedCount })
+    : t('artifacts.artifactRail.sourceSelectedOther', { count: selectedCount })
 }
 
 function sourceHref(sourceId: string): string {
   return `/sources/${encodeURIComponent(sourceId)}`
 }
 
-function regenerateArtifactLabel(status: StudioArtifact['status']): string {
-  return status === 'failed' ? 'Retry' : 'Regenerate'
+function regenerateArtifactLabel(status: StudioArtifact['status'], t: Translate): string {
+  return status === 'failed' ? t('artifacts.artifactRail.retry') : t('artifacts.artifactRail.regenerate')
 }
 
 function artifactStats(artifacts: StudioArtifact[]) {
@@ -195,8 +231,8 @@ function artifactStats(artifacts: StudioArtifact[]) {
   }
 }
 
-function workflowRunStatusLabel(status?: StudioWorkflowRun['status']): string {
-  return (status ?? 'queued').replace(/_/g, ' ')
+function workflowRunStatusLabel(status: StudioWorkflowRun['status'] | undefined, t: Translate): string {
+  return statusLabel(status ?? 'queued', t)
 }
 
 function workflowRunStatusClassName(status?: StudioWorkflowRun['status']): string {
@@ -240,7 +276,11 @@ export function ArtifactRail({
   const [selectedCitation, setSelectedCitation] = useState<CitationEvidence | null>(null)
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([])
   const { t } = useTranslation()
+  // v0.8.130 — Phase 4c: the app's confirm dialog, not the browser's confirm().
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const [videoDialogOpen, setVideoDialogOpen] = useState(false)
+  // v0.8.130 — the App Mode explainer is a collapsed disclosure in the Studio column.
+  const [explainerOpen, setExplainerOpen] = useState(false)
   const [exportAllDialogOpen, setExportAllDialogOpen] = useState(false)
   const [selectedEpisodeId, setSelectedEpisodeId] = useState('')
   const [videoUrls, setVideoUrls] = useState<{ media: string; captions: string } | null>(null)
@@ -309,19 +349,19 @@ export function ArtifactRail({
   const quizQuestionCount = selectedArtifact?.artifact_type === 'quiz'
     ? parseQuizQuestions(selectedMarkdown).length
     : 0
-  const sourceLabel = sourceSelectionLabel(selectedSourceIds.length)
+  const sourceLabel = sourceSelectionLabel(selectedSourceIds.length, t)
   const scopedSources = selectedSourceIds.length === 0
     ? sources
     : sources.filter((source) => selectedSourceIds.includes(source.id))
   const blockedSources = scopedSources.filter((source) => getSourceReadiness(source).blocksGeneration)
   const generationBlocked = sourcesLoading || sources.length === 0 || blockedSources.length > 0
   const blockedSourceMessage = sourcesLoading
-    ? 'Sources are still loading.'
+    ? t('artifacts.artifactRail.blockedLoading')
     : sources.length === 0
-      ? 'Add at least one ready source before generating artifacts.'
+      ? t('artifacts.artifactRail.blockedEmpty')
       : blockedSources.length === 1
-        ? '1 source is not ready for artifact generation.'
-        : `${blockedSources.length} sources are not ready for artifact generation.`
+        ? t('artifacts.artifactRail.blockedOne')
+        : t('artifacts.artifactRail.blockedOther', { count: blockedSources.length })
   const stats = artifactStats(artifacts)
   const artifactsById = new Map(artifacts.map((artifact) => [artifact.id, artifact]))
   const quickArtifacts = researchRunsEnabled
@@ -382,7 +422,7 @@ export function ArtifactRail({
     await createWorkflowRun.mutateAsync({
       artifactId: artifact.id,
       payload: {
-        title: `Generate ${title}`,
+        title: t('artifacts.artifactRail.generateRunTitle', { title }),
         source_ids: selectedSourceIds,
         approval_required: true,
       },
@@ -394,11 +434,12 @@ export function ArtifactRail({
   }
 
   async function queueExistingArtifact(artifact: StudioArtifact) {
-    const action = regenerateArtifactLabel(artifact.status)
     await createWorkflowRun.mutateAsync({
       artifactId: artifact.id,
       payload: {
-        title: `${action} ${artifact.title}`,
+        title: artifact.status === 'failed'
+          ? t('artifacts.artifactRail.retryRunTitle', { title: artifact.title })
+          : t('artifacts.artifactRail.regenerateRunTitle', { title: artifact.title }),
         source_ids: artifact.source_ids,
         approval_required: false,
       },
@@ -406,7 +447,12 @@ export function ArtifactRail({
   }
 
   async function deleteSelectedArtifact(artifact: StudioArtifact) {
-    if (!window.confirm(`Delete "${artifact.title}"?`)) return
+    if (!(await confirm({
+      title: t('artifacts.artifactRail.deleteConfirmTitle', { title: artifact.title }),
+      description: t('artifacts.artifactRail.deleteConfirmDescription'),
+      confirmText: t('common.delete'),
+      destructive: true,
+    }))) return
     await deleteArtifact.mutateAsync(artifact.id)
     setSelectedArtifact(null)
     setSelectedCitation(null)
@@ -458,218 +504,22 @@ export function ArtifactRail({
 
   if (!enabled) return null
 
+  // v0.8.130 — Phase 2b: this used to be a full-width band above the panes. It is now
+  // the Studio column's body: generators first as a two-column tile grid (NotebookLM's
+  // Studio), then saved outputs as a vertical list, then workflow runs. The App Mode
+  // explainer moved into a closed disclosure instead of a permanent box.
   return (
-    <section
-      aria-label="Evidence Studio artifacts"
-      className="mb-5 overflow-hidden rounded-lg border border-[var(--dn-border-strong)] bg-card shadow-[var(--dn-elevation-md)]"
-    >
-      <div className="flex flex-col gap-3 border-b bg-[var(--dn-surface-raised)] px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-10 w-10 flex-none items-center justify-center rounded-md border border-[var(--dn-border-strong)] bg-background text-primary shadow-[var(--dn-elevation-low)]">
-            <Layers3 className="h-4 w-4" aria-hidden="true" />
-          </div>
-          <div className="min-w-0">
-            <div className="text-sm font-semibold">Evidence Studio</div>
-            <div className="text-xs text-muted-foreground">
-              {isLoading
-                ? 'Artifacts are loading'
-                : artifacts.length === 0
-                  ? 'Awaiting first artifact'
-                  : `${artifacts.length} ${artifacts.length === 1 ? 'artifact' : 'artifacts'}`}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <Badge variant="outline" className="bg-background/70 text-[0.72rem]">
-            {stats.completed} completed
-          </Badge>
-          <Badge variant="outline" className="bg-background/70 text-[0.72rem]">
-            {stats.active} in progress
-          </Badge>
-          <Badge variant="outline" className="bg-background/70 text-[0.72rem]">
-            {stats.citations} {stats.citations === 1 ? 'citation' : 'citations'}
-          </Badge>
-          {/* v0.8.124 — one-click export of every completed artifact as a zip. */}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            aria-label={t('studio.export.exportAll')}
-            disabled={stats.completed === 0}
-            onClick={() => setExportAllDialogOpen(true)}
-          >
-            <Download className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
-            {t('studio.export.exportAll')}
-          </Button>
-        </div>
-      </div>
-
-      <div className="grid gap-3 px-4 py-3">
-        <div className="flex min-w-0 gap-2 overflow-x-auto pb-1">
-          {isLoading && (
-            <div className="flex min-h-12 items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              Loading artifacts
-            </div>
-          )}
-
-          {!isLoading && artifacts.length === 0 && (
-            <div className="flex min-h-12 items-center rounded-md border border-dashed px-3 text-sm text-muted-foreground">
-              No saved research outputs in this notebook.
-            </div>
-          )}
-
-          {!isLoading && artifacts.map((artifact) => {
-            const Icon = ICONS[artifact.artifact_type] ?? Newspaper
-            return (
-              <button
-                type="button"
-                key={artifact.id}
-                aria-label={`Open ${artifact.title}`}
-                onClick={() => {
-                  setSelectedArtifact(artifact)
-                  setSelectedCitation(null)
-                }}
-                className="flex min-h-14 min-w-56 max-w-72 flex-none items-center gap-2 rounded-md border bg-background px-3 py-2 text-left transition-colors hover:border-[var(--dn-border-strong)] hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <Icon className="h-4 w-4 flex-none text-muted-foreground" aria-hidden="true" />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium">{artifact.title}</div>
-                  <div className="mt-1 flex min-w-0 items-center gap-1.5">
-                    <span className="truncate text-xs text-muted-foreground">
-                      {artifactTypeLabel(artifact.artifact_type)}
-                    </span>
-                    <CitationCoverageBadge citationCount={artifact.citations.length} />
-                  </div>
-                </div>
-                <Badge
-                  variant="outline"
-                  className={cn('flex-none text-[0.68rem]', statusClassName(artifact.status))}
-                >
-                  {artifact.status}
-                </Badge>
-              </button>
-            )
-          })}
-        </div>
-
-        <div className="rounded-md border bg-background/70 p-3">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <div className="text-sm font-semibold">App Mode templates</div>
-              <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                <span>Source readiness</span>
-                <ArrowRight className="h-3 w-3" aria-hidden="true" />
-                <span>Artifact generation</span>
-                <ArrowRight className="h-3 w-3" aria-hidden="true" />
-                <span>Evidence export</span>
-              </div>
-            </div>
-            <div className="text-xs text-muted-foreground">
-              Pick sources once, then run a reusable grounded workflow.
-            </div>
-          </div>
-        </div>
-
-        {(workflowRunsLoading || workflowRuns.length > 0) && (
-          <div className="rounded-md border bg-background/70 p-3">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-2">
-                <Clock3 className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-                <div className="text-sm font-semibold">Workflow runs</div>
-              </div>
-              <Badge variant="outline" className="w-fit text-[0.68rem]">
-                {workflowRuns.length} {workflowRuns.length === 1 ? 'run' : 'runs'}
-              </Badge>
-            </div>
-
-            {workflowRunsLoading ? (
-              <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                Loading run history
-              </div>
-            ) : (
-              <div className="mt-3 grid gap-2">
-                {workflowRuns.slice(0, 5).map((run) => {
-                  const artifact = artifactsById.get(run.artifact_id)
-                  const canApprove = run.status === 'awaiting_approval' && Boolean(artifact)
-                  return (
-                    <div
-                      key={run.id}
-                      className="rounded-md border bg-card px-3 py-2 shadow-[var(--dn-elevation-low)]"
-                    >
-                      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <div className="truncate text-sm font-medium">{run.title}</div>
-                            <Badge
-                              variant="outline"
-                              className={cn('text-[0.68rem]', workflowRunStatusClassName(run.status))}
-                            >
-                              {workflowRunStatusLabel(run.status)}
-                            </Badge>
-                          </div>
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            {artifact?.title ?? run.artifact_id} - {workflowRunTimestamp(run)}
-                          </div>
-                        </div>
-
-                        {canApprove && (
-                          <Button
-                            type="button"
-                            size="sm"
-                            disabled={isCreating}
-                            aria-label={`Approve ${run.title}`}
-                            onClick={() => void approveAndGenerate(run)}
-                          >
-                            {approveWorkflowRun.isPending ? (
-                              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                            ) : (
-                              <Play className="h-4 w-4" aria-hidden="true" />
-                            )}
-                            Approve
-                          </Button>
-                        )}
-                      </div>
-
-                      {run.steps.length > 0 && (
-                        <div className="mt-3 flex flex-wrap gap-1.5">
-                          {run.steps.map((step) => (
-                            <span
-                              key={`${run.id}-${step.id}`}
-                              className={cn(
-                                'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[0.68rem]',
-                                workflowStepClassName(step.status),
-                              )}
-                            >
-                              {step.status === 'completed' ? (
-                                <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
-                              ) : step.status === 'running' ? (
-                                <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
-                              ) : (
-                                <Clock3 className="h-3 w-3" aria-hidden="true" />
-                              )}
-                              {step.label}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        <div className="flex max-w-full flex-wrap gap-2">
+    <section aria-label={t('artifacts.artifactRail.regionLabel')} className="space-y-5">
+      {confirmDialog}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-medium">{t('artifacts.artifactRail.generate')}</h3>
           <Popover>
             <PopoverTrigger asChild>
               <Button
-                variant="outline"
+                variant="ghost"
                 size="sm"
-                aria-label={`Artifact sources: ${sourceLabel}`}
+                aria-label={t('artifacts.artifactRail.sourcesButtonLabel', { label: sourceLabel })}
                 disabled={sourcesLoading || sources.length === 0}
               >
                 <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
@@ -679,9 +529,9 @@ export function ArtifactRail({
             <PopoverContent align="end" className="w-80 p-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <div className="text-sm font-medium">Artifact sources</div>
+                  <div className="text-sm font-medium">{t('artifacts.artifactRail.sourcesTitle')}</div>
                   <div className="text-xs text-muted-foreground">
-                    Empty selection uses every notebook source.
+                    {t('artifacts.artifactRail.sourcesHint')}
                   </div>
                 </div>
                 {selectedSourceIds.length > 0 && (
@@ -690,7 +540,7 @@ export function ArtifactRail({
                     size="sm"
                     onClick={() => setSelectedSourceIds([])}
                   >
-                    Use all
+                    {t('artifacts.artifactRail.useAll')}
                   </Button>
                 )}
               </div>
@@ -727,27 +577,233 @@ export function ArtifactRail({
               </ScrollArea>
             </PopoverContent>
           </Popover>
-
-          {quickArtifacts.map(({ type, title, label, Icon }) => (
+        </div>
+        {/* v0.8.130 — why the tiles are disabled, above them. */}
+        {generationBlocked && (
+          <div className="rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-xs text-warning-ink">
+            {blockedSourceMessage}
+          </div>
+        )}
+        <div role="group" aria-label={t('artifacts.artifactRail.generate')} className="grid grid-cols-2 gap-2">
+          {quickArtifacts.map(({ type, labelKey, Icon }) => (
             <Button
               key={type}
               variant="outline"
-              size="sm"
               disabled={isCreating || generationBlocked}
-              onClick={() => void createAndQueue(type, title)}
+              onClick={() => void createAndQueue(type, t(labelKey))}
+              className="h-auto min-h-14 flex-col items-start justify-start gap-1.5 whitespace-normal rounded-xl px-3 py-2.5 text-left"
             >
-              <Icon className="h-4 w-4" aria-hidden="true" />
-              {label}
+              <Icon className="h-4 w-4 text-primary" aria-hidden="true" />
+              <span className="text-sm leading-tight">{t(labelKey)}</span>
             </Button>
           ))}
         </div>
+        <div className="text-xs text-muted-foreground">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-expanded={explainerOpen}
+            aria-controls="artifact-rail-explainer"
+            onClick={() => setExplainerOpen((open) => !open)}
+            className="h-auto px-1 py-1 text-xs font-normal text-muted-foreground hover:text-foreground"
+          >
+            {t('artifacts.artifactRail.howItWorks')}
+          </Button>
+          <div id="artifact-rail-explainer" hidden={!explainerOpen} className="mt-1 space-y-1 rounded-md bg-muted/50 p-2.5">
+            <div className="text-sm font-medium text-foreground">{t('artifacts.artifactRail.appModeTemplates')}</div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span>{t('artifacts.artifactRail.flowSourceReadiness')}</span>
+              <ArrowRight className="h-3 w-3" aria-hidden="true" />
+              <span>{t('artifacts.artifactRail.flowArtifactGeneration')}</span>
+              <ArrowRight className="h-3 w-3" aria-hidden="true" />
+              <span>{t('artifacts.artifactRail.flowEvidenceExport')}</span>
+            </div>
+            <div>{t('artifacts.artifactRail.flowHint')}</div>
+          </div>
+        </div>
       </div>
 
-      {generationBlocked && (
-        <div className="mt-2 rounded-md border border-[var(--dn-warning)] bg-[var(--dn-warning-soft)] px-3 py-2 text-xs text-muted-foreground">
-          {blockedSourceMessage}
+      <div className="space-y-2">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h3 className="text-sm font-medium">{t('artifacts.artifactRail.title')}</h3>
+            <div className="text-xs text-muted-foreground">
+              {isLoading
+                ? t('artifacts.artifactRail.artifactsLoading')
+                : artifacts.length === 0
+                  ? t('artifacts.artifactRail.awaitingFirst')
+                  : artifacts.length === 1
+                    ? t('artifacts.artifactRail.artifactCountOne', { count: artifacts.length })
+                    : t('artifacts.artifactRail.artifactCountOther', { count: artifacts.length })}
+            </div>
+          </div>
+          {/* v0.8.124 — one-click export of every completed artifact as a zip. */}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={t('studio.export.exportAll')}
+            title={t('studio.export.exportAll')}
+            disabled={stats.completed === 0}
+            onClick={() => setExportAllDialogOpen(true)}
+          >
+            <Download className="h-4 w-4" aria-hidden="true" />
+          </Button>
         </div>
-      )}
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <span>{t('artifacts.artifactRail.statCompleted', { count: stats.completed })}</span>
+          <span>{t('artifacts.artifactRail.statInProgress', { count: stats.active })}</span>
+          <span>{stats.citations === 1
+            ? t('artifacts.artifactRail.statCitationOne', { count: stats.citations })
+            : t('artifacts.artifactRail.statCitationOther', { count: stats.citations })}</span>
+        </div>
+
+        {isLoading && (
+          <div className="flex min-h-12 items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            {t('artifacts.artifactRail.loadingArtifacts')}
+          </div>
+        )}
+
+        {!isLoading && artifacts.length === 0 && (
+          <div className="rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground">
+            {t('artifacts.artifactRail.noSavedOutputs')}
+          </div>
+        )}
+
+        {!isLoading && artifacts.length > 0 && (
+          <ul aria-label={t('artifacts.artifactRail.savedOutputs')} className="space-y-1">
+            {artifacts.map((artifact) => {
+              const Icon = ICONS[artifact.artifact_type] ?? Newspaper
+              return (
+                <li key={artifact.id}>
+                  <button
+                    type="button"
+                    aria-label={t('artifacts.artifactRail.openArtifact', { title: artifact.title })}
+                    onClick={() => {
+                      setSelectedArtifact(artifact)
+                      setSelectedCitation(null)
+                    }}
+                    className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-accent"
+                  >
+                    <Icon className="h-4 w-4 flex-none text-muted-foreground" aria-hidden="true" />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium">{artifact.title}</div>
+                      <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
+                        <span className="truncate text-xs text-muted-foreground">
+                          {artifactTypeLabel(artifact.artifact_type, t)}
+                        </span>
+                        <CitationCoverageBadge citationCount={artifact.citations.length} />
+                      </div>
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className={cn('flex-none text-xs', statusClassName(artifact.status))}
+                    >
+                      {statusLabel(artifact.status, t)}
+                    </Badge>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </div>
+
+        {(workflowRunsLoading || workflowRuns.length > 0) && (
+          <div className="rounded-lg bg-muted/40 p-3">
+            <div className="flex flex-col gap-2 @2xl:flex-row @2xl:items-center @2xl:justify-between">
+              <div className="flex items-center gap-2">
+                <Clock3 className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                <div className="text-sm font-semibold">{t('artifacts.artifactRail.workflowRuns')}</div>
+              </div>
+              <Badge variant="outline" className="w-fit text-xs">
+                {workflowRuns.length === 1
+                  ? t('artifacts.artifactRail.runCountOne', { count: workflowRuns.length })
+                  : t('artifacts.artifactRail.runCountOther', { count: workflowRuns.length })}
+              </Badge>
+            </div>
+
+            {workflowRunsLoading ? (
+              <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                {t('artifacts.artifactRail.loadingRuns')}
+              </div>
+            ) : (
+              <div className="mt-3 grid gap-2">
+                {workflowRuns.slice(0, 5).map((run) => {
+                  const artifact = artifactsById.get(run.artifact_id)
+                  const canApprove = run.status === 'awaiting_approval' && Boolean(artifact)
+                  return (
+                    <div
+                      key={run.id}
+                      className="rounded-md border bg-card px-3 py-2 shadow-[var(--dn-elevation-low)]"
+                    >
+                      <div className="flex flex-col gap-2 @3xl:flex-row @3xl:items-start @3xl:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="truncate text-sm font-medium">{run.title}</div>
+                            <Badge
+                              variant="outline"
+                              className={cn('text-xs', workflowRunStatusClassName(run.status))}
+                            >
+                              {workflowRunStatusLabel(run.status, t)}
+                            </Badge>
+                          </div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            {artifact?.title ?? run.artifact_id} - {workflowRunTimestamp(run)}
+                          </div>
+                        </div>
+
+                        {canApprove && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={isCreating}
+                            aria-label={t('artifacts.artifactRail.approveRun', { title: run.title })}
+                            onClick={() => void approveAndGenerate(run)}
+                          >
+                            {approveWorkflowRun.isPending ? (
+                              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                            ) : (
+                              <Play className="h-4 w-4" aria-hidden="true" />
+                            )}
+                            {t('artifacts.artifactRail.approve')}
+                          </Button>
+                        )}
+                      </div>
+
+                      {run.steps.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-1.5">
+                          {run.steps.map((step) => (
+                            <span
+                              key={`${run.id}-${step.id}`}
+                              className={cn(
+                                'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs',
+                                workflowStepClassName(step.status),
+                              )}
+                            >
+                              {step.status === 'completed' ? (
+                                <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
+                              ) : step.status === 'running' ? (
+                                <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+                              ) : (
+                                <Clock3 className="h-3 w-3" aria-hidden="true" />
+                              )}
+                              {step.label}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
 
       <Dialog
         open={Boolean(selectedArtifact)}
@@ -778,10 +834,10 @@ export function ArtifactRail({
                           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" aria-hidden="true" />
                           <div>
                             <div className="font-medium text-destructive">
-                              Citation markers need review
+                              {t('artifacts.artifactRail.citationMarkersTitle')}
                             </div>
                             <div className="mt-1 text-xs text-muted-foreground">
-                              This artifact cites markers that are not attached to selected sources:{' '}
+                              {t('artifacts.artifactRail.citationMarkersBody')}{' '}
                               <span className="font-mono">
                                 {selectedUnsupportedCitationMarkers.join(', ')}
                               </span>
@@ -793,7 +849,7 @@ export function ArtifactRail({
                     {selectedSlideDeck ? (
                       <div className="space-y-4">
                         <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2">
-                          <div className="text-sm text-muted-foreground">Local Video Overview</div>
+                          <div className="text-sm text-muted-foreground">{t('artifacts.artifactRail.localVideoOverview')}</div>
                           <Button
                             type="button"
                             size="sm"
@@ -801,13 +857,13 @@ export function ArtifactRail({
                             onClick={() => setVideoDialogOpen(true)}
                           >
                             <Video className="h-4 w-4" aria-hidden="true" />
-                            {videoOverview ? 'Regenerate video' : 'Create video'}
+                            {videoOverview ? t('artifacts.artifactRail.regenerateVideo') : t('artifacts.artifactRail.createVideo')}
                           </Button>
                         </div>
                         {videoUrls && (
                           <video className="aspect-video w-full border bg-black" controls preload="metadata">
                             <source src={videoUrls.media} type="video/mp4" />
-                            <track kind="captions" src={videoUrls.captions} srcLang="en" label="English" default />
+                            <track kind="captions" src={videoUrls.captions} srcLang="en" label={t('common.english')} default />
                           </video>
                         )}
                         <SlideDeckViewer document={selectedSlideDeck} />
@@ -863,7 +919,7 @@ export function ArtifactRail({
                       </div>
                     ) : (
                       <div className="text-sm text-muted-foreground">
-                        This artifact does not have markdown output yet.
+                        {t('artifacts.artifactRail.noMarkdown')}
                       </div>
                     )}
                   </div>
@@ -874,7 +930,7 @@ export function ArtifactRail({
                     <div className="mb-4 rounded-md border bg-background px-2 py-2">
                       <div className="flex items-center gap-2 text-sm font-medium">
                         <Cpu className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-                        Model
+                        {t('common.model')}
                       </div>
                       {selectedArtifact.model_id && (
                         <div className="mt-1 truncate font-mono text-xs text-muted-foreground">
@@ -882,14 +938,14 @@ export function ArtifactRail({
                         </div>
                       )}
                       {selectedArtifact.provider && (
-                        <Badge variant="outline" className="mt-2 text-[0.68rem]">
+                        <Badge variant="outline" className="mt-2 text-xs">
                           {selectedArtifact.provider}
                         </Badge>
                       )}
                     </div>
                   )}
                   <div className="mb-4 rounded-md border bg-background px-2 py-2">
-                    <div className="text-xs font-medium text-muted-foreground">Evidence review</div>
+                    <div className="text-xs font-medium text-muted-foreground">{t('artifacts.artifactRail.evidenceReview')}</div>
                     <div className="mt-2">
                       <EvidenceReview
                         notebookId={notebookId}
@@ -899,7 +955,7 @@ export function ArtifactRail({
                   </div>
                   <ArtifactExportMenu artifact={selectedArtifact} markdown={selectedMarkdown} />
                   <div className="flex items-center justify-between gap-2">
-                    <div className="text-sm font-medium">Citations</div>
+                    <div className="text-sm font-medium">{t('artifacts.artifactRail.citations')}</div>
                     <CitationCoverageBadge citationCount={selectedArtifact.citations.length} />
                   </div>
                   {selectedArtifact.citations.length > 0 ? (
@@ -934,7 +990,7 @@ export function ArtifactRail({
                                 type="button"
                                 variant="ghost"
                                 size="sm"
-                                aria-label={`Inspect evidence for ${title}`}
+                                aria-label={t('artifacts.artifactRail.inspectEvidence', { title })}
                                 className="h-7 w-7 flex-none p-0"
                                 onClick={() => {
                                   setSelectedCitation(
@@ -957,7 +1013,7 @@ export function ArtifactRail({
                     </ul>
                   ) : (
                     <div className="mt-3 text-sm text-muted-foreground">
-                      No citations stored yet.
+                      {t('artifacts.artifactRail.noCitations')}
                     </div>
                   )}
 
@@ -968,17 +1024,19 @@ export function ArtifactRail({
 
                   <div className="mt-4 border-t pt-3">
                     <div className="flex items-center justify-between gap-2">
-                      <div className="text-sm font-medium">Revision history</div>
+                      <div className="text-sm font-medium">{t('artifacts.artifactRail.revisionHistory')}</div>
                       {artifactRevisions.length > 0 && (
-                        <Badge variant="outline" className="text-[0.68rem]">
-                          {artifactRevisions.length} {artifactRevisions.length === 1 ? 'revision' : 'revisions'}
+                        <Badge variant="outline" className="text-xs">
+                          {artifactRevisions.length === 1
+                            ? t('artifacts.artifactRail.revisionCountOne', { count: artifactRevisions.length })
+                            : t('artifacts.artifactRail.revisionCountOther', { count: artifactRevisions.length })}
                         </Badge>
                       )}
                     </div>
                     {revisionsLoading ? (
                       <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
                         <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                        Loading revisions
+                        {t('artifacts.artifactRail.loadingRevisions')}
                       </div>
                     ) : artifactRevisions.length > 0 ? (
                       <ul className="mt-3 space-y-2">
@@ -986,7 +1044,7 @@ export function ArtifactRail({
                           <li key={revision.id}>
                             <button
                               type="button"
-                              aria-label={`Open ${revision.title}`}
+                              aria-label={t('artifacts.artifactRail.openRevision', { title: revision.title })}
                               onClick={() => setSelectedArtifact(revision)}
                               className="w-full rounded-md bg-background px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             >
@@ -1000,7 +1058,7 @@ export function ArtifactRail({
                       </ul>
                     ) : (
                       <div className="mt-3 text-sm text-muted-foreground">
-                        No revisions stored yet.
+                        {t('artifacts.artifactRail.noRevisions')}
                       </div>
                     )}
                   </div>
@@ -1019,7 +1077,7 @@ export function ArtifactRail({
                   ) : (
                     <Trash2 className="h-4 w-4" aria-hidden="true" />
                   )}
-                  Delete
+                  {t('common.delete')}
                 </Button>
                 <Button
                   type="button"
@@ -1031,22 +1089,22 @@ export function ArtifactRail({
                   ) : (
                     <RefreshCw className="h-4 w-4" aria-hidden="true" />
                   )}
-                  {regenerateArtifactLabel(selectedArtifact.status)}
+                  {regenerateArtifactLabel(selectedArtifact.status, t)}
                 </Button>
               </DialogFooter>
 
               <Dialog open={videoDialogOpen} onOpenChange={setVideoDialogOpen}>
                 <DialogContent className="max-w-md bg-card text-card-foreground">
                   <DialogHeader>
-                    <DialogTitle>Create local Video Overview</DialogTitle>
+                    <DialogTitle>{t('artifacts.artifactRail.createLocalVideoTitle')}</DialogTitle>
                   </DialogHeader>
                   <div className="space-y-3">
                     <p className="text-sm text-muted-foreground">
-                      Choose a completed Audio Overview with timestamps. The video stays on this device and uses this slide deck as its visual source.
+                      {t('artifacts.artifactRail.createLocalVideoDescription')}
                     </p>
                     {videoEligibleEpisodes.length > 0 ? (
                       <select
-                        aria-label="Audio Overview for Video Overview"
+                        aria-label={t('artifacts.artifactRail.audioOverviewSelect')}
                         value={selectedEpisodeId}
                         onChange={(event) => setSelectedEpisodeId(event.target.value)}
                         className="h-10 w-full border bg-background px-3 text-sm"
@@ -1057,19 +1115,19 @@ export function ArtifactRail({
                       </select>
                     ) : (
                       <div className="rounded-md border border-dashed px-3 py-4 text-sm text-muted-foreground">
-                        Create and finish an Audio Overview with timestamped captions before making a Video Overview.
+                        {t('artifacts.artifactRail.noEligibleAudio')}
                       </div>
                     )}
                   </div>
                   <DialogFooter>
-                    <Button type="button" variant="outline" onClick={() => setVideoDialogOpen(false)}>Cancel</Button>
+                    <Button type="button" variant="outline" onClick={() => setVideoDialogOpen(false)}>{t('common.cancel')}</Button>
                     <Button
                       type="button"
                       disabled={!selectedEpisodeId || composeVideoOverview.isPending}
                       onClick={() => void createVideoOverview()}
                     >
                       {composeVideoOverview.isPending && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
-                      Create video
+                      {t('artifacts.artifactRail.createVideo')}
                     </Button>
                   </DialogFooter>
                 </DialogContent>

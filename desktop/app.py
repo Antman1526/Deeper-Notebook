@@ -267,6 +267,10 @@ class AppContext:
     data_root_recovery_payload: dict[str, object] | None = None
     startup_receipts: "StartupReceiptStore | None" = None
     startup_started_at: float = dataclasses.field(default_factory=time.monotonic)
+    # v0.8.130 — first launch only: the wizard's server and the helper process
+    # showing setup progress (desktop/setup_progress_window.py).
+    setup_progress_server: object | None = None
+    setup_progress_process: object | None = None
     _cleanup_lock: threading.Lock = dataclasses.field(
         default_factory=threading.Lock, repr=False, compare=False
     )
@@ -494,8 +498,35 @@ def _phase_wizard_if_first_run(ctx: AppContext) -> None:
 
     from desktop.first_run.server import run_wizard_blocking
 
-    run_wizard_blocking(ctx._cfg_path, progress_bus=ctx.progress_bus)  # type: ignore[attr-defined]
+    server = run_wizard_blocking(ctx._cfg_path, progress_bus=ctx.progress_bus)  # type: ignore[attr-defined]
     ctx.cfg = ctx._load_or_create(ctx._cfg_path)  # type: ignore[attr-defined]
+    # v0.8.130 — the wizard window is gone and startup has not begun. Setup takes
+    # minutes on a first launch, so show its progress until the main window opens.
+    if server is not None:
+        from desktop import setup_progress_window
+
+        ctx.setup_progress_server = server
+        ctx.setup_progress_process = setup_progress_window.spawn(
+            server.port, theme=getattr(ctx.cfg, "theme", None)
+        )
+
+
+def _close_setup_progress(ctx: AppContext) -> None:
+    """Close the first-launch progress window and its server. Safe to repeat."""
+    process, ctx.setup_progress_process = ctx.setup_progress_process, None
+    server, ctx.setup_progress_server = ctx.setup_progress_server, None
+    if process is None and server is None:
+        return
+    from desktop import setup_progress_window
+
+    try:
+        setup_progress_window.close(process)  # type: ignore[arg-type]
+    finally:
+        if server is not None:
+            try:
+                server.stop()  # type: ignore[attr-defined]
+            except Exception:
+                pass
 
 
 def _phase_bootstrap_runtime(ctx: AppContext) -> None:
@@ -788,6 +819,34 @@ def _phase_register_memory_commands(ctx: AppContext) -> None:
             "done",
             str(commands_dst / "memory_commands.py"),
         )
+
+
+def _phase_start_orphan_guard(ctx: AppContext) -> None:
+    """v0.8.130 — start the process that stops our services if we die uncleanly.
+
+    Before the supervisor, so every service it starts is registered. Best effort:
+    without it the launch is exactly what it was before.
+    """
+    if ctx.log_dir is None:
+        return
+    try:
+        from desktop import orphan_guard
+
+        log_path = ctx.log_dir / "orphan-guard.log"
+        record = ctx.log_dir / "launcher-children.tsv"
+
+        def _note(line: str) -> None:
+            try:
+                with log_path.open("a", encoding="utf-8") as handle:
+                    handle.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} (next launch) {line}\n")
+            except OSError:
+                pass
+
+        # First stop what a launcher that died left recorded, then start afresh.
+        orphan_guard.sweep_recorded(record, orphan_guard.DEFAULT_GRACE_SECONDS, _note)
+        orphan_guard.start(log_path, record_path=record)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _phase_start_supervisor(ctx: AppContext) -> None:
@@ -1341,6 +1400,8 @@ def _phase_open_window(ctx: AppContext) -> None:
     assert ctx.progress_bus is not None
 
     ctx.progress_bus.publish("ready", "done", "Main window opening…")
+    # v0.8.130 — the main window takes over from the first-launch progress window.
+    _close_setup_progress(ctx)
 
     memory_url = (
         f"http://127.0.0.1:{ctx.memory_dashboard_port}/"
@@ -1421,12 +1482,30 @@ def run() -> int:
         _phase_open_data_root_recovery(ctx)
         return 0
     _phase_load_config(ctx)
+    # v0.8.130 — whatever happens from here, the first-launch progress window
+    # must not be left on screen (it is closed normally when the main window opens).
+    try:
+        return _run_after_config(ctx)
+    finally:
+        _close_setup_progress(ctx)
+        # v0.8.130 — the services are stopped by now; closing the guard's pipe
+        # lets it check that and leave.
+        try:
+            from desktop import orphan_guard
+
+            orphan_guard.finish()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _run_after_config(ctx: AppContext) -> int:
     _phase_wizard_if_first_run(ctx)
     _phase_bootstrap_runtime(ctx)
     _phase_download_models(ctx)
     _phase_select_provider(ctx)
     _phase_detect_openchronicle(ctx)
     _phase_register_memory_commands(ctx)
+    _phase_start_orphan_guard(ctx)
     _phase_start_supervisor(ctx)
     # From here on the supervisor owns child processes. Any uncaught
     # exception in the remaining phases MUST clean them up before

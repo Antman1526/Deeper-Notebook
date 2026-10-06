@@ -10,6 +10,7 @@ import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import { ModalProvider } from '@/components/providers/ModalProvider'
 import { CreateDialogsProvider } from '@/lib/hooks/use-create-dialogs'
 import { CommandPalette } from '@/components/common/CommandPalette'
+import { AppShell } from '@/components/layout/AppShell'
 
 export default function DashboardLayout({
   children,
@@ -61,7 +62,9 @@ export default function DashboardLayout({
   return (
     <ErrorBoundary>
       <CreateDialogsProvider>
-        {children}
+        {/* v0.8.130 — Phase 3b: the shell is mounted once here. Every page mounted its own,
+            so the rail (and its scroll) reset on each navigation. */}
+        <AppShell>{children}</AppShell>
         <ModalProvider />
         <CommandPalette />
       </CreateDialogsProvider>

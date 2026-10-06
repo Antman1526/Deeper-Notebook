@@ -339,13 +339,19 @@ export function createReferenceLinkComponent(
  *
  * @param text - Original text with references
  * @param referencesLabel - Locales label for "References" title (default: "References")
+ * @param firstNumber - Number given to the first reference (default 1). Callers that
+ *   already numbered citations pass the next free number so no two sources share one.
  * @returns Text with numbered citations and reference list appended
  *
  * @example
  * Input: "See [source:abc] and [note:xyz]. Also [source:abc] again."
  * Output: "See [1] and [2]. Also [1] again.\n\nReferences:\n[1] - [source:abc]\n[2] - [note:xyz]"
  */
-export function convertReferencesToCompactMarkdown(text: string, referencesLabel: string = 'References'): string {
+export function convertReferencesToCompactMarkdown(
+  text: string,
+  referencesLabel: string = 'References',
+  firstNumber: number = 1,
+): string {
   // Step 1: Parse all references using existing function
   const references = parseSourceReferences(text)
 
@@ -356,7 +362,7 @@ export function convertReferencesToCompactMarkdown(text: string, referencesLabel
 
   // Step 3: Build reference map (deduplicate and assign numbers)
   const referenceMap = new Map<string, ReferenceData>()
-  let nextNumber = 1
+  let nextNumber = firstNumber
 
   for (const reference of references) {
     const key = `${reference.type}:${reference.id}`
@@ -440,46 +446,61 @@ export function convertReferencesToCompactMarkdown(text: string, referencesLabel
 export function createCompactReferenceLinkComponent(
   onReferenceClick: (type: ReferenceType, id: string) => void
 ) {
-  const CompactReferenceLinkComponent = ({
-    href,
-    children,
-    ...props
-  }: React.AnchorHTMLAttributes<HTMLAnchorElement> & {
-    href?: string
-    children?: React.ReactNode
-  }) => {
-    // Check if this is a reference link (starts with #ref-)
-    if (href?.startsWith('#ref-')) {
-      // Parse: #ref-source-abc123 → type=source, id=abc123
-      const parts = href.substring(5).split('-') // Remove '#ref-'
-      const type = parts[0] as ReferenceType
-      const id = parts.slice(1).join('-') // Rejoin in case ID has dashes
-
-      return (
-        <button
-          onClick={(e) => {
-            e.preventDefault()
-            e.stopPropagation()
-            onReferenceClick(type, id)
-          }}
-          className="text-primary hover:underline cursor-pointer inline font-medium"
-          type="button"
-        >
-          {children}
-        </button>
-      )
-    }
-
-    // Regular link - open in new tab
-    return (
-      <a href={href} target="_blank" rel="noopener noreferrer" {...props} className="text-primary hover:underline">
-        {children}
-      </a>
-    )
-  }
+  const CompactReferenceLinkComponent = (
+    props: React.AnchorHTMLAttributes<HTMLAnchorElement> & {
+      href?: string
+      children?: React.ReactNode
+    },
+  ) => <CompactReferenceLink {...props} onReferenceClick={onReferenceClick} />
 
   CompactReferenceLinkComponent.displayName = 'CompactReferenceLinkComponent'
   return CompactReferenceLinkComponent
+}
+
+/**
+ * v0.8.130 — The link body behind {@link createCompactReferenceLinkComponent}, as a plain
+ * component that takes its click handler as a prop. Use it directly where the
+ * handler already lives in a component: building a component per render with the
+ * factory resets its state each time.
+ */
+export function CompactReferenceLink({
+  href,
+  children,
+  onReferenceClick,
+  ...props
+}: React.AnchorHTMLAttributes<HTMLAnchorElement> & {
+  href?: string
+  children?: React.ReactNode
+  onReferenceClick: (type: ReferenceType, id: string) => void
+}) {
+  // Check if this is a reference link (starts with #ref-)
+  if (href?.startsWith('#ref-')) {
+    // Parse: #ref-source-abc123 → type=source, id=abc123
+    const parts = href.substring(5).split('-') // Remove '#ref-'
+    const type = parts[0] as ReferenceType
+    const id = parts.slice(1).join('-') // Rejoin in case ID has dashes
+
+    return (
+      <button
+        onClick={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          onReferenceClick(type, id)
+        }}
+        className="text-primary hover:underline cursor-pointer inline font-medium"
+        type="button"
+      >
+        {children}
+      </button>
+    )
+  }
+
+  // Regular link - open in new tab
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" {...props} className="text-primary hover:underline">
+      {children}
+    </a>
+  )
 }
 
 /**

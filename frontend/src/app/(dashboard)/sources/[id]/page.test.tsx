@@ -53,8 +53,8 @@ describe('SourceDetailPage', () => {
   it('keeps source detail and chat inside a Collect folio frame', () => {
     render(<SourceDetailPage />)
 
-    expect(screen.getByRole('main', { name: 'Source record' })).toBeInTheDocument()
-    expect(screen.getByText('Collect')).toBeInTheDocument()
+    expect(screen.getByRole('main', { name: 'sources.idPage.recordTitle' })).toBeInTheDocument()
+    expect(screen.getByText('navigation.collect')).toBeInTheDocument()
     expect(screen.getByText('Source detail source:one')).toBeInTheDocument()
     expect(screen.getByText('Source chat')).toBeInTheDocument()
   })
