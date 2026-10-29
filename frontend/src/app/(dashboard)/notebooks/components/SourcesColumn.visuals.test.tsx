@@ -341,7 +341,8 @@ describe('SourcesColumn inline reader bar', () => {
 
     const bar = screen.getByTestId('inline-source-reader-bar')
     expect(bar.className).toMatch(/\bsticky\b/)
-    expect(bar.className).toMatch(/\btop-0\b/)
+    // Pinned to the column's top edge, not its padding edge (text showed above it).
+    expect(bar.className).toMatch(/-top-3\b/)
     expect(bar.className).toMatch(/\bbg-card\b/)
     expect(bar.className).not.toMatch(/backdrop-blur/)
     const title = within(bar).getByText(source.title as string)

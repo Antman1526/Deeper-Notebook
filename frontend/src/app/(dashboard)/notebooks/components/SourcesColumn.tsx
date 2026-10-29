@@ -356,7 +356,7 @@ export function SourcesColumn({
                     spans the column edge to edge. */}
                 <div
                   data-testid="inline-source-reader-bar"
-                  className="sticky top-0 z-10 -mx-4 -mt-3 flex items-center gap-2 border-b border-border/60 bg-card px-4 py-1.5"
+                  className="sticky -top-3 z-10 -mx-4 -mt-3 grid grid-cols-[auto_1fr_auto] items-center gap-x-2 border-b border-border/60 bg-card px-4 py-1.5"
                 >
                   <Button
                     type="button"
@@ -368,16 +368,7 @@ export function SourcesColumn({
                     <ArrowLeft className="h-4 w-4 mr-1.5" />
                     {t('navigation.sources')}
                   </Button>
-                  {inlinePreviewTitle ? (
-                    <span
-                      className="block min-w-0 flex-1 truncate text-sm font-medium"
-                      title={inlinePreviewTitle}
-                    >
-                      {inlinePreviewTitle}
-                    </span>
-                  ) : (
-                    <span className="flex-1" />
-                  )}
+                  <span />
                   <Button
                     type="button"
                     variant="ghost"
@@ -393,6 +384,16 @@ export function SourcesColumn({
                   >
                     <Maximize2 className="h-4 w-4" />
                   </Button>
+                  {/* The source's title on its own line: beside the buttons a narrow
+                      column left room for a single letter. */}
+                  {inlinePreviewTitle ? (
+                    <span
+                      className="col-span-3 block min-w-0 truncate pb-0.5 text-sm font-medium"
+                      title={inlinePreviewTitle}
+                    >
+                      {inlinePreviewTitle}
+                    </span>
+                  ) : null}
                 </div>
                 <SourceDetailContent
                   sourceId={inlinePreview.sourceId}
