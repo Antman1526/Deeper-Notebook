@@ -2460,13 +2460,40 @@ def audit_repository(
         category: [] for category in CATEGORIES
     }
     matched_allowlist: set[OccurrenceKey] = set()
+    allowlist_by_target: dict[
+        tuple[str, str, str, str], list[tuple[OccurrenceKey, Approval]]
+    ] = {}
+    for _cand_key, _cand_approval in allowlist.items():
+        allowlist_by_target.setdefault(
+            (_cand_key[0], _cand_key[1], _cand_key[2], _cand_key[5]), []
+        ).append((_cand_key, _cand_approval))
+
+    def resolve_approval(
+        key: OccurrenceKey,
+    ) -> tuple[OccurrenceKey | None, Approval | None]:
+        direct = allowlist.get(key)
+        if direct is not None:
+            return key, direct
+        path, pattern, source, _line, _column, digest = key
+        candidates = allowlist_by_target.get((path, pattern, source, digest))
+        if not candidates:
+            return None, None
+        for cand_key, cand_approval in candidates:
+            if cand_key not in matched_allowlist:
+                return cand_key, cand_approval
+        return candidates[0]
 
     def audited_category(
         key: OccurrenceKey,
         occurrence: Mapping[str, object],
+        resolved_approval: Approval | None = None,
     ) -> str:
         category = classify_match(key, allowlist)
-        approval = allowlist.get(key)
+        approval = (
+            resolved_approval
+            if resolved_approval is not None
+            else resolve_approval(key)[1]
+        )
         if approval is None or category != "compatibility_alias":
             return category
         canonical_contract = compatibility_contract_for_occurrence(
@@ -2504,10 +2531,11 @@ def audit_repository(
         }
         if line is not None:
             entry["line"] = line
-        category = audited_category(key, entry)
+        matched_key, approval = resolve_approval(key)
+        category = audited_category(key, entry, resolved_approval=approval)
         categorized[category].append(entry)
-        if key in allowlist and category != "unexpected_active_identity":
-            matched_allowlist.add(key)
+        if matched_key is not None and category != "unexpected_active_identity":
+            matched_allowlist.add(matched_key)
 
     for relative_path in _tracked_paths(root):
         # The allowlist contains hashes of audited source lines. Auditing its

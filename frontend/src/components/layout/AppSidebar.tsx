@@ -9,6 +9,7 @@ import { motion } from 'framer-motion'
 import { cn } from '@/lib/utils'
 import { readDesktopVersion } from '@/lib/desktop-version'
 import { isStudyWorkbenchEnabled } from '@/lib/features'
+import { useStudyWorkbenchEnabled } from '@/lib/features-client'
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
 import { useAuth } from '@/lib/hooks/use-auth'
@@ -60,7 +61,10 @@ import {
   Sliders,  // v0.8.6 Item D — Launch preferences nav icon
 } from 'lucide-react'
 
-export const getNavigation = (t: TFunction) => [
+export const getNavigation = (
+  t: TFunction,
+  studyWorkbenchEnabled: boolean = isStudyWorkbenchEnabled(),
+) => [
   {
     title: t('navigation.collect'),
     items: [
@@ -84,7 +88,7 @@ export const getNavigation = (t: TFunction) => [
       // a new notebook or podcast from uploaded docs).
       { name: t('navigation.appSidebar.studio'), href: '/studio', icon: Sparkles },
       { name: t('navigation.podcasts'), href: '/podcasts', icon: Mic },
-      ...(isStudyWorkbenchEnabled()
+      ...(studyWorkbenchEnabled
         ? [{ name: t('navigation.study'), href: '/study', icon: GraduationCap }]
         : []),
     ],
@@ -109,7 +113,8 @@ export type CreateTarget = (typeof CREATE_TARGETS)[number]
 
 export function AppSidebar() {
   const { t } = useTranslation()
-  const navigation = getNavigation(t)
+  const studyWorkbenchEnabled = useStudyWorkbenchEnabled()
+  const navigation = getNavigation(t, studyWorkbenchEnabled)
   const pathname = usePathname()
   const { logout } = useAuth()
   const { isCollapsed: storeCollapsed, toggleCollapse } = useSidebarStore()

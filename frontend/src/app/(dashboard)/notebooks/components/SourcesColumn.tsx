@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback, type UIEvent, type DragEvent } from 'react'
+import { useState, useEffect, useMemo, useCallback, type UIEvent, type DragEvent } from 'react'
 import { SourceListResponse } from '@/lib/types/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -11,7 +11,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, FileText, Link2, Loader2, MoreHorizontal, Sparkles, Compass } from 'lucide-react'
+import { Plus, FileText, Link2, Loader2, MoreHorizontal, Sparkles, Compass, ArrowLeft, Maximize2 } from 'lucide-react'
+import { SourceDetailContent } from '@/components/source/SourceDetailContent'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { EmptyState } from '@/components/common/EmptyState'
 import { AddSourceDialog } from '@/components/sources/AddSourceDialog'
@@ -55,6 +56,7 @@ interface SourcesColumnProps {
   hasNextPage?: boolean
   isFetchingNextPage?: boolean
   fetchNextPage?: () => void
+  inlineReader?: boolean
 }
 
 export function SourcesColumn({
@@ -68,6 +70,7 @@ export function SourcesColumn({
   hasNextPage,
   isFetchingNextPage,
   fetchNextPage,
+  inlineReader = false,
 }: SourcesColumnProps) {
   const { t } = useTranslation()
   const sourceVisualsEnabled = useSourceVisualsEnabled()
@@ -92,6 +95,38 @@ export function SourcesColumn({
   // v0.8.130 — the source last opened from this list stays marked after the reader closes, so
   // the user can see where they were; it moves only when another source is opened.
   const [activeSourceId, setActiveSourceId] = useState<string | null>(null)
+  const [inlinePreview, setInlinePreview] = useState<{ sourceId: string; highlightQuery?: string } | null>(null)
+  const { sourcesCollapsed, toggleSources, setSources } = useNotebookColumnsStore()
+
+  useEffect(() => {
+    const handlePreviewSource = (event: Event) => {
+      const customEvent = event as CustomEvent<{ sourceId?: string; highlightQuery?: string }>
+      const rawId = customEvent.detail?.sourceId
+      if (!rawId) return
+      customEvent.preventDefault()
+      if (sourcesCollapsed) {
+        if (typeof setSources === 'function') setSources(false)
+        else toggleSources()
+      }
+      const normalizedId = rawId.includes(':') ? rawId : `source:${rawId}`
+      setInlinePreview({ sourceId: normalizedId, highlightQuery: customEvent.detail?.highlightQuery })
+      // v0.8.130 — a source opened from a citation is the one the user is reading, too.
+      setActiveSourceId(normalizedId)
+    }
+    window.addEventListener('dn:preview-source', handlePreviewSource)
+    return () => window.removeEventListener('dn:preview-source', handlePreviewSource)
+  }, [sourcesCollapsed, setSources, toggleSources])
+
+  useEffect(() => {
+    if (!inlinePreview) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setInlinePreview(null)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [inlinePreview])
 
   const handleDragOver = useCallback((e: DragEvent) => {
     if (e.dataTransfer?.types?.includes('Files')) {
@@ -120,7 +155,6 @@ export function SourcesColumn({
   const removeFromNotebook = useRemoveSourceFromNotebook()
 
   // Collapsible column state
-  const { sourcesCollapsed, toggleSources } = useNotebookColumnsStore()
   const collapseButton = useMemo(
     () => createCollapseButton(toggleSources, sourcesLabel),
     [toggleSources, sourcesLabel]
@@ -195,8 +229,18 @@ export function SourcesColumn({
     }
   }
 
+  // v0.8.130 — the title shown in the reader's bar.
+  const inlinePreviewTitle = inlinePreview
+    ? sources?.find((item) => item.id === inlinePreview.sourceId || `source:${item.id}` === inlinePreview.sourceId)?.title ?? null
+    : null
+
   const handleSourceClick = (sourceId: string) => {
     setActiveSourceId(sourceId)
+    if (inlineReader) {
+      const normalizedId = sourceId.includes(':') ? sourceId : `source:${sourceId}`
+      setInlinePreview({ sourceId: normalizedId })
+      return
+    }
     openModal('source', sourceId)
   }
 
@@ -236,6 +280,7 @@ export function SourcesColumn({
           {/* v0.8.130 — Phase 2b: a full-width Add row (NotebookLM's "+ Add sources"), with bulk
               context and Embed all in one options menu beside it. It also replaces the empty
               state's own Add button, so the page keeps a single "Add Source" control. */}
+          {!inlinePreview && (
           <div data-dn-column-actions="" className="flex flex-none items-center gap-2 px-4 pt-3">
             <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
               <DropdownMenuTrigger asChild>
@@ -290,6 +335,7 @@ export function SourcesColumn({
             </DropdownMenu>
             <BulkVectorizeButton notebookId={notebookId} open={embedDialogOpen} onOpenChange={setEmbedDialogOpen} hideTrigger />
           </div>
+          )}
 
           {/* v0.7.45 — body splits into three render paths:
               1. Loading: spinner (unchanged)
@@ -301,7 +347,62 @@ export function SourcesColumn({
                   hook fires via the virtualizer's onScroll instead of
                   the old addEventListener pattern. */}
           <CardContent onScroll={handleScroll} className="flex-1 overflow-y-auto min-h-0">
-            {isLoading ? (
+            {inlinePreview ? (
+              <div className="flex flex-col gap-3" data-testid="inline-source-reader">
+                {/* v0.8.130 — the bar stays at the top of the column while a long source
+                    scrolls (it scrolled away with the text), and names the source being
+                    read. Opaque paper, no blur (the design rules ban glass). The negative
+                    margins match the workspace's column padding (workspace.css) so it
+                    spans the column edge to edge. */}
+                <div
+                  data-testid="inline-source-reader-bar"
+                  className="sticky top-0 z-10 -mx-4 -mt-3 flex items-center gap-2 border-b border-border/60 bg-card px-4 py-1.5"
+                >
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => setInlinePreview(null)}
+                  >
+                    <ArrowLeft className="h-4 w-4 mr-1.5" />
+                    {t('navigation.sources')}
+                  </Button>
+                  {inlinePreviewTitle ? (
+                    <span
+                      className="block min-w-0 flex-1 truncate text-sm font-medium"
+                      title={inlinePreviewTitle}
+                    >
+                      {inlinePreviewTitle}
+                    </span>
+                  ) : (
+                    <span className="flex-1" />
+                  )}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 shrink-0"
+                    aria-label={t('sources.detailsTitle')}
+                    title={t('sources.detailsTitle')}
+                    onClick={() => {
+                      const targetId = inlinePreview.sourceId
+                      setInlinePreview(null)
+                      openModal('source', targetId)
+                    }}
+                  >
+                    <Maximize2 className="h-4 w-4" />
+                  </Button>
+                </div>
+                <SourceDetailContent
+                  sourceId={inlinePreview.sourceId}
+                  showChatButton={false}
+                  highlightQuery={inlinePreview.highlightQuery}
+                  notebookId={notebookId}
+                  onClose={() => setInlinePreview(null)}
+                />
+              </div>
+            ) : isLoading ? (
               <div className="flex items-center justify-center py-8">
                 <LoadingSpinner />
               </div>

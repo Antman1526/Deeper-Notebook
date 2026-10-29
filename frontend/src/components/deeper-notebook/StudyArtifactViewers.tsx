@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { Check, ChevronLeft, ChevronRight, RotateCcw, X } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
+import { Markdown } from '@/components/common/Markdown'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -382,9 +382,7 @@ export function CoursePackViewer({
 
   if (modules.length === 0) {
     return (
-      <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none break-words prose-headings:font-semibold prose-p:leading-7">
-        <ReactMarkdown>{markdown}</ReactMarkdown>
-      </div>
+      <Markdown content={markdown} className="prose prose-sm prose-neutral dark:prose-invert max-w-none break-words prose-headings:font-semibold prose-p:leading-7" />
     )
   }
 
@@ -528,9 +526,7 @@ export function CoursePackViewer({
               {t('artifacts.studyArtifactViewers.moduleNumber', { number: Math.min(selectedIndex, modules.length - 1) + 1 })}
             </Badge>
           </div>
-          <div className="prose prose-sm prose-neutral dark:prose-invert mt-4 max-w-none break-words prose-headings:font-semibold prose-p:leading-7">
-            <ReactMarkdown>{visibleMarkdown || selectedModule.markdown}</ReactMarkdown>
-          </div>
+          <Markdown content={visibleMarkdown || selectedModule.markdown} className="prose prose-sm prose-neutral dark:prose-invert mt-4 max-w-none break-words prose-headings:font-semibold prose-p:leading-7" />
         </article>
       </div>
     </section>
@@ -560,9 +556,7 @@ export function DataTableViewer({
 
   if (tableRows.length === 0 || headers.length === 0) {
     return (
-      <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none break-words prose-headings:font-semibold prose-p:leading-7">
-        <ReactMarkdown>{markdown}</ReactMarkdown>
-      </div>
+      <Markdown content={markdown} className="prose prose-sm prose-neutral dark:prose-invert max-w-none break-words prose-headings:font-semibold prose-p:leading-7" />
     )
   }
 
@@ -627,9 +621,7 @@ export function MindMapViewer({
 
   if (nodes.length === 0) {
     return (
-      <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none break-words prose-headings:font-semibold prose-p:leading-7">
-        <ReactMarkdown>{markdown}</ReactMarkdown>
-      </div>
+      <Markdown content={markdown} className="prose prose-sm prose-neutral dark:prose-invert max-w-none break-words prose-headings:font-semibold prose-p:leading-7" />
     )
   }
 
@@ -780,9 +772,7 @@ export function ResearchRunViewer({
 
   if (sections.length === 0) {
     return (
-      <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none break-words prose-headings:font-semibold prose-p:leading-7">
-        <ReactMarkdown>{markdown}</ReactMarkdown>
-      </div>
+      <Markdown content={markdown} className="prose prose-sm prose-neutral dark:prose-invert max-w-none break-words prose-headings:font-semibold prose-p:leading-7" />
     )
   }
 

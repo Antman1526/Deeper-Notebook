@@ -1,6 +1,7 @@
 'use client'
 
 import { createContext, useContext, useState, useRef, useEffect, useId, useMemo } from 'react'
+import { QueryClientContext } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -382,11 +383,22 @@ export function ChatPanel({
                       {message.type === 'ai' ? (
                         <AIMessageContent
                           content={message.content}
+                          thinking={message.thinking}
                           onReferenceClick={handleReferenceClick}
                           messageId={message.id}
-                          onViewSource={(sourceId, query) =>
+                          onViewSource={(sourceId, query) => {
+                            if (typeof window !== 'undefined') {
+                              const previewEvent = new CustomEvent('dn:preview-source', {
+                                cancelable: true,
+                                detail: { sourceId, highlightQuery: query },
+                              })
+                              window.dispatchEvent(previewEvent)
+                              if (previewEvent.defaultPrevented) {
+                                return
+                              }
+                            }
                             setCitationSource({ id: sourceId, query })
-                          }
+                          }}
                         />
                       ) : (
                         // v0.7.25 — `break-all` breaks between any two
@@ -918,11 +930,13 @@ const answerMarkdownComponents = {
 
 function AIMessageContent({
   content,
+  thinking: persistedThinking,
   onReferenceClick,
   messageId,
   onViewSource,
 }: {
   content: string
+  thinking?: string | null
   onReferenceClick: (type: string, id: string) => void
   messageId?: string
   // v0.8.79 — open the source reading view for a [source:ID] citation,
@@ -930,7 +944,14 @@ function AIMessageContent({
   onViewSource?: (sourceId: string, query: string) => void
 }) {
   const { t } = useTranslation()
-  const { thinking, isThinkingActive, answer } = parseThinking(content)
+  const queryClient = useContext(QueryClientContext)
+  const parsed = parseThinking(content)
+  const cachedThinking = messageId
+    ? queryClient?.getQueryData<{ thinking: string; isThinkingActive: boolean }>(['chat', 'thinking', messageId])
+    : undefined
+  const thinking = parsed.thinking || persistedThinking || cachedThinking?.thinking || ''
+  const isThinkingActive = parsed.thinking ? parsed.isThinkingActive : Boolean(cachedThinking?.isThinkingActive)
+  const answer = parsed.answer
 
   // v0.8.130 — Citation markers ([mcp:N], [source:ID], …) become numbered markdown links so
   // the WHOLE answer goes through one markdown pass and each chip stays inside

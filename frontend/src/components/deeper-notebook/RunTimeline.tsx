@@ -34,6 +34,7 @@ interface RunTimelineContextStats {
 interface CachedRunSelection {
   selected_provider?: string | null
   selected_model_id?: string | null
+  routing_note?: string | null
   privacy_gated?: boolean | null
   privacy_categories?: string[] | null
   agent_state?: string | null
@@ -83,7 +84,8 @@ function routeSummary(t: TranslateFn, selection?: CachedRunSelection, currentMod
     })
   }
   if (selection?.selected_provider) {
-    return `${selection.selected_provider}${selection.selected_model_id ? ` / ${selection.selected_model_id}` : ''}`
+    const base = `${selection.selected_provider}${selection.selected_model_id ? ` / ${selection.selected_model_id}` : ''}`
+    return selection.routing_note === 'uncalibrated' ? `${base} (uncalibrated)` : base
   }
   if (currentModel) return t('workspace.runTimeline.manualRoute', { model: currentModel })
   return t('workspace.runTimeline.autoRoutePending')

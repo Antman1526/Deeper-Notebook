@@ -189,6 +189,9 @@ export interface SourceChatMessage {
   type: 'human' | 'ai'
   content: string
   timestamp?: string
+  // v0.8.130 — a model's reasoning, kept apart from the visible answer (as on
+  // NotebookChatMessage); ChatPanel renders both kinds of message.
+  thinking?: string | null
   // v0.8.117 — local-only UI flag set when a stream-stall recovery (v0.8.116)
   // kept this partial AI message. The server never sends this field; it is
   // cleared the next time the session is refetched.
@@ -250,6 +253,7 @@ export interface NotebookChatMessage {
   type: 'human' | 'ai'
   content: string
   timestamp?: string
+  thinking?: string | null
   // v0.8.117 — local-only UI flag set when a stream-stall recovery (v0.8.116)
   // kept this partial AI message. The server never sends this field; it is
   // cleared the next time the session is refetched.

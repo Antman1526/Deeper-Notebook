@@ -243,6 +243,10 @@ class ChatMessage(BaseModel):
     type: str = Field(..., description="Message type (human|ai)")
     content: str = Field(..., description="Message content")
     timestamp: Optional[str] = Field(None, description="Message timestamp")
+    thinking: Optional[str] = Field(
+        None,
+        description="Extracted reasoning trace from <think> blocks when present",
+    )
 
 
 class ChatSessionResponse(BaseModel):
@@ -343,6 +347,13 @@ class ExecuteChatResponse(BaseModel):
         description=(
             "SurrealDB model ID actually used for this turn (None when "
             "smart routing did not run)."
+        ),
+    )
+    routing_note: Optional[str] = Field(
+        None,
+        description=(
+            "Diagnostic note from smart routing (e.g. 'uncalibrated' when "
+            "auto-route fell back to default_chat_model)."
         ),
     )
     # v0.8.68 — set when the offline gate answered this turn with a local
@@ -565,12 +576,15 @@ async def get_session(session_id: str):
         messages: list[ChatMessage] = []
         if thread_state and thread_state.values and "messages" in thread_state.values:
             for msg in thread_state.values["messages"]:
+                add_kw = getattr(msg, "additional_kwargs", None) or {}
+                thinking_val = add_kw.get("thinking") if isinstance(add_kw, dict) else None
                 messages.append(
                     ChatMessage(
                         id=getattr(msg, "id", f"msg_{len(messages)}"),
                         type=msg.type if hasattr(msg, "type") else "unknown",
                         content=msg.content if hasattr(msg, "content") else str(msg),
                         timestamp=None,  # LangChain messages don't have timestamps by default
+                        thinking=thinking_val if isinstance(thinking_val, str) and thinking_val else None,
                     )
                 )
 
@@ -966,6 +980,11 @@ async def execute_chat(request: ExecuteChatRequest):
             if isinstance(result, dict)
             else getattr(result, "selected_model_id", None)
         )
+        routing_note = (
+            result.get("routing_note")
+            if isinstance(result, dict)
+            else getattr(result, "routing_note", None)
+        )
         # v0.8.68 — offline-fallback info (None when the gate didn't act).
         offline_fallback = (
             result.get("offline_fallback")
@@ -999,12 +1018,15 @@ async def execute_chat(request: ExecuteChatRequest):
         # Convert messages to response format
         messages: list[ChatMessage] = []
         for msg in result_messages:
+            add_kw = getattr(msg, "additional_kwargs", None) or {}
+            thinking_val = add_kw.get("thinking") if isinstance(add_kw, dict) else None
             messages.append(
                 ChatMessage(
                     id=getattr(msg, "id", f"msg_{len(messages)}"),
                     type=msg.type if hasattr(msg, "type") else "unknown",
                     content=msg.content if hasattr(msg, "content") else str(msg),
                     timestamp=None,
+                    thinking=thinking_val if isinstance(thinking_val, str) and thinking_val else None,
                 )
             )
 
@@ -1036,6 +1058,7 @@ async def execute_chat(request: ExecuteChatRequest):
             messages=messages,
             selected_provider=selected_provider,
             selected_model_id=selected_model_id,
+            routing_note=routing_note,
             offline_fallback=offline_fallback,
             mcp_tool_calls=mcp_tool_calls,
             privacy_gated=privacy_gated,
@@ -1129,6 +1152,25 @@ def _visible_streamed_text(accum: str) -> str:
         if low.endswith("<think>"[:k]):
             return s[:-k]
     return s
+
+
+def _extract_streamed_thinking(accum: str) -> tuple[str, bool]:
+    """Extract accumulated `<think>` reasoning text and whether a `<think>`
+    block is currently open (active)."""
+    closed_blocks = [
+        m.group(0)[len("<think>") : -len("</think>")].strip()
+        for m in _THINK_BLOCK_RE.finditer(accum)
+    ]
+    remaining = _THINK_BLOCK_RE.sub("", accum)
+    lower = remaining.lower()
+    active = False
+    if "<think>" in lower:
+        idx = lower.index("<think>")
+        open_thought = remaining[idx + len("<think>") :].strip()
+        if open_thought:
+            closed_blocks.append(open_thought)
+        active = True
+    return "\n\n".join(b for b in closed_blocks if b), active
 
 
 async def _stream_chat_events(
@@ -1232,6 +1274,7 @@ async def _stream_chat_events(
             # stream; `_streamed_visible` is the non-think text already sent.
             _stream_accum = ""
             _streamed_visible = ""
+            _last_thinking_state: tuple[str, bool] = ("", False)
             # v0.7.192 — AsyncSqliteSaver twin (lazily initialised).
             # See ainvoke call site above for the full rationale.
             _chat_graph_async = await get_async_graph()
@@ -1287,6 +1330,7 @@ async def _stream_chat_events(
                     # cleaned final message.
                     _stream_accum = ""
                     _streamed_visible = ""
+                    _last_thinking_state = ("", False)
                     continue
                 if etype == "on_chat_model_stream":
                     # Event shape: {"event": "on_chat_model_stream",
@@ -1304,6 +1348,26 @@ async def _stream_chat_events(
                         # user. Non-reasoning models are unaffected (no tags →
                         # visible grows exactly like the raw stream).
                         _stream_accum += content
+                        _thinking_text, _thinking_active = _extract_streamed_thinking(
+                            _stream_accum
+                        )
+                        if (
+                            _thinking_text,
+                            _thinking_active,
+                        ) != _last_thinking_state and (
+                            _thinking_text or _last_thinking_state[1]
+                        ):
+                            _last_thinking_state = (_thinking_text, _thinking_active)
+                            yield (
+                                json.dumps(
+                                    {
+                                        "type": "thinking",
+                                        "content": _thinking_text,
+                                        "active": _thinking_active,
+                                    }
+                                )
+                                + "\n"
+                            )
                         visible = _visible_streamed_text(_stream_accum)
                         if visible.startswith(_streamed_visible) and len(visible) > len(
                             _streamed_visible
@@ -1378,6 +1442,11 @@ async def _stream_chat_events(
                             if isinstance(output, dict)
                             else getattr(output, "selected_model_id", None)
                         )
+                        routing_note_raw = (
+                            output.get("routing_note")
+                            if isinstance(output, dict)
+                            else getattr(output, "routing_note", None)
+                        )
                         # v0.8.58 — same dual-path capture for the privacy-gate
                         # decision so the Pydantic-state branch doesn't drop it.
                         privacy_gated_raw = (
@@ -1410,6 +1479,7 @@ async def _stream_chat_events(
                                 "mcp_tool_calls": mcp_calls_raw,
                                 "selected_provider": selected_provider_raw,
                                 "selected_model_id": selected_model_id_raw,
+                                "routing_note": routing_note_raw,
                                 "privacy_gated": privacy_gated_raw,
                                 "privacy_categories": privacy_categories_raw,
                                 "agent_state": agent_state_raw,
@@ -1432,14 +1502,17 @@ async def _stream_chat_events(
         messages: list = []
         if final_result and "messages" in final_result:
             for msg in final_result.get("messages", []):
-                messages.append(
-                    {
-                        "id": getattr(msg, "id", f"msg_{len(messages)}"),
-                        "type": msg.type if hasattr(msg, "type") else "unknown",
-                        "content": msg.content if hasattr(msg, "content") else str(msg),
-                        "timestamp": None,
-                    }
-                )
+                add_kw = getattr(msg, "additional_kwargs", None) or {}
+                thinking_val = add_kw.get("thinking") if isinstance(add_kw, dict) else None
+                msg_dict: dict[str, Any] = {
+                    "id": getattr(msg, "id", f"msg_{len(messages)}"),
+                    "type": msg.type if hasattr(msg, "type") else "unknown",
+                    "content": msg.content if hasattr(msg, "content") else str(msg),
+                    "timestamp": None,
+                }
+                if isinstance(thinking_val, str) and thinking_val:
+                    msg_dict["thinking"] = thinking_val
+                messages.append(msg_dict)
 
         # Update session timestamp (same as /chat/execute)
         try:
@@ -1509,6 +1582,11 @@ async def _stream_chat_events(
             if isinstance(final_result, dict)
             else None
         )
+        routing_note_out = (
+            final_result.get("routing_note")
+            if isinstance(final_result, dict)
+            else None
+        )
         # v0.8.58 — privacy-gate decision parity with /chat/execute.
         privacy_gated_out = (
             final_result.get("privacy_gated")
@@ -1539,6 +1617,7 @@ async def _stream_chat_events(
                     "messages": messages,
                     "selected_provider": selected_provider_out,
                     "selected_model_id": selected_model_id_out,
+                    "routing_note": routing_note_out,
                     "privacy_gated": privacy_gated_out,
                     "privacy_categories": privacy_categories_out,
                     "agent_state": agent_state_out_evt,

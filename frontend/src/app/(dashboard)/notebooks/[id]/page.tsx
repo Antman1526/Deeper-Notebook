@@ -111,6 +111,19 @@ export default function NotebookPage() {
   type MobileTab = 'sources' | 'chat' | 'notes' | 'studio'
   const [mobileActiveTab, setMobileActiveTab] = useState<MobileTab>('chat')
 
+  useEffect(() => {
+    const handlePreviewSource = () => {
+      if (sourcesCollapsed) {
+        setSources(false)
+      }
+      if (!isDesktop) {
+        setMobileActiveTab('sources')
+      }
+    }
+    window.addEventListener('dn:preview-source', handlePreviewSource)
+    return () => window.removeEventListener('dn:preview-source', handlePreviewSource)
+  }, [isDesktop, setSources, sourcesCollapsed])
+
   // Context selection state
   const [contextSelections, setContextSelections] = useState<ContextSelections>({
     sources: {},
@@ -225,6 +238,7 @@ export default function NotebookPage() {
       hasNextPage={hasNextPage}
       isFetchingNextPage={isFetchingNextPage}
       fetchNextPage={fetchNextPage}
+      inlineReader
     />
   )
   const notesColumn = (

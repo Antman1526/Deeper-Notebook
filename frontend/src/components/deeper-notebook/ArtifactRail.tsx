@@ -4,7 +4,7 @@ import { useConfirm } from '@/components/common/use-confirm'
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertCircle, ArrowRight, BookOpenCheck, CheckCircle2, Clock3, Cpu, Download, FileQuestion, GraduationCap, Layers3, ListChecks, Loader2, Map as MapIcon, Mic2, Newspaper, Play, Presentation, RefreshCw, Search, SlidersHorizontal, Table2, Trash2, Video } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
+import { Markdown } from '@/components/common/Markdown'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -44,8 +44,7 @@ import {
   isSlideDeckDocument,
   SlideDeckViewer,
 } from '@/components/deeper-notebook/VisualArtifactViewers'
-import { isEvidenceStudioEnabled } from '@/lib/features'
-import { useResearchRunsEnabled } from '@/lib/features-client'
+import { useEvidenceStudioEnabled, useResearchRunsEnabled } from '@/lib/features-client'
 import { artifactMarkdown } from '@/lib/studio-artifacts'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import {
@@ -284,7 +283,7 @@ export function ArtifactRail({
   const [exportAllDialogOpen, setExportAllDialogOpen] = useState(false)
   const [selectedEpisodeId, setSelectedEpisodeId] = useState('')
   const [videoUrls, setVideoUrls] = useState<{ media: string; captions: string } | null>(null)
-  const enabled = isEvidenceStudioEnabled()
+  const enabled = useEvidenceStudioEnabled()
   const researchRunsEnabled = useResearchRunsEnabled()
   const { data: artifacts = [], isLoading } = useStudioArtifacts(notebookId, {
     enabled,
@@ -914,9 +913,7 @@ export function ArtifactRail({
                         }}
                       />
                     ) : selectedMarkdown ? (
-                      <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none break-words prose-headings:font-semibold prose-p:leading-7">
-                        <ReactMarkdown>{selectedMarkdown}</ReactMarkdown>
-                      </div>
+                      <Markdown content={selectedMarkdown} className="prose prose-sm prose-neutral dark:prose-invert max-w-none break-words prose-headings:font-semibold prose-p:leading-7" />
                     ) : (
                       <div className="text-sm text-muted-foreground">
                         {t('artifacts.artifactRail.noMarkdown')}

@@ -4,13 +4,13 @@ import { StudyDashboard } from '@/components/study/StudyDashboard'
 import { StudySession } from '@/components/study/StudySession'
 import { StudyWorkbench } from '@/components/study/StudyWorkbench'
 import { KnowledgeRouteFrame } from '@/components/deeper-notebook/route-frames/KnowledgeRouteFrames'
-import { isStudyWorkbenchEnabled } from '@/lib/features'
+import { useStudyWorkbenchEnabled } from '@/lib/features-client'
 import { useDueStudyCards } from '@/lib/hooks/use-study'
 import { useTranslation } from '@/lib/hooks/use-translation'
 
 export default function StudyPage() {
   const { t } = useTranslation()
-  const studyWorkbenchEnabled = isStudyWorkbenchEnabled()
+  const studyWorkbenchEnabled = useStudyWorkbenchEnabled()
   const due = useDueStudyCards(studyWorkbenchEnabled)
   const cards = due.data ?? []
 

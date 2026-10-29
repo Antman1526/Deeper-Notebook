@@ -82,7 +82,10 @@ export function convertSourceReferences(
   text: string,
   onReferenceClick: (type: ReferenceType, id: string) => void
 ): React.ReactNode {
-  const matches = parseSourceReferences(text)
+  const codeRanges = findCodeRanges(text)
+  const matches = parseSourceReferences(text).filter(
+    ref => !codeRanges.some(([cStart, cEnd]) => ref.startIndex >= cStart && ref.endIndex <= cEnd),
+  )
 
   if (matches.length === 0) return text
 
@@ -177,8 +180,9 @@ export function convertSourceReferences(
  * @returns Text with references converted to markdown links
  */
 export function convertReferencesToMarkdownLinks(text: string): string {
-  // Step 1: Find ALL references using simple greedy pattern.
+  // Step 1: Find ALL references using simple greedy pattern (skipping code spans/fences).
   // `insight:` is accepted as an alias for `source_insight` and normalized below.
+  const codeRanges = findCodeRanges(text)
   const refPattern = /(source_insight|insight|note|source):([a-zA-Z0-9_]+)/g
   const references: Array<{ type: string; id: string; index: number; length: number }> = []
 
@@ -186,6 +190,11 @@ export function convertReferencesToMarkdownLinks(text: string): string {
   while ((match = refPattern.exec(text)) !== null) {
     const rawType = match[1]
     const id = match[2]
+    const mStart = match.index
+    const mEnd = mStart + match[0].length
+    if (codeRanges.some(([cStart, cEnd]) => mStart >= cStart && mEnd <= cEnd)) {
+      continue
+    }
 
     // Validate the reference
     const validTypes = ['source', 'source_insight', 'insight', 'note']
@@ -347,13 +356,26 @@ export function createReferenceLinkComponent(
  * Input: "See [source:abc] and [note:xyz]. Also [source:abc] again."
  * Output: "See [1] and [2]. Also [1] again.\n\nReferences:\n[1] - [source:abc]\n[2] - [note:xyz]"
  */
+function findCodeRanges(text: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = []
+  const codeSpanRe = /(```[\s\S]*?```|~~~[\s\S]*?~~~|```[\s\S]*$|~~~[\s\S]*$|`+[^`\n]*`+)/g
+  let m: RegExpExecArray | null
+  while ((m = codeSpanRe.exec(text)) !== null) {
+    ranges.push([m.index, m.index + m[0].length])
+  }
+  return ranges
+}
+
 export function convertReferencesToCompactMarkdown(
   text: string,
   referencesLabel: string = 'References',
   firstNumber: number = 1,
 ): string {
-  // Step 1: Parse all references using existing function
-  const references = parseSourceReferences(text)
+  // Step 1: Parse all references using existing function, skipping code spans/fences
+  const codeRanges = findCodeRanges(text)
+  const references = parseSourceReferences(text).filter(
+    ref => !codeRanges.some(([cStart, cEnd]) => ref.startIndex >= cStart && ref.endIndex <= cEnd),
+  )
 
   // Step 2: If no references found, return original text
   if (references.length === 0) {

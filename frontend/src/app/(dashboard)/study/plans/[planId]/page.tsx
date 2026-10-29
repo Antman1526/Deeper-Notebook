@@ -4,7 +4,7 @@ import { useParams } from 'next/navigation'
 
 import { KnowledgeRouteFrame } from '@/components/deeper-notebook/route-frames/KnowledgeRouteFrames'
 import { StudyPlanWorkspace } from '@/components/study/StudyPlanWorkspace'
-import { isStudyWorkbenchEnabled } from '@/lib/features'
+import { useStudyWorkbenchEnabled } from '@/lib/features-client'
 import { useTranslation } from '@/lib/hooks/use-translation'
 
 export default function StudyPlanPage() {
@@ -12,7 +12,7 @@ export default function StudyPlanPage() {
   const params = useParams<{ planId?: string | string[] }>()
   const rawPlanId = params?.planId
   const planId = Array.isArray(rawPlanId) ? rawPlanId.at(-1) : rawPlanId
-  const studyWorkbenchEnabled = isStudyWorkbenchEnabled()
+  const studyWorkbenchEnabled = useStudyWorkbenchEnabled()
 
   return (
     <>

@@ -60,13 +60,17 @@ import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
 import { useDisplayPreferencesStore } from '@/lib/stores/display-preferences-store'
 import { useTheme } from '@/lib/stores/theme-store'
 import { isStudyWorkbenchEnabled } from '@/lib/features'
+import { useStudyWorkbenchEnabled } from '@/lib/features-client'
 
-export const getNavigationItems = (t: TFunction) => [
+export const getNavigationItems = (
+  t: TFunction,
+  studyWorkbenchEnabled: boolean = isStudyWorkbenchEnabled(),
+) => [
   { name: t('navigation.sources'), href: '/sources', icon: FileText, keywords: ['files', 'documents', 'upload'] },
   { name: t('navigation.notebooks'), href: '/notebooks', icon: Book, keywords: ['notes', 'research', 'projects'] },
   { name: t('navigation.askAndSearch'), href: '/search', icon: Search, keywords: ['find', 'query'] },
   { name: t('navigation.podcasts'), href: '/podcasts', icon: Mic, keywords: ['audio', 'episodes', 'generate'] },
-  ...(isStudyWorkbenchEnabled()
+  ...(studyWorkbenchEnabled
     ? [{ name: t('navigation.study'), href: '/study', icon: GraduationCap, keywords: ['learning', 'courses', 'flashcards', 'review'] }]
     : []),
   { name: t('navigation.models'), href: '/settings/api-keys', icon: Bot, keywords: ['ai', 'llm', 'providers', 'openai', 'anthropic'] },
@@ -128,7 +132,8 @@ export function CommandPalette() {
   const [invoker, setInvoker] = useState<HTMLElement | null>(null)
   const [commandUnavailableVersion, setCommandUnavailableVersion] = useState(0)
   const restoreInvokerRef = useRef(true)
-  const navigationItems = useMemo(() => getNavigationItems(t), [t])
+  const studyWorkbenchEnabled = useStudyWorkbenchEnabled()
+  const navigationItems = useMemo(() => getNavigationItems(t, studyWorkbenchEnabled), [t, studyWorkbenchEnabled])
   const createItems = useMemo(() => getCreateItems(t), [t])
   const themeItems = useMemo(() => getThemeItems(t), [t])
   const openTabs = useMemo(

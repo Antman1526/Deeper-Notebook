@@ -270,6 +270,8 @@ async def provision_langchain_chat_model(
             "configured chat default. Benchmark a local model to give the "
             "router something to route between."
         )
+        if selection_out is not None:
+            selection_out["routing_note"] = "uncalibrated"
         return await provision_langchain_model(
             content=content,
             model_id=None,

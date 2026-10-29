@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { SourcesColumn } from './SourcesColumn'
@@ -87,6 +87,11 @@ vi.mock('@/components/sources/AddSourceDialog', () => ({
 }))
 vi.mock('@/components/sources/AddExistingSourceDialog', () => ({ AddExistingSourceDialog: () => null }))
 vi.mock('@/components/sources/DiscoverSourcesDialog', () => ({ DiscoverSourcesDialog: () => null }))
+vi.mock('@/components/source/SourceDetailContent', () => ({
+  SourceDetailContent: ({ sourceId, highlightQuery }: { sourceId: string; highlightQuery?: string }) => (
+    <div data-testid="source-detail-content" data-source-id={sourceId} data-query={highlightQuery ?? ''} />
+  ),
+}))
 vi.mock('@/components/common/ConfirmDialog', () => ({
   ConfirmDialog: ({ open, title, onConfirm }: { open: boolean; title: string; onConfirm: () => void }) => (
     open ? <button type="button" onClick={onConfirm}>{title}</button> : null
@@ -286,5 +291,63 @@ describe('SourcesColumn visual rollback gate', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Lab report' }))
     expect(screen.getByRole('button', { name: 'Field notes' })).not.toHaveAttribute('data-active')
     expect(screen.getByRole('button', { name: 'Lab report' })).toHaveAttribute('data-active', 'true')
+  })
+
+  it('opens the inline source reader on dn:preview-source and returns to the list', () => {
+    render(<SourcesColumn sources={[source]} isLoading={false} notebookId="notebook:one" />)
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent('dn:preview-source', {
+        detail: { sourceId: 'source:one', highlightQuery: 'key passage' },
+      }))
+    })
+
+    expect(screen.getByTestId('inline-source-reader')).toBeInTheDocument()
+    const detail = screen.getByTestId('source-detail-content')
+    expect(detail).toHaveAttribute('data-source-id', 'source:one')
+    expect(detail).toHaveAttribute('data-query', 'key passage')
+
+    fireEvent.click(screen.getByRole('button', { name: 'navigation.sources' }))
+    expect(screen.queryByTestId('inline-source-reader')).not.toBeInTheDocument()
+  })
+
+  it('opens inline reader on card click when inlineReader is enabled and closes on Escape', () => {
+    render(<SourcesColumn sources={[source]} isLoading={false} notebookId="notebook:one" inlineReader />)
+
+    const props = firstCardProps()
+    act(() => {
+      props.onClick?.(source.id)
+    })
+
+    expect(mockOpenModal).not.toHaveBeenCalled()
+    expect(screen.getByTestId('inline-source-reader')).toBeInTheDocument()
+
+    act(() => {
+      fireEvent.keyDown(window, { key: 'Escape' })
+    })
+    expect(screen.queryByTestId('inline-source-reader')).not.toBeInTheDocument()
+  })
+})
+
+// v0.8.130 — user request 2026-10-29: the reader's bar ("← Sources", open in a window)
+// scrolled away with a long source. It stays at the top of the column and names the
+// source being read, so the way back and the context are always in view.
+describe('SourcesColumn inline reader bar', () => {
+  it('stays at the top of the column and names the source being read', () => {
+    render(<SourcesColumn sources={[source]} isLoading={false} notebookId="notebook:one" inlineReader />)
+    act(() => {
+      window.dispatchEvent(new CustomEvent('dn:preview-source', { detail: { sourceId: source.id } }))
+    })
+
+    const bar = screen.getByTestId('inline-source-reader-bar')
+    expect(bar.className).toMatch(/\bsticky\b/)
+    expect(bar.className).toMatch(/\btop-0\b/)
+    expect(bar.className).toMatch(/\bbg-card\b/)
+    expect(bar.className).not.toMatch(/backdrop-blur/)
+    const title = within(bar).getByText(source.title as string)
+    expect(title.className).toMatch(/\btruncate\b/)
+    expect(title).toHaveAttribute('title', source.title)
+    expect(within(bar).getByRole('button', { name: 'navigation.sources' })).toBeInTheDocument()
+    expect(within(bar).getByRole('button', { name: 'sources.detailsTitle' })).toBeInTheDocument()
   })
 })
