@@ -12,11 +12,52 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 const CALLOUT_WIDTH = 320
 const VIEWPORT_INSET = 16
 const ANCHOR_GAP = 12
+const POINTER_INSET = 12
+const POINTER_SIZE = 10
+const ACTIVE_ATTRIBUTE = 'data-guided-tip-active'
 const SUSPEND_SELECTOR = '[aria-modal="true"], [data-guided-tips-suspend="true"]'
+
+// v0.8.130 — the callout can be pushed below the page heading, away from the navigation item
+// it describes, so the anchor carries a ring (outline only: layout never shifts) and the
+// callout draws a pointer only when it really sits beside the anchor. Rendered as a <style>
+// next to the callout rather than a .css import: Vitest's PostCSS config cannot load in
+// this repo's unit-test setup, and the rules only matter while a tip is on screen.
+const GUIDED_TIP_STYLES = `
+[data-guided-tip-active='true'] {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-md);
+}
+@media (prefers-reduced-motion: no-preference) {
+  [data-guided-tip-active='true'] {
+    animation: guided-tip-ring-in 240ms ease-out 1 both;
+  }
+  @keyframes guided-tip-ring-in {
+    from { outline-color: transparent; }
+    to { outline-color: var(--primary); }
+  }
+}
+.guided-tip-pointer {
+  position: absolute;
+  left: -6px;
+  width: ${POINTER_SIZE}px;
+  height: ${POINTER_SIZE}px;
+  background: var(--card);
+  border-style: solid;
+  border-color: var(--border);
+  border-width: 0 0 1px 1px;
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+`
 
 interface TipPosition {
   top: number
   left: number
+}
+
+interface TipPlacement extends TipPosition {
+  pointer: { top: number } | null
 }
 
 function clamp(value: number, minimum: number, maximum: number) {
@@ -45,7 +86,7 @@ export function placeCallout({
   heading: PlainRect | null
   calloutHeight: number
   viewport: { width: number; height: number }
-}): TipPosition {
+}): TipPlacement {
   const maxTop = Math.max(VIEWPORT_INSET, viewport.height - calloutHeight - VIEWPORT_INSET)
   const left = clamp(
     anchor.right + ANCHOR_GAP,
@@ -54,21 +95,38 @@ export function placeCallout({
   )
   const top = clamp(anchor.top, VIEWPORT_INSET, maxTop)
 
-  if (!heading) {
-    return { top, left }
-  }
-
   const touchesHeading =
-    left < heading.right + ANCHOR_GAP
+    heading !== null
+    && left < heading.right + ANCHOR_GAP
     && left + CALLOUT_WIDTH + ANCHOR_GAP > heading.left
     && top < heading.bottom + ANCHOR_GAP
     && top + calloutHeight + ANCHOR_GAP > heading.top
 
-  if (!touchesHeading) {
-    return { top, left }
+  const placedTop = touchesHeading
+    ? clamp(heading.bottom + ANCHOR_GAP, VIEWPORT_INSET, maxTop)
+    : top
+
+  return { top: placedTop, left, pointer: pointFromCallout(anchor, placedTop, left, calloutHeight) }
+}
+
+// v0.8.130 — a pointer is only drawn while the callout truly sits beside its anchor: to the
+// right of it and spanning its vertical centre. Pushed below the heading or clamped away,
+// it would point at nothing, so the ring on the anchor does the pointing instead.
+function pointFromCallout(
+  anchor: PlainRect,
+  top: number,
+  left: number,
+  calloutHeight: number,
+): { top: number } | null {
+  const centre = (anchor.top + anchor.bottom) / 2
+
+  if (left < anchor.right || centre < top || centre > top + calloutHeight) {
+    return null
   }
 
-  return { top: clamp(heading.bottom + ANCHOR_GAP, VIEWPORT_INSET, maxTop), left }
+  return {
+    top: clamp(centre - top, POINTER_INSET, Math.max(POINTER_INSET, calloutHeight - POINTER_INSET)),
+  }
 }
 
 function findMainHeading(callout: HTMLElement | null): PlainRect | null {
@@ -90,7 +148,7 @@ export function GuidedTipsProvider() {
   const completed = useGuidedTipsStore((state) => state.completed)
   const complete = useGuidedTipsStore((state) => state.complete)
   const setEnabled = useGuidedTipsStore((state) => state.setEnabled)
-  const [position, setPosition] = useState<TipPosition | null>(null)
+  const [position, setPosition] = useState<TipPlacement | null>(null)
   const calloutRef = useRef<HTMLElement>(null)
 
   const tip = useMemo(() => getGuidedTipForPath(pathname ?? ''), [pathname])
@@ -103,9 +161,23 @@ export function GuidedTipsProvider() {
     }
 
     const activeTip = tip
+    // v0.8.130 — the element currently carrying data-guided-tip-active. Every path that
+    // hides the tip (suspend, missing anchor, dismiss, unmount) funnels through this, and the
+    // effect cleanup clears it, so the ring can never be left behind.
+    let markedAnchor: HTMLElement | null = null
+
+    const mark = (anchor: HTMLElement | null) => {
+      if (markedAnchor === anchor) {
+        return
+      }
+      markedAnchor?.removeAttribute(ACTIVE_ATTRIBUTE)
+      anchor?.setAttribute(ACTIVE_ATTRIBUTE, 'true')
+      markedAnchor = anchor
+    }
 
     const updatePosition = () => {
       if (document.querySelector(SUSPEND_SELECTOR)) {
+        mark(null)
         setPosition(null)
         return
       }
@@ -115,10 +187,12 @@ export function GuidedTipsProvider() {
       )
 
       if (!anchor) {
+        mark(null)
         setPosition(null)
         return
       }
 
+      mark(anchor)
       const anchorRect = anchor.getBoundingClientRect()
       const calloutHeight = calloutRef.current?.getBoundingClientRect().height ?? 180
       setPosition(
@@ -160,6 +234,7 @@ export function GuidedTipsProvider() {
     }
 
     return () => {
+      mark(null)
       observer.disconnect()
       window.removeEventListener('resize', updatePosition)
       document.removeEventListener('scroll', updatePosition, true)
@@ -184,6 +259,8 @@ export function GuidedTipsProvider() {
   // v0.8.130 — portalled to <body>: inside the shell its z-index only counted within the
   // navigator's stacking context, so page controls painted over the buttons.
   return createPortal(
+    <>
+    <style>{GUIDED_TIP_STYLES}</style>
     <aside
       ref={calloutRef}
       role="note"
@@ -191,6 +268,14 @@ export function GuidedTipsProvider() {
       className="w-80 rounded-lg border bg-card p-4 text-card-foreground shadow-lg"
       style={{ position: 'fixed', top: position.top, left: position.left, zIndex: 50 }}
     >
+      {position.pointer ? (
+        <span
+          aria-hidden="true"
+          data-guided-tip-pointer=""
+          className="guided-tip-pointer"
+          style={{ top: position.pointer.top - POINTER_SIZE / 2 }}
+        />
+      ) : null}
       <p className="text-sm font-medium">{t(tip.titleKey)}</p>
       <p className="mt-1 text-sm text-muted-foreground">{t(tip.bodyKey)}</p>
       <div className="mt-3 flex items-center justify-end gap-2">
@@ -201,7 +286,8 @@ export function GuidedTipsProvider() {
           {t('workspace.guidedTipsProvider.gotIt')}
         </Button>
       </div>
-    </aside>,
+    </aside>
+    </>,
     document.body,
   )
 }

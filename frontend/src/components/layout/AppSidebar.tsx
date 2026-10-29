@@ -303,8 +303,8 @@ export function AppSidebar() {
             // visible `<Separator />` lines to plain vertical rhythm.
             // 4 sections × 1 separator each = 4 horizontal lines in the
             // sidebar — visually noisy on what should be a quiet rail.
-            // The uppercase section labels (COLLECT, PROCESS, CREATE,
-            // MANAGE) already provide enough delineation; just give
+            // The section labels (Collect, Process, Create, Manage;
+            // sentence case since v0.8.130) already provide enough delineation; just give
             // them breathing room via `mt-6` and the labels do the
             // work. Saves ~3px of visual chrome per gap.
             <div key={section.title} className={index > 0 ? "mt-6" : ""}>
