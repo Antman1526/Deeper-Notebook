@@ -10,7 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, StickyNote, Bot, User, MoreVertical, Trash2, Download, ListChecks } from 'lucide-react'
+import { Plus, StickyNote, Bot, User, MoreVertical, Trash2, Download, ListChecks, Podcast } from 'lucide-react'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { EmptyState } from '@/components/common/EmptyState'
 import { Badge } from '@/components/ui/badge'
@@ -26,7 +26,6 @@ import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { CollapsibleColumn, createCollapseButton } from '@/components/notebooks/CollapsibleColumn'
 import { useNotebookColumnsStore } from '@/lib/stores/notebook-columns-store'
 import { useTranslation } from '@/lib/hooks/use-translation'
-import { TurnIntoPodcastAction } from '@/components/podcasts/TurnIntoPodcastAction'
 import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
 
 interface NotesColumnProps {
@@ -148,11 +147,18 @@ export function NotesColumn({
               />
             ) : (
               <div className="space-y-3">
-                {notes.map((note) => (
-                  // v0.8.130 — narrow transition, no press-scale (UI audit Phase 1)
+                {notes.map((note) => {
+                  // v0.8.130 — same rule the inline action used: a note with no readable text has
+                  // nothing to narrate, so the menu item stays visible but disabled with its reason.
+                  const podcastDisabledReason = note.content?.trim() ? undefined : t('notes.noteCard.podcastNoContent')
+                  return (
+                  // v0.8.130 — the list sits on ruled paper: a translucent fill (no blur) lets the
+                  // ruling show through, and a 2px left index tab carries the hover. Its width never
+                  // changes, only its colour, so nothing shifts on hover.
                   <div
                     key={note.id}
-                    className="group relative cursor-pointer rounded-xl border bg-card p-3.5 transition-[border-color] duration-200 ease-out hover:border-foreground/25"
+                    data-dn-note-card=""
+                    className="group relative cursor-pointer rounded-xl border border-l-2 border-l-primary/35 bg-card/90 p-3.5 transition-colors duration-200 ease-out hover:border-l-primary"
                     onClick={() => setEditingNote(note)}
                   >
                     <div className="flex items-start justify-between mb-2">
@@ -186,19 +192,36 @@ export function NotesColumn({
                           </div>
                         )}
 
-                        {/* Ellipsis menu for delete action */}
+                        {/* v0.8.130 — the note's actions menu now also holds "Turn into podcast"; it needs a
+                            name and must show on keyboard focus, not only on hover. */}
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-7 w-7 p-0 rounded-md opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-[opacity,background-color] duration-150 hover:bg-muted/80"
+                              aria-label={t('notes.noteCard.noteActions')}
+                              title={t('notes.noteCard.noteActions')}
+                              className="h-7 w-7 p-0 rounded-md opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 [@media(hover:none)]:opacity-100 transition-[opacity,background-color] duration-150 hover:bg-muted/80"
                               onClick={(e) => e.stopPropagation()}
                             >
                               <MoreVertical className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="w-48">
+                            {/* v0.8.130 — moved here from a full-width row on every card (as SourceCard
+                                does it). Side-effect free: it only opens the podcast review. */}
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                openPodcastReview([{ kind: 'app_note', noteId: note.id }], 'quick')
+                              }}
+                              disabled={Boolean(podcastDisabledReason)}
+                            >
+                              <Podcast className="h-4 w-4 mr-2" />
+                              {podcastDisabledReason
+                                ? t('notes.noteCard.turnIntoPodcastDisabled', { reason: podcastDisabledReason })
+                                : t('notes.noteCard.turnIntoPodcast')}
+                            </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={(e) => {
                                 e.stopPropagation()
@@ -232,16 +255,9 @@ export function NotesColumn({
                         {note.content}
                       </p>
                     )}
-                    <div className="mt-3" onClick={(event) => event.stopPropagation()}>
-                      <TurnIntoPodcastAction
-                        selection={{ kind: 'app_note', noteId: note.id }}
-                        destination="quick"
-                        disabledReason={note.content?.trim() ? undefined : 'No readable content is available'}
-                        onOpen={openPodcastReview}
-                      />
-                    </div>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </CardContent>

@@ -281,7 +281,10 @@ html[data-theme] {
   --sidebar: var(--dn-theme-canvas);
   --sidebar-foreground: var(--dn-theme-text);
   --sidebar-primary: var(--dn-theme-primary);
-  --sidebar-primary-foreground: var(--dn-theme-canvas);
+  /* v0.8.130 — was the canvas colour, which measured 3.4–4.1:1 on the primary in
+     Light Blue, System, Solarized Light/Dark and Rosé Pine Dawn. The theme's own
+     text-on-primary colour is what desktop/window.py already injects here. */
+  --sidebar-primary-foreground: var(--dn-theme-primary-foreground);
   --sidebar-accent: color-mix(in oklab, var(--dn-theme-panel) 74%, var(--dn-theme-primary));
   --sidebar-accent-foreground: var(--dn-theme-text);
   --sidebar-border: var(--dn-theme-border);

@@ -71,6 +71,19 @@ interface CitationPillProps {
 // Sub-components: popover body per kind
 // ---------------------------------------------------------------------------
 
+/**
+ * v0.8.130 — the cited text is what the reader came to check, so it reads as a
+ * quoted passage (rule + italic) instead of a third line of grey metadata under
+ * the label and title.
+ */
+function PopoverExcerpt({ text }: { text: string }) {
+  return (
+    <blockquote className="mt-1 line-clamp-3 rounded-r-sm border-l-2 border-primary/40 bg-muted/30 py-1 pl-2.5 text-xs italic text-foreground/85">
+      {text.slice(0, 200)}
+    </blockquote>
+  )
+}
+
 /** Popover body for [source:ID] pills */
 function SourcePopoverContent({ id }: { id: string }) {
   const { t } = useTranslation()
@@ -92,11 +105,7 @@ function SourcePopoverContent({ id }: { id: string }) {
           {t('sources.untitledSource')}
         </p>
       )}
-      {data?.full_text && (
-        <p className="text-xs text-muted-foreground line-clamp-3 mt-1">
-          {data.full_text.slice(0, 200)}
-        </p>
-      )}
+      {data?.full_text && <PopoverExcerpt text={data.full_text} />}
     </div>
   )
 }
@@ -122,11 +131,7 @@ function NotePopoverContent({ id }: { id: string }) {
           {t('sources.untitledNote')}
         </p>
       )}
-      {data?.content && (
-        <p className="text-xs text-muted-foreground line-clamp-3 mt-1">
-          {data.content.slice(0, 200)}
-        </p>
-      )}
+      {data?.content && <PopoverExcerpt text={data.content} />}
     </div>
   )
 }
@@ -163,11 +168,7 @@ function InsightPopoverContent({ id }: { id: string }) {
           {t('common.insight')}
         </p>
       )}
-      {data?.content && (
-        <p className="text-xs text-muted-foreground line-clamp-3 mt-1">
-          {data.content.slice(0, 200)}
-        </p>
-      )}
+      {data?.content && <PopoverExcerpt text={data.content} />}
     </div>
   )
 }
@@ -307,6 +308,9 @@ export function CitationPill({ kind, value, messageId, onViewSource, label: labe
   }, [])
   useEffect(() => () => clearTimers(), [clearTimers])
 
+  // v0.8.130 — callers that number their citations pass `label`; that is the footnote variant.
+  const isNumbered = labelOverride !== undefined
+
   // Visible badge label
   const label =
     labelOverride ??
@@ -328,7 +332,14 @@ export function CitationPill({ kind, value, messageId, onViewSource, label: labe
           aria-label={ariaLabel}
           className={[
             'inline-flex items-center gap-0.5',
-            'mx-0.5 px-1.5 py-0 rounded-sm border text-xs font-semibold',
+            // v0.8.130 — a numbered citation is a footnote marker: smaller, raised a
+            // pixel and round, so two or three in one sentence don't break the line
+            // rhythm of 14px prose. ID-fragment and [N] tool-call pills keep the chip.
+            // text-xs, not 11px: the design lint forbids type below 12px; leading-4
+            // keeps the marker inside the line box.
+            isNumbered
+              ? 'mx-0.5 align-baseline -translate-y-px rounded-full border px-1.5 py-0 text-xs leading-4 font-semibold tabular-nums shadow-xs'
+              : 'mx-0.5 px-1.5 py-0 rounded-sm border text-xs font-semibold',
             'cursor-pointer transition-colors',
             'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
             // Prevent citation click from navigating or propagating to parent anchor elements
@@ -366,17 +377,21 @@ export function CitationPill({ kind, value, messageId, onViewSource, label: labe
         {kind === 'insight' && <InsightPopoverContent id={value} />}
         {/* v0.8.79 — citation jump-to-highlight: open the source reading view
             scrolled to + highlighting the cited passage. */}
+        {/* v0.8.130 — the action sits in a footer row under a hairline so it reads as
+            a next step, not as another block of the citation's metadata. */}
         {kind === 'source' && onViewSource && (
-          <button
-            type="button"
-            onClick={() => {
-              setOpen(false)
-              onViewSource()
-            }}
-            className="mt-2 w-full rounded-md border border-border/60 px-2 py-1.5 text-left text-xs font-medium text-primary transition-colors hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-          >
-            {t('chat.citations.viewSource', { defaultValue: 'View source →' })}
-          </button>
+          <div className="mt-2 flex justify-end border-t border-border/60 pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false)
+                onViewSource()
+              }}
+              className="rounded-md px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+            >
+              {t('chat.citations.viewSource', { defaultValue: 'View source →' })}
+            </button>
+          </div>
         )}
       </PopoverContent>
     </Popover>

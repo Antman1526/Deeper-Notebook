@@ -103,3 +103,28 @@ describe('NotebookCard keyboard access', () => {
     expect(root.querySelector('[data-dn-book-ribbon]')).toHaveAttribute('aria-hidden', 'true')
   })
 })
+
+// v0.8.130 — "Updated 2 hours ago" did not say when; hovering it shows the exact
+// date and time. The date line lets clicks through to the card's link (a click
+// anywhere opens the notebook), so it takes the pointer only for its own tooltip
+// and hands a click on to the link.
+describe('NotebookCard update time', () => {
+  it('names the exact date and time on the relative timestamp', () => {
+    const { container } = render(<NotebookCard notebook={notebook} />)
+    const time = container.querySelector('[data-dn-cover-updated] time') as HTMLTimeElement
+    expect(time).not.toBeNull()
+    expect(time).toHaveAttribute('dateTime', '2026-01-02T00:00:00.000Z')
+    expect(time.getAttribute('title')).toMatch(/2026/)
+    expect(time.textContent).toMatch(/common\.updated|ago/)
+  })
+
+  it('still opens the notebook when the timestamp is clicked', () => {
+    const { container } = render(<NotebookCard notebook={notebook} />)
+    const link = screen.getByRole('link', { name: 'Deterministic Research Notebook' })
+    const clicks: MouseEvent[] = []
+    link.addEventListener('click', (event) => { clicks.push(event); event.preventDefault() })
+    const time = container.querySelector('[data-dn-cover-updated] time') as HTMLElement
+    time.click()
+    expect(clicks).toHaveLength(1)
+  })
+})

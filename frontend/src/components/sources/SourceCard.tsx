@@ -50,6 +50,8 @@ interface SourceCardProps {
   onContextModeChange?: (mode: ContextMode) => void
   // v0.8.128 — explicit notebookId scoping when rendered inside a notebook
   notebookId?: string | null
+  // v0.8.130 — the source last opened from this list; marked so the reader's place survives going back
+  active?: boolean
 }
 
 const SOURCE_TYPE_ICONS = {
@@ -199,6 +201,7 @@ export function SourceCard({
   contextMode,
   onContextModeChange,
   notebookId,
+  active = false,
 }: SourceCardProps) {
   const { t } = useTranslation()
   const sourceVisualsEnabled = useSourceVisualsEnabled()
@@ -371,12 +374,22 @@ export function SourceCard({
     // hover (inline on touch screens), so a 20% column still has room for the title.
     <div
       data-dn-source-row=""
+      data-active={active ? 'true' : undefined}
       className={cn(
         'group relative -mx-2 cursor-pointer rounded-lg px-2 py-1.5 transition-colors hover:bg-accent',
         className
       )}
       onClick={handleCardClick}
     >
+      {/* v0.8.130 — absolutely positioned so marking a row never shifts its text. The row root is a
+          plain clickable div (no button/link role), so there is no control to carry aria-current. */}
+      {active && (
+        <span
+          data-dn-source-active-bar=""
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-primary"
+        />
+      )}
       {shouldShowVisualCover && (
         <div className="mb-2">
           <SourceCover source={source} variant="compact" />
@@ -394,10 +407,12 @@ export function SourceCard({
             <SourceTypeIcon className="h-4 w-4" />
           </span>
         )}
-        <div className="min-w-0 flex-1">
+        {/* v0.8.130 — the floating actions button overlays this column's end; reserve its width while
+            it shows (hover, or keyboard focus inside the row) so text ends in an ellipsis, not a clip. */}
+        <div className="min-w-0 flex-1 transition-[padding] group-hover:pr-7 group-focus-within:pr-7">
           {/* v0.8.130 — Phase 4b: h3 under the column's h2 (h4 skipped a level). */}
           <h3
-            className="truncate text-sm font-medium leading-5 transition-colors group-hover:text-primary"
+            className="block truncate text-sm font-medium leading-5 transition-colors group-hover:text-primary"
             title={title}
           >
             {title}

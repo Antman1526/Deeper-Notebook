@@ -553,8 +553,12 @@ export function ChatPanel({
 
         {/* Input Area */}
         <div className="flex-shrink-0 space-y-2 px-4 pb-4 pt-2">
+          {/* v0.8.130 — one row of composer context: the Mind Map pill and the debate
+              badge sit together above the input rather than stacking as two bands. */}
+          {(mindMapContext || (debateMode && onToggleDebateMode)) && (
+          <div className="flex flex-wrap items-start gap-2">
           {mindMapContext && (
-            <div data-testid="mind-map-context-chip" className="flex items-start justify-between gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs">
+            <div data-testid="mind-map-context-chip" className="flex min-w-0 flex-1 items-start justify-between gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs">
               <div className="min-w-0">
                 <div className="font-medium">{t('sources.chatPanel.mindMapContext', { label: mindMapContext.label })}</div>
                 <div className="mt-0.5 break-words text-muted-foreground">
@@ -570,13 +574,46 @@ export function ChatPanel({
               </Button>
             </div>
           )}
+          {/* v0.8.130 — debate mode changes every answer, so while it is on the composer
+              says so and offers a one-click way out; the Swords toggle drives the same prop. */}
+          {debateMode && onToggleDebateMode && (
+            <div
+              data-testid="debate-mode-badge"
+              className="inline-flex items-center gap-1.5 rounded-md border border-warning/40 bg-warning-soft py-0.5 pl-2 pr-0.5 text-xs font-medium text-warning-ink"
+            >
+              <Swords className="h-3 w-3 shrink-0" aria-hidden="true" />
+              <span>{t('sources.chatPanel.debateModeBadge')}</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-5 w-5 shrink-0 rounded-sm text-warning-ink hover:bg-warning/20 hover:text-warning-ink"
+                aria-label={t('sources.chatPanel.turnOffDebateMode')}
+                title={t('sources.chatPanel.turnOffDebateMode')}
+                onClick={onToggleDebateMode}
+              >
+                <X className="h-3 w-3" aria-hidden="true" />
+              </Button>
+            </div>
+          )}
+          </div>
+          )}
           {/* v0.8.130 — Phase 2c: one pill composer. The textarea takes the full row (at
               1024px the mic and send buttons beside it squeezed it to ~95px); the model,
               Debate and v0.8.46 MCP tool picker sit on a row inside the pill with the
               mic and send buttons. The picker self-hides without enabled MCP servers. */}
+          {/* v0.8.130 — the pill became a 12px input card (cards are capped at 12px);
+              debate mode tints it with the warning tokens so the mode is visible where
+              the user types, not only on the small toggle. */}
           <div
             data-dn-composer=""
-            className="@container rounded-3xl border bg-card px-2 py-1.5 shadow-xs transition-shadow focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/20"
+            data-debate={debateMode ? 'true' : 'false'}
+            className={[
+              '@container rounded-xl border p-2.5 shadow-xs transition-[border-color,box-shadow]',
+              debateMode
+                ? 'border-warning/50 bg-warning/5 focus-within:border-warning/70'
+                : 'bg-background/80 focus-within:border-primary/45',
+            ].join(' ')}
           >
             <Textarea
               id={chatInputId}

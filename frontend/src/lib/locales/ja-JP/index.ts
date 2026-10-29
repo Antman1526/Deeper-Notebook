@@ -4085,3 +4085,19 @@ Object.assign(ensureSection(ensureSection(rootNode, 'models'), 'overallHealth'),
   degraded: "低下",
   down: "停止中",
 });
+// v0.8.130 — the notebook workspace's column splitters.
+Object.assign(ensureSection(rootNode, 'notebooks'), {
+  resizeHandleHint: "ドラッグしてサイズを変更。ダブルクリックで元に戻します。",
+});
+// v0.8.130 — debate mode badge above the chat composer, with its dismiss button.
+Object.assign(ensureSection(ensureSection(rootNode, 'sources'), 'chatPanel'), {
+  debateModeBadge: "ディベートモード：複数の視点を統合",
+  turnOffDebateMode: "ディベートモードをオフにする",
+});
+// v0.8.130 — note cards: "Turn into podcast" moved from an inline row into the note actions menu.
+Object.assign(ensureSection(ensureSection(rootNode, 'notes'), 'noteCard'), {
+  noteActions: "メモの操作",
+  podcastNoContent: "読み取れるメモのコンテンツがありません。",
+  turnIntoPodcast: "ポッドキャストにする",
+  turnIntoPodcastDisabled: "ポッドキャストにする — {{reason}}",
+});

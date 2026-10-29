@@ -268,7 +268,9 @@ test.describe('2c — chat column', () => {
     { label: 'wide', width: 1440, height: 900 },
     { label: 'compact', width: 1024, height: 768 },
   ]) {
-    test(`the composer is a pill and the textarea owns its row (${viewport.label})`, async ({ page }) => {
+    // v0.8.130 — user request 2026-10-29: the composer is an input card (12px corners,
+    // the card limit), no longer a pill. Its layout checks are unchanged.
+    test(`the composer is an input card and the textarea owns its row (${viewport.label})`, async ({ page }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height })
       await page.goto(`/notebooks/${notebook.id}`)
       const textarea = page.locator('main textarea[name="chat-message"]')
@@ -279,7 +281,9 @@ test.describe('2c — chat column', () => {
       const [composerBox, textareaBox] = await Promise.all([composer.boundingBox(), textarea.boundingBox()])
       // At 1024 the mic and send buttons squeezed the textarea to ~95px ("Ask / anything / about").
       expect(textareaBox!.width).toBeGreaterThanOrEqual(composerBox!.width * 0.75)
-      expect(await composer.evaluate((el) => parseFloat(getComputedStyle(el).borderTopLeftRadius))).toBeGreaterThanOrEqual(20)
+      const radius = await composer.evaluate((el) => parseFloat(getComputedStyle(el).borderTopLeftRadius))
+      expect(radius).toBeGreaterThanOrEqual(8)
+      expect(radius).toBeLessThanOrEqual(12)
       await expect(composer.getByRole('button', { name: 'Enter debate mode' })).toBeVisible()
       await expect(composer.getByRole('button', { name: /send/i })).toBeVisible()
       // One row of controls: at 1024 the mic and send buttons wrapped below the model picker.

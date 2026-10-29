@@ -476,13 +476,19 @@ test.describe('Podcast Intelligence Studio browser acceptance', () => {
     if (await guidedTipsDismiss.isVisible()) await guidedTipsDismiss.click()
     const toastDismiss = page.locator('[data-sonner-toast] [data-close-button]')
     if (await toastDismiss.isVisible()) await toastDismiss.click()
-    const noteActions = page.getByRole('button', { name: 'Turn into podcast', exact: true })
+    // v0.8.130 — user request 2026-10-29: a note's "Turn into podcast" lives in the
+    // note's actions menu (as a source's does), not as a button row on every note.
+    const noteActions = page.getByRole('button', { name: 'Note actions', exact: true })
     await expect(noteActions).toHaveCount(1)
-    await expect(noteActions).toBeVisible()
     await expect(noteActions).toBeEnabled()
     await noteActions.focus()
     await expect(noteActions).toBeFocused()
     await noteActions.press('Enter')
+    const notePodcastAction = page.getByRole('menuitem', { name: 'Turn into podcast', exact: true })
+    await expect(notePodcastAction).toBeVisible()
+    await notePodcastAction.focus()
+    await expect(notePodcastAction).toBeFocused()
+    await notePodcastAction.press('Enter')
     await carryQuickSelectionIntoStudio(
       page, receipts, { kind: 'app_note', note_id: note.id }, 3, 4,
     )

@@ -239,6 +239,45 @@ describe('SourceCard', () => {
     expect(screen.getByText('training')).toBeInTheDocument()
   })
 
+  // v0.8.130 — the floating actions button sat over the end of the title column and clipped
+  // the text mid-glyph; the column reserves room for it while it shows (hover or keyboard).
+  it('reserves room for the floating actions button and ellipsizes the title', () => {
+    mockUseSourceStatus.mockReturnValue({ data: undefined, isLoading: false })
+
+    render(<SourceCard source={source({ command_id: undefined, status: 'completed' })} />)
+
+    const heading = screen.getByRole('heading', { name: 'Research source' })
+    expect(heading).toHaveClass('block', 'truncate')
+    expect(heading).toHaveAttribute('title', 'Research source')
+    expect(heading.parentElement).toHaveClass(
+      'min-w-0',
+      'flex-1',
+      'group-hover:pr-7',
+      'group-focus-within:pr-7',
+      'transition-[padding]',
+    )
+  })
+
+  // v0.8.130 — the source last opened in the reader stays marked in the list.
+  it('marks the active source with data-active and a primary accent bar that takes no layout space', () => {
+    mockUseSourceStatus.mockReturnValue({ data: undefined, isLoading: false })
+
+    const { container, rerender } = render(
+      <SourceCard source={source({ command_id: undefined, status: 'completed' })} active />
+    )
+
+    const row = container.querySelector('[data-dn-source-row]')
+    expect(row).toHaveAttribute('data-active', 'true')
+    const bar = container.querySelector('[data-dn-source-active-bar]')
+    expect(bar).not.toBeNull()
+    expect(bar).toHaveAttribute('aria-hidden', 'true')
+    expect(bar).toHaveClass('absolute', 'w-0.5', 'bg-primary', 'pointer-events-none')
+
+    rerender(<SourceCard source={source({ command_id: undefined, status: 'completed' })} />)
+    expect(container.querySelector('[data-dn-source-row]')).not.toHaveAttribute('data-active')
+    expect(container.querySelector('[data-dn-source-active-bar]')).toBeNull()
+  })
+
   it('shows source labels, provenance, and shared notebook state', () => {
     mockUseSourceStatus.mockReturnValue({
       data: undefined,

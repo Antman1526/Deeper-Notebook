@@ -38,6 +38,7 @@ vi.mock('@/components/sources/SourceCard', () => ({
   SourceCard: (props: {
     source: { id: string; title: string }
     showVisualCover?: boolean
+    active?: boolean
     onClick?: (id: string) => void
     onDelete?: (id: string) => void
     onRetry?: (id: string) => void
@@ -49,6 +50,7 @@ vi.mock('@/components/sources/SourceCard', () => ({
       <button
         type="button"
         data-cover={String(props.showVisualCover)}
+        data-active={props.active ? 'true' : undefined}
         onClick={() => props.onClick?.(props.source.id)}
       >
         {props.source.title}
@@ -263,5 +265,26 @@ describe('SourcesColumn visual rollback gate', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'notebooks.bulkVectorize.button' }))
     expect(mockBulkVectorize).toHaveBeenLastCalledWith(expect.objectContaining({ open: true, hideTrigger: true }))
+  })
+
+  // v0.8.130 — the source last opened stays marked in the list (until another is opened),
+  // so the reader's place in the list survives going back.
+  it('marks only the most recently opened source as active', () => {
+    const second = { ...source, id: 'source:two', title: 'Lab report' }
+    render(<SourcesColumn sources={[source, second]} isLoading={false} notebookId="notebook:one" />)
+
+    const first = screen.getByRole('button', { name: 'Field notes' })
+    const other = screen.getByRole('button', { name: 'Lab report' })
+    expect(first).not.toHaveAttribute('data-active')
+    expect(other).not.toHaveAttribute('data-active')
+
+    fireEvent.click(first)
+    expect(mockOpenModal).toHaveBeenCalledWith('source', source.id)
+    expect(screen.getByRole('button', { name: 'Field notes' })).toHaveAttribute('data-active', 'true')
+    expect(screen.getByRole('button', { name: 'Lab report' })).not.toHaveAttribute('data-active')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Lab report' }))
+    expect(screen.getByRole('button', { name: 'Field notes' })).not.toHaveAttribute('data-active')
+    expect(screen.getByRole('button', { name: 'Lab report' })).toHaveAttribute('data-active', 'true')
   })
 })

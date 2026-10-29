@@ -17,7 +17,7 @@ import { useUpdateNotebook } from '@/lib/hooks/use-notebooks'
 import { NotebookDeleteDialog } from './NotebookDeleteDialog'
 import { useState } from 'react'
 import { useTranslation } from '@/lib/hooks/use-translation'
-import { getDateLocale } from '@/lib/utils/date-locale'
+import { formatDateTime, getDateLocale } from '@/lib/utils/date-locale'
 import { TurnIntoPodcastAction } from '@/components/podcasts/TurnIntoPodcastAction'
 import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
 import { notebookCoverTone } from '@/lib/notebook-cover'
@@ -118,12 +118,17 @@ export function NotebookRow({ notebook }: NotebookRowProps) {
           </Badge>
         </div>
 
-        <div className="hidden sm:block w-40 shrink-0 text-right text-xs text-muted-foreground">
+        {/* v0.8.130 — the exact date and time on hover, as on the shelf. */}
+        <time
+          dateTime={new Date(notebook.updated).toISOString()}
+          title={formatDateTime(notebook.updated, language, { dateStyle: 'full', timeStyle: 'short' })}
+          className="hidden sm:block w-40 shrink-0 text-right text-xs text-muted-foreground"
+        >
           {t('common.updated').replace('{time}', formatDistanceToNow(new Date(notebook.updated), {
             addSuffix: true,
             locale: getDateLocale(language)
           }))}
-        </div>
+        </time>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

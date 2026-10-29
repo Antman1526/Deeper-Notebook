@@ -4086,3 +4086,19 @@ Object.assign(ensureSection(ensureSection(rootNode, 'models'), 'overallHealth'),
   degraded: "Degradado",
   down: "Fora do ar",
 });
+// v0.8.130 — the notebook workspace's column splitters.
+Object.assign(ensureSection(rootNode, 'notebooks'), {
+  resizeHandleHint: "Arraste para redimensionar. Clique duas vezes para redefinir.",
+});
+// v0.8.130 — debate mode badge above the chat composer, with its dismiss button.
+Object.assign(ensureSection(ensureSection(rootNode, 'sources'), 'chatPanel'), {
+  debateModeBadge: "Modo debate: síntese de múltiplas perspectivas",
+  turnOffDebateMode: "Desativar o modo debate",
+});
+// v0.8.130 — note cards: "Turn into podcast" moved from an inline row into the note actions menu.
+Object.assign(ensureSection(ensureSection(rootNode, 'notes'), 'noteCard'), {
+  noteActions: "Ações da nota",
+  podcastNoContent: "Nenhum conteúdo legível da nota está disponível.",
+  turnIntoPodcast: "Transformar em podcast",
+  turnIntoPodcastDisabled: "Transformar em podcast — {{reason}}",
+});

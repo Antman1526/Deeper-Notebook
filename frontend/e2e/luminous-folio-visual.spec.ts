@@ -23,6 +23,10 @@ for (const capture of captures) {
     await installLuminousFolioFixture(page, { theme: capture.theme })
     await page.setViewportSize(capture.viewport)
     await page.emulateMedia({ reducedMotion: 'reduce' })
+    // v0.8.130 — the card says "Updated 9 months ago" relative to now, so the
+    // picture changed every month ("10 months ago" by 2026-10-29). The clock is
+    // pinned to the day the baselines were taken; timers still run.
+    await page.clock.setFixedTime(new Date('2026-10-05T12:00:00Z'))
     await page.goto('/notebooks')
 
     await expect(page.getByRole('heading', { name: 'Notebooks', exact: true })).toBeVisible()

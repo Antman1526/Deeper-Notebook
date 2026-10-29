@@ -18,7 +18,7 @@ import { useUpdateNotebook } from '@/lib/hooks/use-notebooks'
 import { NotebookDeleteDialog } from './NotebookDeleteDialog'
 import { useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent } from 'react'
 import { useTranslation } from '@/lib/hooks/use-translation'
-import { getDateLocale } from '@/lib/utils/date-locale'
+import { formatDateTime, getDateLocale } from '@/lib/utils/date-locale'
 import { TurnIntoPodcastAction } from '@/components/podcasts/TurnIntoPodcastAction'
 import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
 import { notebookCoverTone } from '@/lib/notebook-cover'
@@ -43,6 +43,7 @@ export function NotebookCard({ notebook, index = 0 }: NotebookCardProps) {
   const { t, language } = useTranslation()
   const router = useRouter()
   const bookRef = useRef<HTMLDivElement>(null)
+  const linkRef = useRef<HTMLAnchorElement>(null)
   const [opening, setOpening] = useState(false)
   const href = `/notebooks/${encodeURIComponent(notebook.id)}`
   const monogram = Array.from(notebook.name.trim())[0]?.toLocaleUpperCase(language) ?? ''
@@ -112,6 +113,7 @@ export function NotebookCard({ notebook, index = 0 }: NotebookCardProps) {
         <div data-dn-book-pages="" aria-hidden="true" />
         <div data-dn-book-cover="">
         <Link
+          ref={linkRef}
           href={href}
           aria-label={notebook.name}
           className="absolute inset-0 z-[1] rounded-xl"
@@ -153,10 +155,21 @@ export function NotebookCard({ notebook, index = 0 }: NotebookCardProps) {
             opens the notebook. */}
         <div data-dn-cover-footer="" className="pointer-events-none relative z-10 mt-2 px-1">
           <div data-dn-cover-updated="" className="text-xs text-muted-foreground">
-            {t('common.updated').replace('{time}', formatDistanceToNow(new Date(notebook.updated), {
-              addSuffix: true,
-              locale: getDateLocale(language)
-            }))}
+            {/* v0.8.130 — the exact date and time on hover ("2 hours ago" did not say
+                when). The footer lets clicks through to the card's link; the time takes
+                the pointer for its tooltip only and hands a click on to the link, so a
+                click here still opens the notebook. */}
+            <time
+              dateTime={new Date(notebook.updated).toISOString()}
+              title={formatDateTime(notebook.updated, language, { dateStyle: 'full', timeStyle: 'short' })}
+              className="pointer-events-auto cursor-pointer"
+              onClick={() => linkRef.current?.click()}
+            >
+              {t('common.updated').replace('{time}', formatDistanceToNow(new Date(notebook.updated), {
+                addSuffix: true,
+                locale: getDateLocale(language)
+              }))}
+            </time>
           </div>
 
           <div data-dn-cover-counts="" className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">

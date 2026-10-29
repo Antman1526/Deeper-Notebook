@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import type { ImperativePanelHandle } from 'react-resizable-panels'
+import type { ImperativePanelGroupHandle, ImperativePanelHandle } from 'react-resizable-panels'
 import { useParams } from 'next/navigation'
 import { NotebookHeader } from '../components/NotebookHeader'
 import { notebookCoverTone } from '@/lib/notebook-cover'
@@ -66,6 +66,11 @@ export default function NotebookPage() {
   const sourcesPanelRef = useRef<ImperativePanelHandle>(null)
   const notesPanelRef = useRef<ImperativePanelHandle>(null)
   const studioPanelRef = useRef<ImperativePanelHandle>(null)
+  // v0.8.130 — double-clicking a column splitter puts the columns back to these widths.
+  const widePanelGroupRef = useRef<ImperativePanelGroupHandle>(null)
+  const compactPanelGroupRef = useRef<ImperativePanelGroupHandle>(null)
+  const resetWideLayout = () => widePanelGroupRef.current?.setLayout([20, 38, 18, 24])
+  const resetCompactLayout = () => compactPanelGroupRef.current?.setLayout([28, 42, 30])
 
   // Store → panel: when the column's collapse button toggles the store, drive
   // the panel. Guarded by isCollapsed() so the onCollapse/onExpand callbacks
@@ -301,7 +306,7 @@ export default function NotebookPage() {
             Sources, Notes and Studio collapse and stay in sync with the columns store. */}
         {viewportKnown && isDesktop && isWideDesktop && (
           <div className="hidden min-h-0 flex-1 lg:flex">
-            <ResizablePanelGroup direction="horizontal" autoSaveId="dn-notebook-workspace-v2" className="h-full">
+            <ResizablePanelGroup ref={widePanelGroupRef} direction="horizontal" autoSaveId="dn-notebook-workspace-v2" className="h-full">
               <ResizablePanel
                 ref={sourcesPanelRef}
                 collapsible
@@ -314,11 +319,11 @@ export default function NotebookPage() {
               >
                 <div className="h-full pr-1.5">{sourcesColumn}</div>
               </ResizablePanel>
-              <ResizableHandle withHandle />
+              <ResizableHandle withHandle onReset={resetWideLayout} title={t('notebooks.resizeHandleHint')} />
               <ResizablePanel defaultSize={38} minSize={28} className="min-w-0">
                 <div className="h-full px-1.5">{chatColumn}</div>
               </ResizablePanel>
-              <ResizableHandle withHandle />
+              <ResizableHandle withHandle onReset={resetWideLayout} title={t('notebooks.resizeHandleHint')} />
               <ResizablePanel
                 ref={notesPanelRef}
                 collapsible
@@ -331,7 +336,7 @@ export default function NotebookPage() {
               >
                 <div className="h-full px-1.5">{notesColumn}</div>
               </ResizablePanel>
-              <ResizableHandle withHandle />
+              <ResizableHandle withHandle onReset={resetWideLayout} title={t('notebooks.resizeHandleHint')} />
               <ResizablePanel
                 ref={studioPanelRef}
                 collapsible
@@ -354,7 +359,7 @@ export default function NotebookPage() {
             ~120px each and clipped their controls, so they share one side panel here. */}
         {viewportKnown && isDesktop && !isWideDesktop && (
           <div className="hidden min-h-0 flex-1 lg:flex">
-            <ResizablePanelGroup direction="horizontal" autoSaveId="dn-notebook-workspace-v2-compact" className="h-full">
+            <ResizablePanelGroup ref={compactPanelGroupRef} direction="horizontal" autoSaveId="dn-notebook-workspace-v2-compact" className="h-full">
               <ResizablePanel
                 ref={sourcesPanelRef}
                 collapsible
@@ -367,11 +372,11 @@ export default function NotebookPage() {
               >
                 <div className="h-full pr-1.5">{sourcesColumn}</div>
               </ResizablePanel>
-              <ResizableHandle withHandle />
+              <ResizableHandle withHandle onReset={resetCompactLayout} title={t('notebooks.resizeHandleHint')} />
               <ResizablePanel defaultSize={42} minSize={30} className="min-w-0">
                 <div className="h-full px-1.5">{chatColumn}</div>
               </ResizablePanel>
-              <ResizableHandle withHandle />
+              <ResizableHandle withHandle onReset={resetCompactLayout} title={t('notebooks.resizeHandleHint')} />
               {/* v0.8.130 — 28%, not 22%: the shared Notes/Studio panel holds the
                   evidence receipt, which overflowed below about 210px. */}
               <ResizablePanel defaultSize={30} minSize={28} className="min-w-0">

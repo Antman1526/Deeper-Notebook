@@ -89,6 +89,9 @@ export function SourcesColumn({
   // NOTE: needs a real in-app file-drag test to confirm the prefill lands.
   const [droppedFiles, setDroppedFiles] = useState<File[] | undefined>(undefined)
   const [isDragging, setIsDragging] = useState(false)
+  // v0.8.130 — the source last opened from this list stays marked after the reader closes, so
+  // the user can see where they were; it moves only when another source is opened.
+  const [activeSourceId, setActiveSourceId] = useState<string | null>(null)
 
   const handleDragOver = useCallback((e: DragEvent) => {
     if (e.dataTransfer?.types?.includes('Files')) {
@@ -193,6 +196,7 @@ export function SourcesColumn({
   }
 
   const handleSourceClick = (sourceId: string) => {
+    setActiveSourceId(sourceId)
     openModal('source', sourceId)
   }
 
@@ -212,7 +216,8 @@ export function SourcesColumn({
           onDrop={handleDrop}
         >
           {isDragging && (
-            <div className="pointer-events-none absolute inset-0 z-20 m-2 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-primary/10 backdrop-blur-sm">
+            <div className="pointer-events-none absolute inset-0 z-20 m-2 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-card/90">
+              {/* v0.8.130 — no blur (the design rules ban glass); a near-opaque paper fill instead. */}
               <p className="text-sm font-medium text-primary">
                 {t('sources.dropToAdd', { defaultValue: 'Drop files to add as sources' })}
               </p>
@@ -327,6 +332,7 @@ export function SourcesColumn({
                       showVisualCover={showVisualCover}
                       showRemoveFromNotebook={true}
                       notebookId={notebookId}
+                      active={source.id === activeSourceId}
                       contextMode={contextSelections?.[source.id]}
                       onContextModeChange={onContextModeChange
                         ? (mode) => onContextModeChange(source.id, mode)
@@ -355,6 +361,7 @@ export function SourcesColumn({
                     showVisualCover={showVisualCover}
                     showRemoveFromNotebook={true}
                     notebookId={notebookId}
+                    active={source.id === activeSourceId}
                     contextMode={contextSelections?.[source.id]}
                     onContextModeChange={onContextModeChange
                       ? (mode) => onContextModeChange(source.id, mode)

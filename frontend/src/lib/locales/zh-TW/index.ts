@@ -4085,3 +4085,19 @@ Object.assign(ensureSection(ensureSection(rootNode, 'models'), 'overallHealth'),
   degraded: "效能降低",
   down: "無法使用",
 });
+// v0.8.130 — the notebook workspace's column splitters.
+Object.assign(ensureSection(rootNode, 'notebooks'), {
+  resizeHandleHint: "拖曳以調整大小。按兩下以重設。",
+});
+// v0.8.130 — debate mode badge above the chat composer, with its dismiss button.
+Object.assign(ensureSection(ensureSection(rootNode, 'sources'), 'chatPanel'), {
+  debateModeBadge: "辯論模式：多視角綜合",
+  turnOffDebateMode: "關閉辯論模式",
+});
+// v0.8.130 — note cards: "Turn into podcast" moved from an inline row into the note actions menu.
+Object.assign(ensureSection(ensureSection(rootNode, 'notes'), 'noteCard'), {
+  noteActions: "備註動作",
+  podcastNoContent: "沒有可讀取的備註內容。",
+  turnIntoPodcast: "轉為 Podcast",
+  turnIntoPodcastDisabled: "轉為 Podcast：{{reason}}",
+});
