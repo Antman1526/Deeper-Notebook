@@ -1130,7 +1130,7 @@ export const esES = {
     optimizeDiscard: "Descartar",
     optimizeApply: "Aplicar prompt optimizado",
     title: "Transformaciones",
-    desc: "Las transformaciones son prompts que el LLM usará para procesar una fuente y extraer análisis, resúmenes, etc.",
+    desc: "Las transformaciones son prompts reutilizables que convierten una fuente en análisis, resúmenes y más.",
     workspace: "Elige un espacio de trabajo",
     playground: "Laboratorio",
     defaultPrompt: "Prompt de transformación predeterminado",

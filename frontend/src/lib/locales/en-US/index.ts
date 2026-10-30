@@ -1146,7 +1146,7 @@ export const enUS = {
     optimizeDiscard: "Discard",
     optimizeApply: "Apply optimized prompt",
     title: "Transformations",
-    desc: "Transformations are prompts that will be used by the LLM to process a source and extract insights, summaries, etc.",
+    desc: "Transformations are reusable prompts that turn a source into insights, summaries and more.",
     workspace: "Choose a workspace",
     playground: "Playground",
     defaultPrompt: "Default transformation prompt",

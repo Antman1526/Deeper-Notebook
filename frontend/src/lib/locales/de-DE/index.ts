@@ -1130,7 +1130,7 @@ export const deDE = {
     optimizeDiscard: "Verwerfen",
     optimizeApply: "Optimierten Prompt anwenden",
     title: "Transformationen",
-    desc: "Transformationen sind Prompts, mit denen das LLM eine Quelle verarbeitet und Erkenntnisse, Zusammenfassungen usw. extrahiert.",
+    desc: "Transformationen sind wiederverwendbare Prompts, die aus einer Quelle Erkenntnisse, Zusammenfassungen und mehr machen.",
     workspace: "Arbeitsbereich auswählen",
     playground: "Spielwiese",
     defaultPrompt: "Standard-Prompt für Transformationen",

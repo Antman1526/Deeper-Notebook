@@ -1129,7 +1129,7 @@ export const itIT = {
     optimizeDiscard: "Scarta",
     optimizeApply: "Applica prompt ottimizzato",
     title: "Trasformazioni",
-    desc: "Le trasformazioni sono prompt che verranno usati dall'LLM per elaborare una fonte ed estrarre approfondimenti, riepiloghi, ecc.",
+    desc: "Le trasformazioni sono prompt riutilizzabili che trasformano una fonte in approfondimenti, riepiloghi e altro.",
     workspace: "Scegli un'area di lavoro",
     playground: "Playground",
     defaultPrompt: "Prompt trasformazione predefinito",

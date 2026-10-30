@@ -1128,7 +1128,7 @@ export const ptBR = {
     optimizeDiscard: "Descartar",
     optimizeApply: "Aplicar prompt otimizado",
     title: "Transformações",
-    desc: "Transformações são prompts que serão usados pelo LLM para processar uma fonte e extrair insights, resumos, etc.",
+    desc: "Transformações são prompts reutilizáveis que transformam uma fonte em insights, resumos e mais.",
     workspace: "Escolha um espaço de trabalho",
     playground: "Playground",
     defaultPrompt: "Prompt de Transformação Padrão",

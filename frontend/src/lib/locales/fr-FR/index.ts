@@ -1129,7 +1129,7 @@ export const frFR = {
     optimizeDiscard: "Abandonner",
     optimizeApply: "Appliquer le prompt optimisé",
     title: "Transformations",
-    desc: "Les transformations sont des prompts utilisés par le LLM pour traiter une source et extraire des aperçus, des résumés, etc.",
+    desc: "Les transformations sont des prompts réutilisables qui transforment une source en aperçus, résumés et plus encore.",
     workspace: "Choisissez un espace de travail",
     playground: "Bac à sable (Playground)",
     defaultPrompt: "Prompt de transformation par défaut",

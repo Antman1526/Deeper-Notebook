@@ -1130,7 +1130,7 @@ export const plPL = {
     optimizeDiscard: "Odrzuć",
     optimizeApply: "Zastosuj zoptymalizowany prompt",
     title: "Transformacje",
-    desc: "Transformacje to prompty używane przez model LLM do przetwarzania źródła oraz wyodrębniania wglądów, podsumowań itp.",
+    desc: "Transformacje to prompty wielokrotnego użytku, które zamieniają źródło we wglądy, podsumowania i nie tylko.",
     workspace: "Wybierz obszar roboczy",
     playground: "Piaskownica",
     defaultPrompt: "Domyślny prompt transformacji",
