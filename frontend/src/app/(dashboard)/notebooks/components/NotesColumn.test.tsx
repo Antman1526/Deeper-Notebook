@@ -111,3 +111,18 @@ describe('NotesColumn note cards', () => {
     expect(card?.className).not.toMatch(/backdrop-|hover:border-l-(?!primary\b)|hover:border-\d/)
   })
 })
+
+// v0.8.130 — in a narrow Notes column the note's date was squeezed into a sliver and
+// cut off ("ab / 1 / mo / ag"). The header wraps instead, the date never breaks inside
+// itself, and hovering it gives the exact date and time.
+describe('NotesColumn note date', () => {
+  it('keeps the date whole and names the exact time', () => {
+    const { container } = render(<NotesColumn notes={[note()]} isLoading={false} notebookId="notebook:one" />)
+    const card = container.querySelector('[data-dn-note-card]') as HTMLElement
+    const time = card.querySelector('time') as HTMLTimeElement
+    expect(time).not.toBeNull()
+    expect(time.className).toMatch(/whitespace-nowrap/)
+    expect(time.getAttribute('title')).toBeTruthy()
+    expect((time.parentElement?.parentElement as HTMLElement).className).toMatch(/flex-wrap/)
+  })
+})

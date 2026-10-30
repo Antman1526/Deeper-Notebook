@@ -352,3 +352,26 @@ describe('SourcesColumn inline reader bar', () => {
     expect(within(bar).getByRole('button', { name: 'sources.detailsTitle' })).toBeInTheDocument()
   })
 })
+
+// v0.8.130 — the reader's text was about three words a line: inside the column it sat in
+// a bordered card with 24px padding each side. The reader marks itself so the card's frame
+// can go there (the dialog keeps it), and it announces when it opens and closes so the
+// workspace can widen the column while reading.
+describe('SourcesColumn inline reader width', () => {
+  it('marks the reader and announces opening and closing', () => {
+    const events: Array<boolean | undefined> = []
+    const listener = (event: Event) => events.push((event as CustomEvent<{ open?: boolean }>).detail?.open)
+    window.addEventListener('dn:inline-reader', listener)
+    try {
+      render(<SourcesColumn sources={[source]} isLoading={false} notebookId="notebook:one" inlineReader />)
+      act(() => {
+        window.dispatchEvent(new CustomEvent('dn:preview-source', { cancelable: true, detail: { sourceId: source.id } }))
+      })
+      expect(screen.getByTestId('inline-source-reader')).toHaveAttribute('data-dn-inline-reader')
+      fireEvent.click(screen.getByRole('button', { name: 'navigation.sources' }))
+      expect(events).toEqual([true, false])
+    } finally {
+      window.removeEventListener('dn:inline-reader', listener)
+    }
+  })
+})

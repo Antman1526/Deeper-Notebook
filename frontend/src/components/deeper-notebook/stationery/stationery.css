@@ -1069,3 +1069,32 @@ html:not([data-theme^='high-contrast']) [data-dn-visual-system='v2'] .dn-source-
   background: var(--primary);
   box-shadow: inset 0 0 0 2px var(--card);
 }
+
+/* ---------- The inline source reader (2026-10-29) ----------
+   Inside the Sources column the reader's card framed the text a second time
+   (border, shadow, 24px padding each side, inside the column's own padding):
+   about three words a line. In the column the page is the frame; the dialog
+   keeps its card. */
+[data-dn-inline-reader] [data-slot='card'] {
+  gap: 1rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding-block: 0;
+}
+
+[data-dn-inline-reader] [data-slot='card-header'],
+[data-dn-inline-reader] [data-slot='card-content'] {
+  padding-inline: 0;
+}
+
+[data-dn-inline-reader] [role='tabpanel'] .overflow-y-auto,
+[data-dn-inline-reader] .overflow-y-auto.px-2 {
+  padding-inline: 0;
+}
+
+/* Reading measure: comfortable lines however wide the column is made. */
+[data-dn-inline-reader] .prose {
+  max-inline-size: 68ch;
+}

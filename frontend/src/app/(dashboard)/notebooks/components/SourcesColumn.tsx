@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback, type UIEvent, type DragEvent } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, type UIEvent, type DragEvent } from 'react'
 import { SourceListResponse } from '@/lib/types/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -116,6 +116,16 @@ export function SourcesColumn({
     window.addEventListener('dn:preview-source', handlePreviewSource)
     return () => window.removeEventListener('dn:preview-source', handlePreviewSource)
   }, [sourcesCollapsed, setSources, toggleSources])
+
+  // v0.8.130 — tell the workspace when reading starts and stops, so it can widen this
+  // column while a source is open (and give the width back afterwards).
+  const readerOpen = inlinePreview !== null
+  const announcedReader = useRef(false)
+  useEffect(() => {
+    if (readerOpen === announcedReader.current) return
+    announcedReader.current = readerOpen
+    window.dispatchEvent(new CustomEvent('dn:inline-reader', { detail: { open: readerOpen } }))
+  }, [readerOpen])
 
   useEffect(() => {
     if (!inlinePreview) return
@@ -348,7 +358,7 @@ export function SourcesColumn({
                   the old addEventListener pattern. */}
           <CardContent onScroll={handleScroll} className="flex-1 overflow-y-auto min-h-0">
             {inlinePreview ? (
-              <div className="flex flex-col gap-3" data-testid="inline-source-reader">
+              <div className="flex flex-col gap-3" data-testid="inline-source-reader" data-dn-inline-reader="">
                 {/* v0.8.130 — the bar stays at the top of the column while a long source
                     scrolls (it scrolled away with the text), and names the source being
                     read. Opaque paper, no blur (the design rules ban glass). The negative

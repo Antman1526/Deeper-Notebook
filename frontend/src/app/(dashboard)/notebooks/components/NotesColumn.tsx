@@ -16,7 +16,7 @@ import { EmptyState } from '@/components/common/EmptyState'
 import { Badge } from '@/components/ui/badge'
 import { NoteEditorDialog } from './NoteEditorDialog'
 import { ExportNoteDialog } from './ExportNoteDialog'
-import { getDateLocale } from '@/lib/utils/date-locale'
+import { formatDateTime, getDateLocale } from '@/lib/utils/date-locale'
 import { formatDistanceToNow } from 'date-fns'
 import { ContextToggle } from '@/components/common/ContextToggle'
 import type { NoteContextMode } from '@/lib/types/notebook-context'
@@ -100,10 +100,11 @@ export function NotesColumn({
           </CardHeader>
 
           {/* v0.8.130 — Phase 2b: a full-width Write note row, bulk context beside it. */}
-          <div data-dn-column-actions="" className="flex flex-none items-center gap-2 px-4 pt-3">
+          <div data-dn-column-actions="" className="@container flex flex-none items-center gap-2 px-4 pt-3">
             <Button
               variant="outline"
-              className="min-w-0 flex-1 rounded-md"
+              // v0.8.130 — tighter padding: in a narrow column "Add" truncated to "A…".
+              className="min-w-0 flex-1 gap-1.5 rounded-md px-3"
               aria-label={t('common.addNote')}
               onClick={() => {
                 setEditingNote(null)
@@ -111,8 +112,9 @@ export function NotesColumn({
               }}
             >
               <Plus className="h-4 w-4" />
-              {/* v0.8.130 — visible "Add"; "Write Note" truncated at 1280px. */}
-              <span className="truncate">{t('common.add')}</span>
+              {/* v0.8.130 — visible "Add"; "Write Note" truncated at 1280px. In a narrow
+                  column the label goes and the plus remains (the button keeps its name). */}
+              <span className="hidden truncate @[9rem]:inline">{t('common.add')}</span>
             </Button>
             {onBulkContextModeChange && notes && notes.length > 0 && (
               <DropdownMenu>
@@ -161,8 +163,9 @@ export function NotesColumn({
                     className="group relative cursor-pointer rounded-xl border border-l-2 border-l-primary/35 bg-card/90 p-3.5 transition-colors duration-200 ease-out hover:border-l-primary"
                     onClick={() => setEditingNote(note)}
                   >
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex items-center gap-2">
+                    {/* v0.8.130 — wraps in a narrow column instead of squeezing the date. */}
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+                      <div className="flex min-w-0 items-center gap-2">
                         {note.note_type === 'ai' ? (
                           <Bot className="h-4 w-4 text-primary" />
                         ) : (
@@ -173,13 +176,17 @@ export function NotesColumn({
                         </Badge>
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground">
-                          {formatDistanceToNow(new Date(note.updated), { 
+                      <div className="ml-auto flex items-center gap-2">
+                        <time
+                          dateTime={new Date(note.updated).toISOString()}
+                          title={formatDateTime(note.updated, language, { dateStyle: 'full', timeStyle: 'short' })}
+                          className="whitespace-nowrap text-xs text-muted-foreground"
+                        >
+                          {formatDistanceToNow(new Date(note.updated), {
                             addSuffix: true,
                             locale: getDateLocale(language)
                           })}
-                        </span>
+                        </time>
 
                         {/* Context toggle - only show if handler provided */}
                         {onContextModeChange && contextSelections?.[note.id] && (

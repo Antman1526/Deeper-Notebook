@@ -72,6 +72,7 @@ export default function NotebookPage() {
   const resetWideLayout = () => widePanelGroupRef.current?.setLayout([20, 38, 18, 24])
   const resetCompactLayout = () => compactPanelGroupRef.current?.setLayout([28, 42, 30])
 
+
   // Store → panel: when the column's collapse button toggles the store, drive
   // the panel. Guarded by isCollapsed() so the onCollapse/onExpand callbacks
   // (panel → store) don't loop.
@@ -97,6 +98,35 @@ export default function NotebookPage() {
   // Detect desktop to avoid double-mounting ChatColumn
   const isDesktop = useIsDesktop()
   const isWideDesktop = useIsWideDesktop()
+
+  // v0.8.130 — reading a source in the Sources column at its usual width gave
+  // about three words a line. While the inline reader is open the column widens
+  // (a third of a wide workspace, two fifths of a compact one) and goes back to
+  // the width it had when the reader closes, unless it was resized meanwhile.
+  const widthBeforeReading = useRef<number | null>(null)
+  useEffect(() => {
+    const onReader = (event: Event) => {
+      const open = (event as CustomEvent<{ open?: boolean }>).detail?.open === true
+      const panel = sourcesPanelRef.current
+      if (!panel) return
+      const target = isWideDesktop ? 33 : 40
+      if (open) {
+        if (panel.isCollapsed()) panel.expand()
+        const size = panel.getSize()
+        if (size < target) {
+          widthBeforeReading.current = size
+          panel.resize(target)
+        } else {
+          widthBeforeReading.current = null
+        }
+      } else if (widthBeforeReading.current !== null) {
+        if (Math.abs(panel.getSize() - target) < 0.5) panel.resize(widthBeforeReading.current)
+        widthBeforeReading.current = null
+      }
+    }
+    window.addEventListener('dn:inline-reader', onReader)
+    return () => window.removeEventListener('dn:inline-reader', onReader)
+  }, [isWideDesktop])
   // Compact desktops (1024–1279px): Notes and Studio share one tabbed side panel.
   const [sideTab, setSideTab] = useState<'notes' | 'studio'>('notes')
   // v0.8.130 — useIsDesktop is false on the first render (SSR-safe), so a desktop

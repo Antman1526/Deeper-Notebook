@@ -275,7 +275,7 @@ export function IntroReveal() {
             onClick={dismiss}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1, transition: { delay: reduce ? 0 : 0.8 } }}
-            className="absolute bottom-8 right-8 rounded-full border border-white/15 bg-white/5 px-4 py-1.5 text-sm text-(color:--intro-muted) backdrop-blur transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+            className="absolute bottom-8 right-8 rounded-full border border-white/15 bg-white/5 px-4 py-1.5 text-sm text-(color:--intro-muted) transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
           >
             {t('intro.skip', { defaultValue: 'Skip' })} →
           </motion.button>
