@@ -62,7 +62,8 @@ def test_get_theme_returns_default_when_config_file_missing(app, monkeypatch):
     with TestClient(app) as client:
         r = client.get("/api/deeper-notebook/theme")
     assert r.status_code == 200
-    assert r.json()["theme"] == "research-core-dark"
+    # v0.8.130 — the fresh-install default is Gemini-Forward Light.
+    assert r.json()["theme"] == "gemini-forward-light"
 
 
 def test_get_theme_propagates_http_exception(app, monkeypatch):
@@ -109,6 +110,8 @@ def test_post_theme_rejects_unknown(app, monkeypatch):
 @pytest.mark.parametrize(
     "theme",
     [
+        "gemini-forward-light",
+        "gemini-forward-dark",
         "research-core-dark",
         "research-core-light",
         "deep-ocean",

@@ -19,14 +19,13 @@ _REPO = Path(__file__).resolve().parent.parent
 _MIG_DIR = _REPO / "deeper_notebook" / "database" / "migrations"
 
 
-def test_plus_stable_feature_flags_and_research_runs_default_on(monkeypatch):
-    for name in (
+def test_plus_stable_feature_flags_and_research_runs_default_on(unset_setting):
+    unset_setting(
         "DEEPER_NOTEBOOK_VISUAL_REFRESH",
         "DEEPER_NOTEBOOK_EVIDENCE_STUDIO",
         "DEEPER_NOTEBOOK_MODEL_FLEET",
         "DEEPER_NOTEBOOK_RESEARCH_RUNS",
-    ):
-        monkeypatch.delenv(name, raising=False)
+    )
 
     import deeper_notebook.feature_flags as feature_flags
 
@@ -38,15 +37,10 @@ def test_plus_stable_feature_flags_and_research_runs_default_on(monkeypatch):
     assert feature_flags.research_runs_enabled() is True
 
 
-def test_evidence_studio_feature_flags_parse_truthy_and_falsey(monkeypatch):
+def test_evidence_studio_feature_flags_parse_truthy_and_falsey(monkeypatch, unset_setting):
     import deeper_notebook.feature_flags as feature_flags
 
-    for name in (
-        "DEEPER_NOTEBOOK_EVIDENCE_STUDIO",
-        "DN_EVIDENCE_STUDIO",
-        "DEEPER_NOTEBOOK_EVIDENCE_STUDIO",
-    ):
-        monkeypatch.delenv(name, raising=False)
+    unset_setting("DEEPER_NOTEBOOK_EVIDENCE_STUDIO")
     monkeypatch.setenv("DEEPER_NOTEBOOK_EVIDENCE_STUDIO", "yes")
     assert feature_flags.evidence_studio_enabled() is True
 
@@ -54,20 +48,20 @@ def test_evidence_studio_feature_flags_parse_truthy_and_falsey(monkeypatch):
     assert feature_flags.evidence_studio_enabled() is False
 
 
-def test_study_workbench_flag_defaults_on_and_accepts_explicit_rollback(monkeypatch):
+def test_study_workbench_flag_defaults_on_and_accepts_explicit_rollback(monkeypatch, unset_setting):
     import deeper_notebook.feature_flags as feature_flags
 
-    monkeypatch.delenv("DEEPER_NOTEBOOK_STUDY_WORKBENCH", raising=False)
+    unset_setting("DEEPER_NOTEBOOK_STUDY_WORKBENCH")
     assert feature_flags.study_workbench_enabled() is True
 
     monkeypatch.setenv("DEEPER_NOTEBOOK_STUDY_WORKBENCH", "0")
     assert feature_flags.study_workbench_enabled() is False
 
 
-def test_source_visual_flag_defaults_on_and_accepts_explicit_rollback(monkeypatch):
+def test_source_visual_flag_defaults_on_and_accepts_explicit_rollback(monkeypatch, unset_setting):
     import deeper_notebook.feature_flags as flags
 
-    monkeypatch.delenv("DEEPER_NOTEBOOK_SOURCE_VISUALS_ENABLED", raising=False)
+    unset_setting("DEEPER_NOTEBOOK_SOURCE_VISUALS_ENABLED")
     assert flags.source_visuals_enabled() is True
 
     monkeypatch.setenv("DEEPER_NOTEBOOK_SOURCE_VISUALS_ENABLED", "1")
@@ -373,18 +367,11 @@ def test_studio_command_uses_service_not_router_import():
     assert "deeper_notebook.studio.artifact_generation" in command_src
 
 
-def test_research_runs_accepts_canonical_and_legacy_explicit_rollbacks(monkeypatch):
+def test_research_runs_accepts_canonical_and_legacy_explicit_rollbacks(monkeypatch, unset_setting):
     import deeper_notebook.feature_flags as feature_flags
 
-    legacy_long_prefix = "_".join(("OPEN", "NOTEBOOK"))
     legacy_short_prefix = "ONP" + "_"
-    for name in (
-        "DEEPER_NOTEBOOK_RESEARCH_RUNS",
-        "DN_RESEARCH_RUNS",
-        f"{legacy_long_prefix}_RESEARCH_RUNS",
-        f"{legacy_short_prefix}RESEARCH_RUNS",
-    ):
-        monkeypatch.delenv(name, raising=False)
+    unset_setting("DEEPER_NOTEBOOK_RESEARCH_RUNS")
     assert feature_flags.research_runs_enabled() is True
 
     monkeypatch.setenv("DEEPER_NOTEBOOK_RESEARCH_RUNS", "0")

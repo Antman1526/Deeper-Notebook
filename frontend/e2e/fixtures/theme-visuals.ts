@@ -154,6 +154,28 @@ export async function installThemeVisualFixture(
   }, unexpectedRequests)
   await fulfillJson(page, '/api/updates/check', updateStatus, unexpectedRequests)
   await fulfillJson(page, '/api/runtime/snapshot', runtimeSnapshot, unexpectedRequests)
+  // v0.8.130 — every page reads the feature flags; the gallery test still overrides this
+  // route with its own method checks.
+  await fulfillJson(page, '/api/features', {
+    features: {
+      evidenceStudio: true,
+      visualRefresh: true,
+      modelFleet: true,
+      researchRuns: true,
+      studyWorkbench: true,
+      sourceVisuals: true,
+    },
+  }, unexpectedRequests)
+  // v0.8.130 — the Settings retention card (b9d110d3, 2026-09-11) postdates this fixture.
+  await fulfillJson(page, '/api/studio/retention/status', {
+    enabled: false,
+    interval_hours: 24,
+    revision_keep_per_artifact: 5,
+    stale_export_max_age_days: 30,
+    dry_run_default: true,
+    last_run_at: null,
+    last_report: null,
+  }, unexpectedRequests)
   await fulfillJson(page, '/healthz/deep', {
     status: 'healthy',
     checks: {

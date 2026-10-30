@@ -6,6 +6,7 @@ import {
   type OverlayPage,
   type UpdateOverlayNote,
 } from '@/lib/api/overlay'
+import { shouldRetryIdempotentMutation } from '@/lib/api/query-client'
 import { vaultKeys } from '@/lib/hooks/use-vault'
 
 export const overlayKeys = {
@@ -55,6 +56,9 @@ export function useCreateUniqueOverlayNote() {
   const client = useQueryClient()
   return useMutation({
     mutationFn: (input: CreateUniqueOverlayNote) => overlayApi.unique(input),
+    // v0.8.130 — input.idempotency_key makes a repeated lost request safe.
+    // (A lambda, so the mutation's error type stays Error rather than unknown.)
+    retry: (failureCount, error) => shouldRetryIdempotentMutation(failureCount, error),
     onSuccess: (page) => invalidateCreatedPage(client, page),
   })
 }

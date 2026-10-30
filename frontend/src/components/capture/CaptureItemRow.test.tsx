@@ -5,6 +5,13 @@ import { captureApi } from '@/lib/api/capture'
 import { CaptureInbox } from './CaptureInbox'
 import { CaptureItemRow } from './CaptureItemRow'
 
+// Echo interpolation values so the compact cover's alt text still carries the linked visual's alt_text.
+vi.mock('@/lib/hooks/use-translation', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown>) => (options ? `${key} ${JSON.stringify(options)}` : key),
+  }),
+}))
+
 const { mockVisualSystemEnabled, mockSourceVisualsEnabled, mockCaptureItems } = vi.hoisted(() => ({
   mockVisualSystemEnabled: vi.fn(() => false),
   mockSourceVisualsEnabled: vi.fn(() => false),
@@ -83,16 +90,16 @@ describe('CaptureItemRow', () => {
       />
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Review route' }))
+    fireEvent.click(screen.getByRole('button', { name: 'capture.captureItemRow.reviewRoute' }))
 
     await waitFor(() =>
-      expect(screen.getByText('Local transcript preview')).toBeInTheDocument()
+      expect(screen.getByText('capture.captureItemRow.transcriptPreview')).toBeInTheDocument()
     )
     expect(
       screen.getByText('Compare the private research source.')
     ).toBeInTheDocument()
     expect(screen.getByText('Private Research')).toBeInTheDocument()
-    expect(screen.getByText(/original file remains where it is/i)).toBeInTheDocument()
+    expect(screen.getByText('capture.captureItemRow.reviewOnly')).toBeInTheDocument()
     expect(route).toHaveBeenCalledWith('/Users/antman/inbox/voice-note.mp3')
     route.mockRestore()
   })
@@ -135,7 +142,7 @@ describe('CaptureItemRow', () => {
     )
 
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Review route' }))
+    fireEvent.click(screen.getByRole('button', { name: 'capture.captureItemRow.reviewRoute' }))
     await waitFor(() => expect(route).toHaveBeenCalledWith('/Users/antman/inbox/source-linked.mp3'))
     expect(await screen.findByText('Local duplicate preview')).toBeVisible()
     route.mockRestore()

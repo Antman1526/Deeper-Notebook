@@ -1,9 +1,10 @@
 'use client'
 
+import { getApiErrorMessage } from '@/lib/utils/error-handler'
+import { markErrorReported } from '@/lib/api/client'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useTranslation } from '@/lib/hooks/use-translation'
-import { AppShell } from '@/components/layout/AppShell'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -151,14 +152,16 @@ export default function SearchPage() {
         synthesis_model: customModels?.finalAnswer || modelDefaults?.default_reasoning_model || modelDefaults?.default_chat_model || undefined,
       })
       setDeepResearchResult(data)
-      toast.success('Deep Research brief ready')
+      toast.success(t('searchPage.searchPage.deepResearchReady'))
     } catch (err: unknown) {
+      markErrorReported(err) // v0.8.130 — this caller reports the failure itself
       console.error('Deep research error:', err)
-      toast.error(err instanceof Error ? err.message : 'Deep Research failed')
+      // v0.8.130 — a readable message, not axios's "Request failed with status code 500".
+      toast.error(t('searchPage.searchPage.deepResearchFailed'), { description: getApiErrorMessage(err, t) })
     } finally {
       setIsDeepResearching(false)
     }
-  }, [askQuestion, customModels, modelDefaults])
+  }, [askQuestion, customModels, modelDefaults, t])
 
   // v0.8.117 — named handlers for AskPanel/DeepResearchPanel, same
   // logic as the inline closures they replace.
@@ -166,18 +169,18 @@ export default function SearchPage() {
     if (!deepResearchResult) return
     void navigator.clipboard.writeText(deepResearchResult.research_brief)
     setCopiedBrief(true)
-    toast.success('Research brief copied')
+    toast.success(t('searchPage.searchPage.briefCopied'))
     setTimeout(() => setCopiedBrief(false), 2000)
-  }, [deepResearchResult])
+  }, [deepResearchResult, t])
 
   const handleSaveDeepResearchNote = useCallback(() => {
     if (!deepResearchResult) return
     setSavePayload({
-      question: `Deep Research: ${deepResearchResult.objective}`,
+      question: t('searchPage.searchPage.deepResearchQuestion', { objective: deepResearchResult.objective }),
       answer: deepResearchResult.research_brief,
     })
     setShowSaveDialog(true)
-  }, [deepResearchResult])
+  }, [deepResearchResult, t])
 
   const handleSaveAnswer = useCallback(() => {
     if (!ask.finalAnswer) return
@@ -253,7 +256,7 @@ export default function SearchPage() {
   }, [searchParams])
 
   return (
-    <AppShell>
+    <>
       {/* v0.7.164 — Visual sweep. Was `p-4 md:p-6` (smaller than every
           other dashboard page) + `text-xl md:text-2xl font-bold`
           (smaller H1). The Ask & Search page is a flagship feature
@@ -367,7 +370,8 @@ export default function SearchPage() {
                   <div className="space-y-2" role="group" aria-labelledby="search-type-label">
                     <span id="search-type-label" className="text-sm font-medium leading-none">{t('searchPage.searchType')}</span>
                     {!hasEmbeddingModel && (
-                      <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-500">
+                      // v0.8.130 — status colours from theme tokens (UI audit Phase 1)
+                      <div className="flex items-center gap-2 text-sm text-warning-ink">
                         <AlertCircle className="h-4 w-4" />
                         <span>{t('searchPage.vectorSearchWarning')}</span>
                       </div>
@@ -378,13 +382,13 @@ export default function SearchPage() {
                       onValueChange={(value: 'text' | 'vector' | 'hybrid') => setSearchType(value)}
                       disabled={modelsLoading || searchMutation.isPending}
                     >
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center gap-2">
                         <RadioGroupItem value="text" id="text" />
                         <Label htmlFor="text" className="font-normal cursor-pointer">
                           {t('searchPage.textSearch')}
                         </Label>
                       </div>
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center gap-2">
                         <RadioGroupItem
                           value="vector"
                           id="vector"
@@ -401,7 +405,7 @@ export default function SearchPage() {
                           NOT disabled without an embedding model: the backend
                           degrades to the text leg alone, which still beats the
                           400 that plain vector search returns. */}
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center gap-2">
                         <RadioGroupItem
                           value="hybrid"
                           id="hybrid"
@@ -424,7 +428,7 @@ export default function SearchPage() {
                   <div className="space-y-2" role="group" aria-labelledby="search-in-label">
                     <span id="search-in-label" className="text-sm font-medium leading-none">{t('searchPage.searchIn')}</span>
                     <div className="space-y-2">
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center gap-2">
                         <Checkbox
                           id="sources"
                           name="sources"
@@ -436,7 +440,7 @@ export default function SearchPage() {
                           {t('searchPage.searchSources')}
                         </Label>
                       </div>
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center gap-2">
                         <Checkbox
                           id="notes"
                           name="notes"
@@ -469,6 +473,6 @@ export default function SearchPage() {
         </Tabs>
       </div>
       </KnowledgeRouteFrame>
-    </AppShell>
+    </>
   )
 }

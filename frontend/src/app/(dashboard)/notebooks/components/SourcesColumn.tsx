@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback, type UIEvent, type DragEvent } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, type UIEvent, type DragEvent } from 'react'
 import { SourceListResponse } from '@/lib/types/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -8,9 +8,11 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, FileText, Link2, ChevronDown, Loader2, ListChecks, Compass } from 'lucide-react'
+import { Plus, FileText, Link2, Loader2, MoreHorizontal, Sparkles, Compass, ArrowLeft, Maximize2 } from 'lucide-react'
+import { SourceDetailContent } from '@/components/source/SourceDetailContent'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { EmptyState } from '@/components/common/EmptyState'
 import { AddSourceDialog } from '@/components/sources/AddSourceDialog'
@@ -54,6 +56,7 @@ interface SourcesColumnProps {
   hasNextPage?: boolean
   isFetchingNextPage?: boolean
   fetchNextPage?: () => void
+  inlineReader?: boolean
 }
 
 export function SourcesColumn({
@@ -67,12 +70,14 @@ export function SourcesColumn({
   hasNextPage,
   isFetchingNextPage,
   fetchNextPage,
+  inlineReader = false,
 }: SourcesColumnProps) {
   const { t } = useTranslation()
   const sourceVisualsEnabled = useSourceVisualsEnabled()
   const showVisualCover = isVisualSystemV2Enabled() && sourceVisualsEnabled
   const sourcesLabel = t('navigation.sources')
   const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [embedDialogOpen, setEmbedDialogOpen] = useState(false) // v0.8.130 — opened from Source options
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [addExistingDialogOpen, setAddExistingDialogOpen] = useState(false)
   // v0.8.87 — Discover sources (guarded web search) dialog.
@@ -87,6 +92,51 @@ export function SourcesColumn({
   // NOTE: needs a real in-app file-drag test to confirm the prefill lands.
   const [droppedFiles, setDroppedFiles] = useState<File[] | undefined>(undefined)
   const [isDragging, setIsDragging] = useState(false)
+  // v0.8.130 — the source last opened from this list stays marked after the reader closes, so
+  // the user can see where they were; it moves only when another source is opened.
+  const [activeSourceId, setActiveSourceId] = useState<string | null>(null)
+  const [inlinePreview, setInlinePreview] = useState<{ sourceId: string; highlightQuery?: string } | null>(null)
+  const { sourcesCollapsed, toggleSources, setSources } = useNotebookColumnsStore()
+
+  useEffect(() => {
+    const handlePreviewSource = (event: Event) => {
+      const customEvent = event as CustomEvent<{ sourceId?: string; highlightQuery?: string }>
+      const rawId = customEvent.detail?.sourceId
+      if (!rawId) return
+      customEvent.preventDefault()
+      if (sourcesCollapsed) {
+        if (typeof setSources === 'function') setSources(false)
+        else toggleSources()
+      }
+      const normalizedId = rawId.includes(':') ? rawId : `source:${rawId}`
+      setInlinePreview({ sourceId: normalizedId, highlightQuery: customEvent.detail?.highlightQuery })
+      // v0.8.130 — a source opened from a citation is the one the user is reading, too.
+      setActiveSourceId(normalizedId)
+    }
+    window.addEventListener('dn:preview-source', handlePreviewSource)
+    return () => window.removeEventListener('dn:preview-source', handlePreviewSource)
+  }, [sourcesCollapsed, setSources, toggleSources])
+
+  // v0.8.130 — tell the workspace when reading starts and stops, so it can widen this
+  // column while a source is open (and give the width back afterwards).
+  const readerOpen = inlinePreview !== null
+  const announcedReader = useRef(false)
+  useEffect(() => {
+    if (readerOpen === announcedReader.current) return
+    announcedReader.current = readerOpen
+    window.dispatchEvent(new CustomEvent('dn:inline-reader', { detail: { open: readerOpen } }))
+  }, [readerOpen])
+
+  useEffect(() => {
+    if (!inlinePreview) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setInlinePreview(null)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [inlinePreview])
 
   const handleDragOver = useCallback((e: DragEvent) => {
     if (e.dataTransfer?.types?.includes('Files')) {
@@ -115,7 +165,6 @@ export function SourcesColumn({
   const removeFromNotebook = useRemoveSourceFromNotebook()
 
   // Collapsible column state
-  const { sourcesCollapsed, toggleSources } = useNotebookColumnsStore()
   const collapseButton = useMemo(
     () => createCollapseButton(toggleSources, sourcesLabel),
     [toggleSources, sourcesLabel]
@@ -190,7 +239,18 @@ export function SourcesColumn({
     }
   }
 
+  // v0.8.130 — the title shown in the reader's bar.
+  const inlinePreviewTitle = inlinePreview
+    ? sources?.find((item) => item.id === inlinePreview.sourceId || `source:${item.id}` === inlinePreview.sourceId)?.title ?? null
+    : null
+
   const handleSourceClick = (sourceId: string) => {
+    setActiveSourceId(sourceId)
+    if (inlineReader) {
+      const normalizedId = sourceId.includes(':') ? sourceId : `source:${sourceId}`
+      setInlinePreview({ sourceId: normalizedId })
+      return
+    }
     openModal('source', sourceId)
   }
 
@@ -203,72 +263,89 @@ export function SourcesColumn({
         collapsedLabel={t('navigation.sources')}
       >
         <Card
+          data-dn-column=""
           className="relative h-full flex flex-col flex-1 overflow-hidden"
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
           {isDragging && (
-            <div className="pointer-events-none absolute inset-0 z-20 m-2 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-primary/10 backdrop-blur-sm">
+            <div className="pointer-events-none absolute inset-0 z-20 m-2 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-card/90">
+              {/* v0.8.130 — no blur (the design rules ban glass); a near-opaque paper fill instead. */}
               <p className="text-sm font-medium text-primary">
                 {t('sources.dropToAdd', { defaultValue: 'Drop files to add as sources' })}
               </p>
             </div>
           )}
-          <CardHeader className="pb-3 flex-shrink-0">
-            <div className="flex items-center justify-between gap-2">
-              <CardTitle className="text-lg">{t('navigation.sources')}</CardTitle>
-              <div className="flex items-center gap-2">
-                {onBulkContextModeChange && sources && sources.length > 0 && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm" title={t('sources.bulkContext')}>
-                        <ListChecks className="h-4 w-4" />
-                        <ChevronDown className="h-4 w-4 ml-1" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => onBulkContextModeChange('insights')}>
-                        {t('sources.includeAllInsights')}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => onBulkContextModeChange('full')}>
-                        {t('sources.includeAllFull')}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => onBulkContextModeChange('exclude')}>
-                        {t('sources.excludeAllFromContext')}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-                <BulkVectorizeButton notebookId={notebookId} />
-                <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
-                  <DropdownMenuTrigger asChild>
-                    <Button size="sm">
-                      <Plus className="h-4 w-4 mr-2" />
-                      {t('sources.addSource')}
-                      <ChevronDown className="h-4 w-4 ml-2" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => { setDropdownOpen(false); setAddDialogOpen(true); }}>
-                      <Plus className="h-4 w-4 mr-2" />
-                      {t('sources.addSource')}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => { setDropdownOpen(false); setAddExistingDialogOpen(true); }}>
-                      <Link2 className="h-4 w-4 mr-2" />
-                      {t('sources.addExistingTitle')}
-                    </DropdownMenuItem>
-                    {/* v0.8.87 — Discover: guarded web search → add link sources. */}
-                    <DropdownMenuItem onClick={() => { setDropdownOpen(false); setDiscoverDialogOpen(true); }}>
-                      <Compass className="h-4 w-4 mr-2" />
-                      {t('sources.discover', { defaultValue: 'Discover sources' })}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                {collapseButton}
-              </div>
+          <CardHeader className="flex-shrink-0">
+            {/* v0.8.130 — Phase 2b: the header holds the title and collapse only. With the
+                actions beside it, "Sources" truncated to "So…" (1440px) or "S" (1024px). */}
+            <div className="flex items-center gap-1">
+              {/* v0.8.130 — Phase 4b: the column title is the h2 its cards sit under. */}
+              <CardTitle role="heading" aria-level={2} className="min-w-0 flex-1 truncate text-base font-medium">{t('navigation.sources')}</CardTitle>
+              {collapseButton}
             </div>
           </CardHeader>
+
+          {/* v0.8.130 — Phase 2b: a full-width Add row (NotebookLM's "+ Add sources"), with bulk
+              context and Embed all in one options menu beside it. It also replaces the empty
+              state's own Add button, so the page keeps a single "Add Source" control. */}
+          {!inlinePreview && (
+          <div data-dn-column-actions="" className="flex flex-none items-center gap-2 px-4 pt-3">
+            <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
+              <DropdownMenuTrigger asChild>
+                {/* v0.8.130 — visible "Add" (NotebookLM's label); "Add Source" truncated in a 20% column. */}
+                <Button variant="outline" className="min-w-0 flex-1 rounded-md" aria-label={t('sources.addSource')}>
+                  <Plus className="h-4 w-4" />
+                  <span className="truncate">{t('common.add')}</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onClick={() => { setDropdownOpen(false); setAddDialogOpen(true); }}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  {t('sources.addSource')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => { setDropdownOpen(false); setAddExistingDialogOpen(true); }}>
+                  <Link2 className="h-4 w-4 mr-2" />
+                  {t('sources.addExistingTitle')}
+                </DropdownMenuItem>
+                {/* v0.8.87 — Discover: guarded web search → add link sources. */}
+                <DropdownMenuItem onClick={() => { setDropdownOpen(false); setDiscoverDialogOpen(true); }}>
+                  <Compass className="h-4 w-4 mr-2" />
+                  {t('sources.discover', { defaultValue: 'Discover sources' })}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="size-8" aria-label={t('sources.sourceOptions')} title={t('sources.sourceOptions')}>
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {onBulkContextModeChange && sources && sources.length > 0 && (
+                  <>
+                    <DropdownMenuItem onClick={() => onBulkContextModeChange('insights')}>
+                      {t('sources.includeAllInsights')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onBulkContextModeChange('full')}>
+                      {t('sources.includeAllFull')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onBulkContextModeChange('exclude')}>
+                      {t('sources.excludeAllFromContext')}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
+                <DropdownMenuItem onClick={() => setEmbedDialogOpen(true)}>
+                  <Sparkles className="h-4 w-4 mr-2" />
+                  {t('notebooks.bulkVectorize.button')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <BulkVectorizeButton notebookId={notebookId} open={embedDialogOpen} onOpenChange={setEmbedDialogOpen} hideTrigger />
+          </div>
+          )}
 
           {/* v0.7.45 — body splits into three render paths:
               1. Loading: spinner (unchanged)
@@ -280,7 +357,63 @@ export function SourcesColumn({
                   hook fires via the virtualizer's onScroll instead of
                   the old addEventListener pattern. */}
           <CardContent onScroll={handleScroll} className="flex-1 overflow-y-auto min-h-0">
-            {isLoading ? (
+            {inlinePreview ? (
+              <div className="flex flex-col gap-3" data-testid="inline-source-reader" data-dn-inline-reader="">
+                {/* v0.8.130 — the bar stays at the top of the column while a long source
+                    scrolls (it scrolled away with the text), and names the source being
+                    read. Opaque paper, no blur (the design rules ban glass). The negative
+                    margins match the workspace's column padding (workspace.css) so it
+                    spans the column edge to edge. */}
+                <div
+                  data-testid="inline-source-reader-bar"
+                  className="sticky -top-3 z-10 -mx-4 -mt-3 grid grid-cols-[auto_1fr_auto] items-center gap-x-2 border-b border-border/60 bg-card px-4 py-1.5"
+                >
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => setInlinePreview(null)}
+                  >
+                    <ArrowLeft className="h-4 w-4 mr-1.5" />
+                    {t('navigation.sources')}
+                  </Button>
+                  <span />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 shrink-0"
+                    aria-label={t('sources.detailsTitle')}
+                    title={t('sources.detailsTitle')}
+                    onClick={() => {
+                      const targetId = inlinePreview.sourceId
+                      setInlinePreview(null)
+                      openModal('source', targetId)
+                    }}
+                  >
+                    <Maximize2 className="h-4 w-4" />
+                  </Button>
+                  {/* The source's title on its own line: beside the buttons a narrow
+                      column left room for a single letter. */}
+                  {inlinePreviewTitle ? (
+                    <span
+                      className="col-span-3 block min-w-0 truncate pb-0.5 text-sm font-medium"
+                      title={inlinePreviewTitle}
+                    >
+                      {inlinePreviewTitle}
+                    </span>
+                  ) : null}
+                </div>
+                <SourceDetailContent
+                  sourceId={inlinePreview.sourceId}
+                  showChatButton={false}
+                  highlightQuery={inlinePreview.highlightQuery}
+                  notebookId={notebookId}
+                  onClose={() => setInlinePreview(null)}
+                />
+              </div>
+            ) : isLoading ? (
               <div className="flex items-center justify-center py-8">
                 <LoadingSpinner />
               </div>
@@ -289,15 +422,8 @@ export function SourcesColumn({
                 icon={FileText}
                 title={t('sources.noSourcesYet')}
                 description={t('sources.createFirstSource')}
-                action={
-                  // v0.8.75 — actionable empty state (improvement roadmap,
-                  // Batch 1): a clear CTA to add the first source instead of a
-                  // dead-end message. Opens the existing AddSourceDialog.
-                  <Button size="sm" onClick={() => setAddDialogOpen(true)}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    {t('sources.addSource')}
-                  </Button>
-                }
+                // v0.8.130 — Phase 2b: the column's Add row is the call to action (v0.8.75's
+                // empty-state button duplicated it).
               />
             ) : sources.length >= VIRTUALIZE_THRESHOLD ? (
               <VirtualizedListAuto
@@ -318,6 +444,7 @@ export function SourcesColumn({
                       showVisualCover={showVisualCover}
                       showRemoveFromNotebook={true}
                       notebookId={notebookId}
+                      active={source.id === activeSourceId}
                       contextMode={contextSelections?.[source.id]}
                       onContextModeChange={onContextModeChange
                         ? (mode) => onContextModeChange(source.id, mode)
@@ -346,6 +473,7 @@ export function SourcesColumn({
                     showVisualCover={showVisualCover}
                     showRemoveFromNotebook={true}
                     notebookId={notebookId}
+                    active={source.id === activeSourceId}
                     contextMode={contextSelections?.[source.id]}
                     onContextModeChange={onContextModeChange
                       ? (mode) => onContextModeChange(source.id, mode)

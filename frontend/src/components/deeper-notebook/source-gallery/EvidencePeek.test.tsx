@@ -7,6 +7,15 @@ vi.mock('@/lib/api/sources', () => ({
   sourcesApi: { locatePassage },
 }))
 
+// Keys come back unchanged; interpolated values are appended so names that
+// embed a source title stay distinguishable.
+vi.mock('@/lib/hooks/use-translation', () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: Record<string, unknown>) =>
+      opts ? `${key} ${Object.values(opts).join(' ')}` : key,
+  }),
+}))
+
 import { EvidencePeek } from './EvidencePeek'
 
 describe('EvidencePeek', () => {
@@ -25,14 +34,14 @@ describe('EvidencePeek', () => {
 
     await waitFor(() => expect(locatePassage).toHaveBeenCalledWith('source:one', 'Exact evidence query'))
     expect(await screen.findByText('Exact returned source passage.')).toBeVisible()
-    expect(screen.getByText('Match confidence: 88%')).toBeVisible()
+    expect(screen.getByText('workspace.evidencePeek.matchConfidence 88')).toBeVisible()
   })
 
   it('does not locate or infer evidence when no existing query is available', () => {
     render(<EvidencePeek sourceId="source:one" title="Field notes" evidenceQuery={null} onClose={vi.fn()} />)
 
     expect(locatePassage).not.toHaveBeenCalled()
-    expect(screen.getByText('Evidence passage unavailable')).toBeVisible()
+    expect(screen.getByText('workspace.evidencePeek.unavailable')).toBeVisible()
   })
 
   it('closes on Escape while retaining scroll and returning focus to the invoker', () => {

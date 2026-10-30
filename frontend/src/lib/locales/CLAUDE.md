@@ -14,14 +14,16 @@ lib/
 │   └── date-locale.ts   # date-fns locale mapping
 └── locales/
     ├── index.ts         # Locale registry and type exports
-    ├── en-US/index.ts   # English translations
-    ├── pt-BR/index.ts   # Brazilian Portuguese translations
-    ├── zh-CN/index.ts   # Simplified Chinese translations
-    ├── zh-TW/index.ts   # Traditional Chinese translations
-    ├── ja-JP/index.ts   # Japanese translations
-    ├── ru-RU/index.ts   # Russian translations
-    └── bn-IN/index.ts   # Bengali translations
+    ├── en-US/index.ts   # English: the source of truth for keys
+    └── <code>/index.ts  # 13 more: bn-IN, ca-ES, de-DE, es-ES, fr-FR, it-IT, ja-JP,
+                         #          pl-PL, pt-BR, ru-RU, tr-TR, zh-CN, zh-TW
 ```
+
+Related: `components/common/RichText.tsx` renders translated sentences that contain
+inline markup; `components/providers/DocumentTitle.tsx` sets the browser tab title
+from the navigation keys; `components/providers/I18nProvider.tsx` keeps
+`<html lang>` in step with the UI language; `lib/enum-labels.ts` maps API enum values
+to keys.
 
 ## Key Components
 
@@ -32,7 +34,10 @@ lib/
 
 ## Translation Structure
 
-Each locale file exports a flat object with nested keys:
+Each locale file exports one nested object. Later additions are appended at the end of
+the file as `Object.assign(ensureSection(rootNode, 'a'), { ... })` blocks (the same
+helper exists in every locale), so a key's location can differ between files — search by
+key path, not by line.
 
 ```typescript
 export const enUS = {
@@ -70,8 +75,13 @@ function MyComponent() {
   // Standard t() function call
   return <h1>{t('notebooks.title')}</h1>
 
-  // With string interpolation
-  return <p>{t('common.updated').replace('{time}', timeAgo)}</p>
+  // With interpolation ({{name}} in the locale value). Older keys use a single-brace
+  // {time} that callers substitute with .replace(); keep whichever style a key has.
+  return <button>{t('knowledge.closeTab', { title })}</button>
+
+  // A sentence with an inline element: ONE key with tags, never lead/tail fragments.
+  // en-US: "Tip: hit <key/> from anywhere to jump to a notebook."
+  return <RichText text={t('workspace.workspaceHome.tip')} components={{ key: () => <Kbd>⌘K</Kbd> }} />
 
   // Change language
   await setLanguage('zh-CN')
@@ -89,6 +99,28 @@ const getNavigation = (t: TFunction) => [
   { name: t('navigation.sources'), href: '/sources' },
 ]
 ```
+
+## Conventions (v0.8.130 whole-app pass)
+
+- **No hard-coded UI English.** Every user-visible string — text, aria-label, title,
+  placeholder, toast, confirm text — comes from `t()`. Product names (Deeper Notebook,
+  Evidence Studio, Course Pack…), model names and code values stay literal.
+- **Key names**: `<area>.<componentCamel>.<name>` (e.g. `study.tutorDock.emptyTitle`).
+  Reuse an existing key only when its en-US value is character-identical.
+- **Every key appears as a string literal in source** (`t('a.b')` or `'a.b'` in a map),
+  so `keys-exist.test.ts` can check it. Avoid template-built keys.
+- **No i18next plural suffixes** (`_one`/`_other`): key parity forbids per-language plural
+  sets. Mirror the code's own branch with two keys (`sourceCountOne` / `sourceCountOther`).
+  Russian and Polish write the Other form count-neutral ("Источников: {{count}}").
+- **Inline elements** use one key with tags rendered by `RichText` (see above). Self-closing
+  tags (`<path/>`) are filled by the component; wrapping tags (`<link>…</link>`) wrap
+  translated text. `markup.test.ts` requires every locale to keep the en-US tags.
+- **API enum values** shown as text go through `enumLabel(t, KEYS, value)` from
+  `lib/enum-labels.ts`; unknown values fall back to the raw text.
+- **en-US is sentence case** (`sentence-case.test.ts`); add genuine proper nouns to its list.
+- **Terminology**: each locale keeps one word per concept, matching its `navigation.*`
+  labels (e.g. de "Notizbuch", "Tresor"; it "quaderno"; Study ≠ Studio everywhere).
+  German uses formal "Sie".
 
 ## Important Patterns
 
@@ -133,6 +165,8 @@ const getNavigation = (t: TFunction) => [
 - **No SSR**: `useSuspense: false` disables React Suspense for i18next (avoids hydration issues)
 - **All keys required**: Missing keys in non-English locales fall back to English; keep locales in sync
 - **ErrorBoundary**: Uses raw `enUS` locale object directly (class component, can't use hooks)
+- **Route titles**: Next.js route metadata renders on the server in English, so tab titles are
+  set on the client by `DocumentTitle`; don't add `metadata.title` to route layouts.
 
 ## Testing Patterns
 
@@ -146,9 +180,12 @@ vi.mock('@/lib/hooks/use-translation', () => ({
   }),
 }))
 
-// Test locale completeness
-import { enUS, zhCN } from '@/lib/locales'
-const enKeys = Object.keys(flatten(enUS))
-const zhKeys = Object.keys(flatten(zhCN))
-expect(zhKeys).toEqual(enKeys)  // All keys present
+// The global mock returns the key and does no interpolation. Where an assertion needs
+// a count or name, add a file-local mock that resolves the real en-US strings
+// (see components/deeper-notebook/ArtifactRail.test.tsx) instead of dropping it.
 ```
+
+Locale tests in this folder: `index.test.ts` (key parity), `placeholders.test.ts`,
+`markup.test.ts`, `keys-exist.test.ts` (every literal key exists in en-US),
+`sentence-case.test.ts`, `ui-audit-copy.test.ts`. `e2e/i18n-locales.spec.ts` checks the
+live app in German and Japanese.

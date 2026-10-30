@@ -64,7 +64,7 @@ vi.mock('@/lib/hooks/use-notebooks', () => ({
 }))
 vi.mock('@/lib/hooks/use-translation', () => ({
   useTranslation: () => ({
-    t: (key: string, options?: { query?: string }) => ({
+    t: (key: string, options?: { query?: string; theme?: string }) => ({
       'common.quickActions': 'Quick actions',
       'common.quickActionsDesc': 'Quick actions description',
       'common.search': 'Search',
@@ -119,6 +119,10 @@ vi.mock('@/lib/hooks/use-translation', () => ({
       'knowledge.semanticSearchFor': `Semantic search for ${options?.query ?? ''}`,
       'knowledge.semanticSearchResults': 'Semantic results',
       'knowledge.semanticUnavailable': 'Semantic search unavailable',
+      'workspace.themePreviewCard.applyLabel': `Apply ${options?.theme ?? '{theme}'}`,
+      'workspace.themePreviewCard.articleLabel': `${options?.theme ?? '{theme}'} theme`,
+      'workspace.themePreviewCard.current': 'Current',
+      'workspace.themeSwitcher.currentTheme': 'Current theme',
     }[key] ?? key),
   }),
 }))
@@ -258,7 +262,7 @@ describe('CommandPalette', () => {
     renderPalette()
     fireEvent.keyDown(document, { key: 'k', metaKey: true })
 
-    const focusCommand = await screen.findByRole('option', { name: 'Enter Focus mode' })
+    const focusCommand = await screen.findByRole('option', { name: 'common.commandPalette.enterFocusMode' })
     expect(focusCommand).toBeVisible()
     fireEvent.click(focusCommand)
 

@@ -103,7 +103,8 @@ export function SpeakerProfilesPanel({
                           {profile.name}
                         </CardTitle>
                         {unconfigured ? (
-                          <Badge variant="outline" className="text-amber-600 border-amber-300 text-xs">
+                          // v0.8.130 — status colours from theme tokens (UI audit Phase 1)
+                          <Badge variant="warning">
                             <AlertTriangle className="h-3 w-3 mr-1" />
                             {t('podcasts.setupRequired')}
                           </Badge>

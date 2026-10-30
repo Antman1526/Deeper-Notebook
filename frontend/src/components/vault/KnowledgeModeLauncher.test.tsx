@@ -2,6 +2,26 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { KnowledgeTab } from '@/lib/api/knowledge-workspace'
+
+// The six mode buttons share one interpolated aria-label key, so an identity `t`
+// cannot tell them apart. Resolve just the keys this component uses to their English.
+vi.mock('@/lib/hooks/use-translation', () => {
+  const en: Record<string, string> = {
+    'knowledge.knowledgeModeLauncher.modes': 'Research modes',
+    'knowledge.knowledgeModeLauncher.modeAria': '{{label}} (Alt+{{shortcut}})',
+    'knowledge.knowledgeModeLauncher.unsavedDraft': 'Unsaved Overlay draft remains open',
+    'knowledge.commands.modeRead': 'Read',
+    'knowledge.commands.modeWrite': 'Write',
+    'knowledge.commands.modeAsk': 'Ask',
+    'knowledge.commands.modeSearch': 'Search',
+    'knowledge.commands.modeGraph': 'Graph',
+    'knowledge.commands.modePodcast': 'Podcast',
+  }
+  const t = (key: string, options?: Record<string, unknown>) => (en[key] ?? key)
+    .replace(/\{\{(\w+)\}\}/g, (_match, name: string) => String(options?.[name] ?? ''))
+  return { useTranslation: () => ({ t, language: 'en-US', setLanguage: vi.fn() }) }
+})
+
 import { KnowledgeModeLauncher } from './KnowledgeModeLauncher'
 
 const readTab: KnowledgeTab = {

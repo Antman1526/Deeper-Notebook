@@ -6,6 +6,7 @@ import { TutorDock } from '@/components/study/TutorDock'
 import type { StudyVoiceTranscriptEvent } from '@/components/study/TutorDock'
 import { StudyVoiceTutor } from '@/components/study/StudyVoiceTutor'
 import { studyVoiceApi, type StudyVoiceCapability } from '@/lib/api/study-voice'
+import { useTranslation } from '@/lib/hooks/use-translation'
 
 export interface StudyLearningSessionProps {
   planId: string
@@ -22,6 +23,7 @@ export function StudyLearningSession({
   approvedNetworkScope = [],
   voiceCapability,
 }: StudyLearningSessionProps) {
+  const { t } = useTranslation()
   const [discoveredCapability, setDiscoveredCapability] = useState<StudyVoiceCapability>(
     voiceCapability ?? { stt: 'unavailable', tts: 'unavailable' },
   )
@@ -48,10 +50,10 @@ export function StudyLearningSession({
   return (
     <section aria-labelledby="study-learning-session-heading" className="space-y-4">
       <div>
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Learn</p>
-        <h2 id="study-learning-session-heading" className="text-xl font-semibold">Learning session</h2>
+        <p className="text-xs font-medium text-muted-foreground">{t('study.studyLearningSession.eyebrow')}</p>
+        <h2 id="study-learning-session-heading" className="text-xl font-semibold">{t('study.studyLearningSession.heading')}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Ask one foreground tutor for a cited explanation, coaching, or a bounded proposal. The original sources remain read-only.
+          {t('study.studyLearningSession.description')}
         </p>
       </div>
       <TutorDock

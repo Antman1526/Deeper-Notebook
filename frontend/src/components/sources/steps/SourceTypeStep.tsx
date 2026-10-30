@@ -5,6 +5,7 @@ import { Control, FieldErrors, UseFormRegister, UseFormSetValue, useWatch } from
 import type { TFunction } from 'i18next'
 import { FileIcon, LinkIcon, FileTextIcon } from "lucide-react"
 import { useTranslation } from "@/lib/hooks/use-translation"
+import { formatDecimal } from "@/lib/utils/format"
 import { FormSection } from "@/components/ui/form-section"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
@@ -84,9 +85,9 @@ export function getOversizedFiles(
   return filesFromInput(input).filter(file => file.size > maxBytes)
 }
 
-export function formatBytes(bytes: number): string {
+export function formatBytes(bytes: number, language = 'en-US'): string {
   if (bytes >= 1024 * 1024 * 1024) {
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
+    return `${formatDecimal(bytes / (1024 * 1024 * 1024), language, 1)} GB`
   }
   if (bytes >= 1024 * 1024) {
     return `${Math.round(bytes / (1024 * 1024))} MB`
@@ -102,19 +103,16 @@ const getSourceTypes = (t: TFunction) => [
     value: 'link' as const,
     label: t('sources.addUrl'),
     icon: LinkIcon,
-    description: t('sources.processDescription'),
   },
   {
     value: 'upload' as const,
     label: t('sources.uploadFile'),
     icon: FileIcon,
-    description: t('sources.processDescription'),
   },
   {
     value: 'text' as const,
     label: t('sources.enterText'),
     icon: FileTextIcon,
-    description: t('sources.processDescription'),
   },
 ]
 
@@ -139,7 +137,7 @@ export function SourceTypeStep({
   onClearUrlErrors,
   sourceUploadMaxBytes,
 }: SourceTypeStepProps) {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   // Watch the selected type and inputs to detect batch mode
   const selectedType = useWatch({ control, name: 'type' })
   const urlInput = useWatch({ control, name: 'url' })
@@ -200,10 +198,7 @@ export function SourceTypeStep({
   const isOverLimit = itemCount > MAX_BATCH_SIZE
   return (
     <div className="space-y-6">
-      <FormSection
-        title={t('sources.title')}
-        description={t('sources.processDescription')}
-      >
+      <FormSection title={t('sources.title')}>
         <Controller
           control={control}
           name="type"
@@ -227,8 +222,6 @@ export function SourceTypeStep({
               
               {getSourceTypes(t).map((type) => (
                 <TabsContent key={type.value} value={type.value} className="mt-4">
-                  <p className="text-sm text-muted-foreground mb-4">{type.description}</p>
-                  
                   {/* Type-specific fields */}
                   {type.value === 'link' && (
                     <div>
@@ -309,7 +302,7 @@ export function SourceTypeStep({
                                 <FileIcon className="h-3 w-3" />
                                 <span className="truncate">{file.name}</span>
                                 <span className="text-muted-foreground/50">
-                                  ({formatBytes(file.size)})
+                                  ({formatBytes(file.size, language)})
                                 </span>
                               </li>
                             ))}
@@ -327,14 +320,14 @@ export function SourceTypeStep({
                       {oversizedFiles.length > 0 && sourceUploadMaxBytes && (
                         <div className="mt-2 p-3 bg-destructive/10 rounded-md border border-destructive/20">
                           <p className="text-sm font-medium text-destructive">
-                            {t('sources.filesTooLarge').replace('{limit}', formatBytes(sourceUploadMaxBytes))}
+                            {t('sources.filesTooLarge').replace('{limit}', formatBytes(sourceUploadMaxBytes, language))}
                           </p>
                           <ul className="mt-2 space-y-1">
                             {oversizedFiles.map((file, idx) => (
                               <li key={idx} className="text-xs text-destructive flex items-center gap-2">
                                 <FileIcon className="h-3 w-3" />
                                 <span className="truncate">{file.name}</span>
-                                <span>({formatBytes(file.size)})</span>
+                                <span>({formatBytes(file.size, language)})</span>
                               </li>
                             ))}
                           </ul>
@@ -347,8 +340,9 @@ export function SourceTypeStep({
                     <div>
                       <Label htmlFor="content" className="mb-2 block">{t('sources.textContentLabel')}</Label>
                       {hasHtmlContent && (
-                        <div className="mb-2 p-2 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-md">
-                          <p className="text-sm text-blue-700 dark:text-blue-300">
+                        // v0.8.130 — info tint from theme tokens (UI audit Phase 1)
+                        <div className="mb-2 p-2 bg-info-soft border border-info/30 rounded-md">
+                          <p className="text-sm text-info-ink">
                             {t('sources.htmlDetected')}
                           </p>
                         </div>

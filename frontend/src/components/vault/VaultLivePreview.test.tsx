@@ -3,6 +3,17 @@ import { EditorSelection } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { describe, expect, it, vi } from 'vitest'
 
+// These assertions rely on interpolated titles/levels in accessible names, which an identity `t`
+// would drop. Resolve just those keys to their English.
+vi.mock('@/lib/hooks/use-translation', () => {
+  const en: Record<string, string> = {
+    'knowledge.vaultLivePreview.livePreview': '{{title}} live preview',
+  }
+  const t = (key: string, options?: Record<string, unknown>) => (en[key] ?? key)
+    .replace(/\{\{(\w+)\}\}/g, (_match, name: string) => String(options?.[name] ?? ''))
+  return { useTranslation: () => ({ t, language: 'en-US', setLanguage: vi.fn() }) }
+})
+
 import { VaultLivePreview } from './VaultLivePreview'
 
 const resolvedLinkFixture = {

@@ -20,13 +20,13 @@ function source(overrides: Partial<SourceListResponse>): SourceListResponse {
 
 describe('SourceHealthPill', () => {
   it.each([
-    [source({ status: 'completed', embedded: true }), 'Ready', false],
-    [source({ status: 'failed', embedded: false }), 'Failed', true],
-    [source({ status: 'running', embedded: false }), 'Processing', true],
-    [source({ status: 'queued', embedded: false }), 'Queued', true],
-    [source({ status: 'completed', embedded: false }), 'Not embedded', true],
-    [source({ status: 'completed', embedded: true, extraction_quality: 'no_text' }), 'No text', true],
-    [source({ status: 'completed', embedded: true, extraction_quality: 'low_text' }), 'Low text', false],
+    [source({ status: 'completed', embedded: true }), 'workspace.sourceHealthPill.ready', false],
+    [source({ status: 'failed', embedded: false }), 'workspace.sourceHealthPill.failed', true],
+    [source({ status: 'running', embedded: false }), 'workspace.sourceHealthPill.processing', true],
+    [source({ status: 'queued', embedded: false }), 'workspace.sourceHealthPill.queued', true],
+    [source({ status: 'completed', embedded: false }), 'workspace.sourceHealthPill.notEmbedded', true],
+    [source({ status: 'completed', embedded: true, extraction_quality: 'no_text' }), 'workspace.sourceHealthPill.noText', true],
+    [source({ status: 'completed', embedded: true, extraction_quality: 'low_text' }), 'workspace.sourceHealthPill.lowText', false],
   ])('renders %s source readiness', (row, label, blocksGeneration) => {
     render(<SourceHealthPill source={row} />)
 

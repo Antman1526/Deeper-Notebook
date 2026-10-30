@@ -76,6 +76,7 @@ def _db_pool_disabled() -> bool:
 # import doesn't try to talk to SurrealDB at module-load time.
 _pool: Optional[asyncio.Queue] = None
 _pool_lock: Optional[asyncio.Lock] = None
+_pool_loop: Optional[asyncio.AbstractEventLoop] = None
 _pool_total: int = 0
 _pool_cap: int = 0
 
@@ -95,13 +96,34 @@ async def _ensure_pool_init() -> None:
 
     Must be called from inside an event loop (the asyncio primitives
     require one). All pool acquires go through this path.
+    Re-initializes cleanly when called from a different event loop than
+    the one that created the existing Queue/Lock (e.g. CLI commands,
+    worker threads, or per-test event loops).
     """
-    global _pool, _pool_lock, _pool_cap
-    if _pool is not None and _pool_lock is not None:
+    global _pool, _pool_lock, _pool_loop, _pool_cap, _pool_total
+    loop = asyncio.get_running_loop()
+    if _pool is not None and _pool_lock is not None and _pool_loop is loop:
         return
+    if _pool is not None:
+        old_pool = _pool
+        while True:
+            try:
+                old_conn = old_pool.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            close_fn = getattr(old_conn, "close", None)
+            if callable(close_fn):
+                try:
+                    res = close_fn()
+                    if asyncio.iscoroutine(res):
+                        await res
+                except Exception:
+                    pass
     _pool_cap = _db_pool_size()
     _pool = asyncio.Queue(maxsize=_pool_cap)
     _pool_lock = asyncio.Lock()
+    _pool_loop = loop
+    _pool_total = 0
 
 
 async def _new_connection() -> AsyncSurreal:
@@ -260,9 +282,14 @@ async def close_pool() -> None:
     `_release`, which closes the conn cleanly without touching pool
     state.
     """
-    global _pool, _pool_lock, _pool_total
+    global _pool, _pool_lock, _pool_loop, _pool_total
     if _pool is None:
         return
+    try:
+        current_loop: Optional[asyncio.AbstractEventLoop] = asyncio.get_running_loop()
+    except RuntimeError:
+        current_loop = None
+    same_loop = _pool_loop is None or _pool_loop is current_loop
     # Drain any idle connections first.
     while True:
         try:
@@ -273,26 +300,29 @@ async def close_pool() -> None:
             await conn.close()
         except Exception:
             pass
-    # Wait briefly for in-flight requests to release their checkouts.
+    # Wait briefly for in-flight requests to release their checkouts
+    # (only when closing on the same active event loop).
     # 200 ms * 10 = 2 s total; if a request is still running past that,
     # the v0.7.62 _release guard handles its eventual close anyway.
-    for _ in range(10):
-        checked_out = _pool_total - _pool.qsize()
-        if checked_out <= 0:
-            break
-        await asyncio.sleep(0.2)
-        # Drain anything that came back during the sleep.
-        while True:
-            try:
-                conn = _pool.get_nowait()
-            except asyncio.QueueEmpty:
+    if same_loop:
+        for _ in range(10):
+            checked_out = _pool_total - _pool.qsize()
+            if checked_out <= 0:
                 break
-            try:
-                await conn.close()
-            except Exception:
-                pass
+            await asyncio.sleep(0.2)
+            # Drain anything that came back during the sleep.
+            while True:
+                try:
+                    conn = _pool.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+                try:
+                    await conn.close()
+                except Exception:
+                    pass
     _pool = None
     _pool_lock = None
+    _pool_loop = None
     _pool_total = 0
 
 
@@ -376,6 +406,7 @@ async def db_connection():
         return
 
     conn = await _acquire()
+    origin_pool = _pool
     broken = False
     try:
         yield conn
@@ -396,7 +427,13 @@ async def db_connection():
         broken = True
         raise
     finally:
-        await _release(conn, broken=broken)
+        if origin_pool is not _pool:
+            try:
+                await conn.close()
+            except Exception:
+                pass
+        else:
+            await _release(conn, broken=broken)
 
 
 def _is_retriable_conn_error(exc: BaseException) -> bool:

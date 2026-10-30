@@ -15,7 +15,7 @@ describe('StudySourcePicker', () => {
 
     render(<StudySourcePicker links={[]} onOpenUpload={openUpload} onLinkSource={vi.fn()} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Upload PDF or video' }))
+    fireEvent.click(screen.getByRole('button', { name: 'study.studySourcePicker.upload' }))
 
     expect(openUpload).toHaveBeenCalledOnce()
   })
@@ -63,7 +63,7 @@ describe('StudySourcePicker', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Upload PDF or video' }))
+    fireEvent.click(screen.getByRole('button', { name: 'study.studySourcePicker.upload' }))
 
     await waitFor(() => {
       expect(onLinkSource).toHaveBeenNthCalledWith(1, 'source:uploaded')
@@ -97,7 +97,7 @@ describe('StudySourcePicker', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Upload PDF or video' }))
+    fireEvent.click(screen.getByRole('button', { name: 'study.studySourcePicker.upload' }))
 
     await waitFor(() => {
       expect(onLinkSource).toHaveBeenNthCalledWith(1, 'source:first')
@@ -116,10 +116,10 @@ describe('StudySourcePicker', () => {
       <StudySourcePicker links={[]} onOpenUpload={vi.fn()} onLinkSource={vi.fn()} />,
     )
 
-    expect(screen.getByRole('status')).toHaveTextContent('Loading sources')
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Unable to load sources'))
-    fireEvent.click(screen.getByRole('button', { name: 'Retry sources' }))
-    await waitFor(() => expect(screen.getByText('No sources are available yet.')).toBeInTheDocument())
+    expect(screen.getByRole('status')).toHaveTextContent('study.studySourcePicker.loading')
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('study.studySourcePicker.loadError'))
+    fireEvent.click(screen.getByRole('button', { name: 'study.studySourcePicker.retrySources' }))
+    await waitFor(() => expect(screen.getByText('study.studySourcePicker.empty')).toBeInTheDocument())
     unmount()
   })
 
@@ -142,7 +142,7 @@ describe('StudySourcePicker', () => {
       />,
     )
 
-    const linkButton = screen.getByRole('button', { name: 'Link Lecture' })
+    const linkButton = screen.getByRole('button', { name: 'study.studySourcePicker.linkAria' })
     fireEvent.click(linkButton)
     fireEvent.click(linkButton)
     expect(onLinkSource).toHaveBeenCalledOnce()
@@ -166,11 +166,11 @@ describe('StudySourcePicker', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Link Lecture' }))
+    fireEvent.click(screen.getByRole('button', { name: 'study.studySourcePicker.linkAria' }))
 
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Unable to link source'))
-    expect(screen.getByRole('button', { name: 'Link Lecture' })).toBeEnabled()
-    expect(screen.queryByRole('button', { name: 'Lecture linked' })).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('study.studySourcePicker.linkError'))
+    expect(screen.getByRole('button', { name: 'study.studySourcePicker.linkAria' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'study.studySourcePicker.linkedAria' })).not.toBeInTheDocument()
     expect(onLinked).not.toHaveBeenCalled()
   })
 
@@ -188,8 +188,8 @@ describe('StudySourcePicker', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Link Lecture' }))
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Unable to link source'))
+    fireEvent.click(screen.getByRole('button', { name: 'study.studySourcePicker.linkAria' }))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('study.studySourcePicker.linkError'))
     expect(onLinked).not.toHaveBeenCalled()
   })
 
@@ -207,14 +207,14 @@ describe('StudySourcePicker', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Link Lecture' }))
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Unable to link source'))
+    fireEvent.click(screen.getByRole('button', { name: 'study.studySourcePicker.linkAria' }))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('study.studySourcePicker.linkError'))
     expect(screen.getByText('Lecture')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Retry link Lecture' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Dismiss link error' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'study.studySourcePicker.retryLink' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'study.studySourcePicker.dismissLinkError' })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Retry link Lecture' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Lecture linked' })).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'study.studySourcePicker.retryLink' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'study.studySourcePicker.linkedAria' })).toBeInTheDocument())
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
@@ -244,11 +244,11 @@ describe('StudySourcePicker', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Upload PDF or video' }))
+    fireEvent.click(screen.getByRole('button', { name: 'study.studySourcePicker.upload' }))
 
     await waitFor(() => expect(onLinkSource).toHaveBeenCalledTimes(2))
     expect(screen.getByText('First source')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Retry link First source' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Second source linked' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'study.studySourcePicker.retryLink' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'study.studySourcePicker.linkedAria' })).toBeInTheDocument()
   })
 })

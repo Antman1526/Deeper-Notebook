@@ -71,7 +71,7 @@ switches themes.
 | `CitationCoverageBadge.tsx` | Reusable citation-count badge for artifact and trust surfaces. |
 | `CitationDrawer.tsx` | Focused evidence panel for inspecting citation previews, source IDs, locations, and source-record jumps. |
 | `StudyArtifactViewers.tsx` | Interactive flashcard, quiz, Course Pack, Research Run, Mind Map, and Data Table viewers for Evidence Studio artifacts. |
-| `RunTimeline.tsx` | Compact Claude Code-style run inspector for notebook chat context, routing, MCP, privacy, and agent state. |
+| `RunTimeline.tsx` | "Run details" under the latest chat answer: a collapsed list of context, routing, MCP, privacy and agent state (a status line while streaming, nothing before the first run). |
 
 ## Luminous folio primitives
 

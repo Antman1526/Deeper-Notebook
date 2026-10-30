@@ -20,11 +20,11 @@ describe('EvidenceStudioFolio', () => {
       />,
     )
 
-    expect(screen.getByRole('main', { name: 'Evidence Studio folio' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Source desk')).toHaveTextContent('Upload sources')
-    expect(screen.getByLabelText('Editorial brief')).toHaveTextContent('Notebook mode')
-    expect(screen.getByLabelText('Artifact pages')).toHaveTextContent('Generate notebook')
-    expect(screen.getByLabelText('Trust margin')).toHaveTextContent('3 citations retained')
+    expect(screen.getByRole('main', { name: 'workspace.evidenceStudioFolio.ariaLabel' })).toBeInTheDocument()
+    expect(screen.getByLabelText('workspace.evidenceStudioFolio.sourceDesk')).toHaveTextContent('Upload sources')
+    expect(screen.getByLabelText('workspace.evidenceStudioFolio.editorialBrief')).toHaveTextContent('Notebook mode')
+    expect(screen.getByLabelText('workspace.evidenceStudioFolio.artifactPages')).toHaveTextContent('Generate notebook')
+    expect(screen.getByLabelText('workspace.evidenceStudioFolio.trustMargin')).toHaveTextContent('3 citations retained')
     expect(screen.getByText('Ready for explicit generation')).toBeInTheDocument()
   })
 
@@ -42,7 +42,7 @@ describe('EvidenceStudioFolio', () => {
     )
 
     expect(screen.getAllByRole('main')).toHaveLength(1)
-    expect(screen.getByRole('main', { name: 'Evidence Studio folio' })).toBeInTheDocument()
+    expect(screen.getByRole('main', { name: 'workspace.evidenceStudioFolio.ariaLabel' })).toBeInTheDocument()
   })
 })
 
@@ -59,12 +59,12 @@ describe('PodcastStudioFolio', () => {
       />,
     )
 
-    expect(screen.getByRole('region', { name: 'Podcast production folio' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Research set')).toHaveTextContent('2 selected sources')
-    expect(screen.getByLabelText('Editorial brief')).toHaveTextContent('Edit brief')
-    expect(screen.getByLabelText('Outline storyboard')).toHaveTextContent('Edit outline')
-    expect(screen.getByLabelText('Model plan')).toHaveTextContent('Local route')
-    expect(screen.getByLabelText('Production gate')).toHaveTextContent('Prepare production review')
-    expect(screen.getByLabelText('Production review')).toHaveTextContent('Confirm only after review')
+    expect(screen.getByRole('region', { name: 'podcasts.podcastStudioFolio.productionFolio' })).toBeInTheDocument()
+    expect(screen.getByLabelText('podcasts.podcastStudioFolio.researchSet')).toHaveTextContent('2 selected sources')
+    expect(screen.getByLabelText('podcasts.podcastStudioFolio.editorialBrief')).toHaveTextContent('Edit brief')
+    expect(screen.getByLabelText('podcasts.podcastStudioFolio.outlineStoryboard')).toHaveTextContent('Edit outline')
+    expect(screen.getByLabelText('podcasts.podcastStudioFolio.modelPlan')).toHaveTextContent('Local route')
+    expect(screen.getByLabelText('podcasts.podcastStudioFolio.productionGate')).toHaveTextContent('Prepare production review')
+    expect(screen.getByLabelText('podcasts.podcastStudioFolio.productionReview')).toHaveTextContent('Confirm only after review')
   })
 })

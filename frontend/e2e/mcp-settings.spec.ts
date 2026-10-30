@@ -92,7 +92,7 @@ test('MCP settings supports add, persistent toggle, isolated test failure, and k
   await page.setViewportSize({ width: 320, height: 740 })
   await page.goto('/settings/mcp')
 
-  await expect(page.getByRole('heading', { name: 'MCP Servers', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'MCP servers', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Disable Alpha' })).toBeVisible()
 
   // Keyboard path: the persistent switch is a native button and Enter invokes

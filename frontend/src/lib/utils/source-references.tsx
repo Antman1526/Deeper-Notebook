@@ -82,7 +82,10 @@ export function convertSourceReferences(
   text: string,
   onReferenceClick: (type: ReferenceType, id: string) => void
 ): React.ReactNode {
-  const matches = parseSourceReferences(text)
+  const codeRanges = findCodeRanges(text)
+  const matches = parseSourceReferences(text).filter(
+    ref => !codeRanges.some(([cStart, cEnd]) => ref.startIndex >= cStart && ref.endIndex <= cEnd),
+  )
 
   if (matches.length === 0) return text
 
@@ -177,8 +180,9 @@ export function convertSourceReferences(
  * @returns Text with references converted to markdown links
  */
 export function convertReferencesToMarkdownLinks(text: string): string {
-  // Step 1: Find ALL references using simple greedy pattern.
+  // Step 1: Find ALL references using simple greedy pattern (skipping code spans/fences).
   // `insight:` is accepted as an alias for `source_insight` and normalized below.
+  const codeRanges = findCodeRanges(text)
   const refPattern = /(source_insight|insight|note|source):([a-zA-Z0-9_]+)/g
   const references: Array<{ type: string; id: string; index: number; length: number }> = []
 
@@ -186,6 +190,11 @@ export function convertReferencesToMarkdownLinks(text: string): string {
   while ((match = refPattern.exec(text)) !== null) {
     const rawType = match[1]
     const id = match[2]
+    const mStart = match.index
+    const mEnd = mStart + match[0].length
+    if (codeRanges.some(([cStart, cEnd]) => mStart >= cStart && mEnd <= cEnd)) {
+      continue
+    }
 
     // Validate the reference
     const validTypes = ['source', 'source_insight', 'insight', 'note']
@@ -339,15 +348,34 @@ export function createReferenceLinkComponent(
  *
  * @param text - Original text with references
  * @param referencesLabel - Locales label for "References" title (default: "References")
+ * @param firstNumber - Number given to the first reference (default 1). Callers that
+ *   already numbered citations pass the next free number so no two sources share one.
  * @returns Text with numbered citations and reference list appended
  *
  * @example
  * Input: "See [source:abc] and [note:xyz]. Also [source:abc] again."
  * Output: "See [1] and [2]. Also [1] again.\n\nReferences:\n[1] - [source:abc]\n[2] - [note:xyz]"
  */
-export function convertReferencesToCompactMarkdown(text: string, referencesLabel: string = 'References'): string {
-  // Step 1: Parse all references using existing function
-  const references = parseSourceReferences(text)
+function findCodeRanges(text: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = []
+  const codeSpanRe = /(```[\s\S]*?```|~~~[\s\S]*?~~~|```[\s\S]*$|~~~[\s\S]*$|`+[^`\n]*`+)/g
+  let m: RegExpExecArray | null
+  while ((m = codeSpanRe.exec(text)) !== null) {
+    ranges.push([m.index, m.index + m[0].length])
+  }
+  return ranges
+}
+
+export function convertReferencesToCompactMarkdown(
+  text: string,
+  referencesLabel: string = 'References',
+  firstNumber: number = 1,
+): string {
+  // Step 1: Parse all references using existing function, skipping code spans/fences
+  const codeRanges = findCodeRanges(text)
+  const references = parseSourceReferences(text).filter(
+    ref => !codeRanges.some(([cStart, cEnd]) => ref.startIndex >= cStart && ref.endIndex <= cEnd),
+  )
 
   // Step 2: If no references found, return original text
   if (references.length === 0) {
@@ -356,7 +384,7 @@ export function convertReferencesToCompactMarkdown(text: string, referencesLabel
 
   // Step 3: Build reference map (deduplicate and assign numbers)
   const referenceMap = new Map<string, ReferenceData>()
-  let nextNumber = 1
+  let nextNumber = firstNumber
 
   for (const reference of references) {
     const key = `${reference.type}:${reference.id}`
@@ -440,46 +468,61 @@ export function convertReferencesToCompactMarkdown(text: string, referencesLabel
 export function createCompactReferenceLinkComponent(
   onReferenceClick: (type: ReferenceType, id: string) => void
 ) {
-  const CompactReferenceLinkComponent = ({
-    href,
-    children,
-    ...props
-  }: React.AnchorHTMLAttributes<HTMLAnchorElement> & {
-    href?: string
-    children?: React.ReactNode
-  }) => {
-    // Check if this is a reference link (starts with #ref-)
-    if (href?.startsWith('#ref-')) {
-      // Parse: #ref-source-abc123 → type=source, id=abc123
-      const parts = href.substring(5).split('-') // Remove '#ref-'
-      const type = parts[0] as ReferenceType
-      const id = parts.slice(1).join('-') // Rejoin in case ID has dashes
-
-      return (
-        <button
-          onClick={(e) => {
-            e.preventDefault()
-            e.stopPropagation()
-            onReferenceClick(type, id)
-          }}
-          className="text-primary hover:underline cursor-pointer inline font-medium"
-          type="button"
-        >
-          {children}
-        </button>
-      )
-    }
-
-    // Regular link - open in new tab
-    return (
-      <a href={href} target="_blank" rel="noopener noreferrer" {...props} className="text-primary hover:underline">
-        {children}
-      </a>
-    )
-  }
+  const CompactReferenceLinkComponent = (
+    props: React.AnchorHTMLAttributes<HTMLAnchorElement> & {
+      href?: string
+      children?: React.ReactNode
+    },
+  ) => <CompactReferenceLink {...props} onReferenceClick={onReferenceClick} />
 
   CompactReferenceLinkComponent.displayName = 'CompactReferenceLinkComponent'
   return CompactReferenceLinkComponent
+}
+
+/**
+ * v0.8.130 — The link body behind {@link createCompactReferenceLinkComponent}, as a plain
+ * component that takes its click handler as a prop. Use it directly where the
+ * handler already lives in a component: building a component per render with the
+ * factory resets its state each time.
+ */
+export function CompactReferenceLink({
+  href,
+  children,
+  onReferenceClick,
+  ...props
+}: React.AnchorHTMLAttributes<HTMLAnchorElement> & {
+  href?: string
+  children?: React.ReactNode
+  onReferenceClick: (type: ReferenceType, id: string) => void
+}) {
+  // Check if this is a reference link (starts with #ref-)
+  if (href?.startsWith('#ref-')) {
+    // Parse: #ref-source-abc123 → type=source, id=abc123
+    const parts = href.substring(5).split('-') // Remove '#ref-'
+    const type = parts[0] as ReferenceType
+    const id = parts.slice(1).join('-') // Rejoin in case ID has dashes
+
+    return (
+      <button
+        onClick={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          onReferenceClick(type, id)
+        }}
+        className="text-primary hover:underline cursor-pointer inline font-medium"
+        type="button"
+      >
+        {children}
+      </button>
+    )
+  }
+
+  // Regular link - open in new tab
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" {...props} className="text-primary hover:underline">
+      {children}
+    </a>
+  )
 }
 
 /**

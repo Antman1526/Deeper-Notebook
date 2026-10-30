@@ -29,10 +29,10 @@ test.describe('knowledge navigation productivity', () => {
     await plan.focus()
     await page.keyboard.press('Enter')
     await page.getByRole('button', { name: 'Bookmarks', exact: true }).click()
-    await page.getByRole('button', { name: 'Bookmark Current Target' }).click()
+    await page.getByRole('button', { name: 'Bookmark current target' }).click()
     await expect.poll(() => state.bookmarks.map((bookmark) => bookmark.display_label)).toContain('Plan')
     await expect(page.getByRole('region', { name: 'Bookmark library' })).toContainText('Plan')
-    await page.getByRole('button', { name: 'Random Note' }).click()
+    await page.getByRole('button', { name: 'Random note' }).click()
     await expect(page.getByRole('tab', { name: 'Read: Evidence', exact: true })).toHaveAttribute('aria-selected', 'true')
 
     await page.getByTestId('knowledge-workspace').focus()
@@ -48,7 +48,7 @@ test.describe('knowledge navigation productivity', () => {
     }
 
     await page.getByRole('button', { name: 'Workspaces', exact: true }).click()
-    await page.getByRole('button', { name: 'Save Current As' }).click()
+    await page.getByRole('button', { name: 'Save current as' }).click()
     await page.getByLabel('Workspace name').fill('Research desk')
     await page.getByRole('button', { name: 'Save workspace' }).click()
     await expect.poll(() => state.namedWorkspaces.map((workspace) => workspace.name)).toContain('Research desk')
@@ -105,7 +105,7 @@ test.describe('knowledge navigation productivity', () => {
     await page.keyboard.press('Enter')
     await page.getByRole('button', { name: 'Workspaces', exact: true }).click()
     const readsBefore = state.workspaceListReads
-    await page.getByRole('button', { name: 'Replace With Current' }).click()
+    await page.getByRole('button', { name: 'Replace with current' }).click()
     await expect(page.getByText('Workspace changed elsewhere.')).toBeVisible()
     await expect.poll(() => state.workspaceListReads).toBeGreaterThan(readsBefore)
     await expect(page.getByRole('tab', { name: 'Read: Plan', exact: true })).toHaveAttribute('aria-selected', 'true')

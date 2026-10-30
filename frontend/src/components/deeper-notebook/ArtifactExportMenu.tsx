@@ -258,11 +258,12 @@ export function ArtifactExportMenu({
           <div className="text-sm font-medium">{t('studio.export.savedExports')}</div>
           <div className="flex items-center gap-2">
             {staleFormats.length > 1 && (
+              // v0.8.130 — status colours from theme tokens (UI audit Phase 1)
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
-                className="h-6 px-2 text-xs border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+                className="h-6 px-2 text-xs border-warning/40 text-warning-ink hover:bg-warning-soft"
                 disabled={isRefreshingAll || regenerateExport.isPending}
                 onClick={() => void handleRefreshAll()}
               >
@@ -332,13 +333,13 @@ export function ArtifactExportMenu({
                             {isItemStale && (
                               <span
                                 data-testid={`stale-badge-${item.format}`}
-                                className="rounded px-1 py-0.5 text-[0.62rem] font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
+                                className="rounded px-1 py-0.5 text-xs font-medium bg-warning-soft text-warning-ink border border-warning/40"
                               >
                                 {t('studio.export.stale')}
                               </span>
                             )}
                           </div>
-                          <div title={item.path} className="truncate text-[0.68rem] text-muted-foreground">
+                          <div title={item.path} className="truncate text-xs text-muted-foreground">
                             {item.metadata}
                           </div>
                         </div>

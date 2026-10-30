@@ -27,22 +27,14 @@
  * so neither can cover the other and neither needs a reserved width. */
 .dn-command-actions {
   display: flex;
-  min-width: 0;
-  flex: 0 1 auto;
+  min-width: max-content;
+  flex: 0 0 auto;
   align-items: center;
   gap: var(--dn-space-2, 0.5rem);
 }
 
-.dn-focus-mode-shortcut {
-  border: 1px solid var(--border);
-  border-radius: 0.25rem;
-  background: var(--muted);
-  padding: 0.15rem 0.35rem;
-  color: var(--muted-foreground);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.65rem;
-  white-space: nowrap;
-}
+/* v0.8.130 — the Focus shortcut chip is the shared Kbd primitive now; its own
+ * styling here (10.4px text, different radius and padding) would override it. */
 
 .dn-luminous-shell {
   position: relative;
@@ -73,8 +65,6 @@
   border-right: 1px solid var(--dn-glass-border);
   background: var(--dn-glass-bg);
   padding: var(--dn-space-3);
-  -webkit-backdrop-filter: blur(var(--dn-glass-blur)) saturate(1.2);
-  backdrop-filter: blur(var(--dn-glass-blur)) saturate(1.2);
 }
 
 .dn-dock-brand,
@@ -99,7 +89,8 @@
   border-radius: 0.5rem;
   background: var(--dn-selection);
   color: var(--dn-aurora-2);
-  font-size: 0.7rem;
+  /* v0.8.130 — 12px type floor (was 0.7rem). */
+  font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.08em;
 }
@@ -124,8 +115,11 @@
   padding-inline: 0.5rem;
 }
 
-.dn-dock-create > button > span:not(.sr-only),
-.dn-dock-utilities > button > span:not(.sr-only) {
+/* v0.8.130 — Only the text label is hidden in the narrow dock. This used to match every
+ * span, which also caught the Create button's icon wrapper and left an empty
+ * square. */
+.dn-dock-create > button > .dn-dock-label,
+.dn-dock-utilities > button > .dn-dock-label {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -153,20 +147,17 @@
   min-height: 1.25rem;
 }
 
-.dn-command-shortcut {
-  border: 1px solid var(--border);
-  border-radius: 0.25rem;
-  background: var(--muted);
-  padding: 0.15rem 0.35rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.65rem;
-}
+/* v0.8.130 — the palette shortcut chip is the shared Kbd primitive; its own styling
+ * here (10.4px text) overrode it, as unlayered CSS beats utilities. */
 
+/* v0.8.130 — 12px type floor (was 10px monospace). The sans face keeps "v0.8.130"
+ * inside the 68px rail at 12px. */
 .dn-dock-version {
   justify-content: center;
   color: var(--muted-foreground);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.625rem;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .dn-luminous-workspace {
@@ -182,6 +173,7 @@
 .dn-command-bar {
   grid-column: 1 / -1;
   display: flex;
+  min-width: 0;
   min-height: 4.25rem;
   align-items: center;
   justify-content: space-between;
@@ -189,11 +181,28 @@
   border-bottom: 1px solid var(--dn-glass-border);
   background: var(--dn-glass-bg);
   padding: var(--dn-space-3) var(--dn-space-6);
-  -webkit-backdrop-filter: blur(var(--dn-glass-blur)) saturate(1.2);
-  backdrop-filter: blur(var(--dn-glass-blur)) saturate(1.2);
 }
 
-.dn-command-title,
+.dn-command-breadcrumb {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 0.625rem;
+  overflow: hidden;
+}
+
+.dn-command-title {
+  margin: 0;
+  font-size: var(--dn-text-lg);
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .dn-navigator-heading h2,
 .dn-context-lens-heading h2 {
   margin: 0;
@@ -202,14 +211,16 @@
   letter-spacing: -0.015em;
 }
 
+/* v0.8.130 — 12px type floor (was 0.65rem); premium pass: grey sentence case at
+   medium weight (was bold, tracked uppercase). */
 .dn-command-kicker,
 .dn-navigator-section-title {
   margin: 0 0 0.15rem;
   color: var(--muted-foreground);
-  font-size: 0.65rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 .dn-command-trigger {
@@ -229,7 +240,7 @@
   min-width: 0;
   overflow: auto;
   border-right: 1px solid var(--dn-glass-border);
-  background: color-mix(in oklab, var(--dn-glass-bg) 92%, var(--background));
+  background: var(--background);
   padding: var(--dn-space-6) var(--dn-space-3);
 }
 
@@ -275,8 +286,10 @@
 .dn-navigator-link:hover,
 .dn-navigator-link:focus-visible,
 .dn-navigator-link.is-active {
-  border-color: var(--dn-glass-border);
-  background: var(--dn-selection);
+  /* v0.8.130 — premium pass: the neutral state layer, no outline (the indigo-tinted
+     block with a border read as a lavender button); the indicator bar marks "active". */
+  border-color: transparent;
+  background: var(--accent);
   color: var(--foreground);
 }
 
@@ -412,7 +425,7 @@
   }
 
   .dn-dock-utility-row button > span:not(.sr-only),
-  .dn-dock-utilities > button > span:not(.sr-only) {
+  .dn-dock-utilities > button > .dn-dock-label {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -503,16 +516,32 @@
 
   .dn-command-bar {
     grid-column: 1;
+    min-width: 0;
     min-height: 4rem;
     padding: var(--dn-space-3) var(--dn-space-4);
+  }
+
+  .dn-command-breadcrumb {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .dn-command-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .dn-command-trigger {
     min-width: auto;
   }
 
-  .dn-command-trigger > span:not(.dn-command-shortcut),
-  .dn-command-trigger > svg {
+  /* v0.8.130 — Icon-only palette trigger: the label and the keyboard hint both go. It keeps
+   * its aria-label. With both controls icon-only the action row is only ~96px, so
+   * it keeps `min-width: max-content` and the breadcrumb is what gives way.
+   * The hint is the shared Kbd primitive, a <kbd>, so it is named here too. */
+  .dn-command-trigger > span,
+  .dn-command-trigger > kbd {
     display: none;
   }
 
@@ -527,12 +556,67 @@
   }
 }
 
+/* v0.8.130 — phones: the bar may carry a model-health link (a 44px slot) beside
+ * Quick actions and Focus, so it uses the compact spacing and square icon buttons
+ * that used to start at 360px, and the actions sit 4px apart. The product name
+ * stays whole at 360px and up — on Linux too, where the same font renders ~3px wider,
+ * hence 8px side padding rather than 12px. V2 only: the pre-V2 bar is unchanged. */
+@media (max-width: 47.99rem) {
+  [data-dn-visual-system='v2'] .dn-command-bar {
+    padding-inline: var(--dn-space-2);
+    gap: var(--dn-space-2);
+  }
+
+  [data-dn-visual-system='v2'] .dn-command-actions {
+    gap: 0.25rem;
+  }
+
+  [data-dn-visual-system='v2'] .dn-command-actions > :is(.dn-command-trigger, .dn-focus-mode-control) {
+    inline-size: 2.75rem;
+    padding-inline: 0;
+    justify-content: center;
+  }
+}
+
 /* On phone-width command bars the full Focus label and shortcut would cover
  * the product name. Keep the control's accessible name/title while showing
  * its compact icon affordance, matching the other narrow-shell controls. */
 @media (max-width: 22.5rem) {
+  .dn-command-bar {
+    padding: var(--dn-space-2) var(--dn-space-3);
+    gap: var(--dn-space-2);
+  }
+
+  .dn-command-breadcrumb {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .dn-command-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .dn-focus-mode-control > span,
   .dn-focus-mode-control > .dn-focus-mode-shortcut {
+    display: none;
+  }
+}
+
+/* v0.8.130 — Below 80rem the labelled Focus control (text plus shortcut hint) crowds the
+ * command bar. Show the icon only; the control keeps its aria-label and title. */
+@media (max-width: 79.99rem) {
+  .dn-focus-mode-control > .dn-focus-mode-label,
+  .dn-focus-mode-control > .dn-focus-mode-shortcut {
+    display: none;
+  }
+}
+
+/* v0.8.130 — Touch devices have no keyboard shortcut to advertise. */
+@media (hover: none) and (pointer: coarse) {
+  .dn-command-shortcut,
+  .dn-focus-mode-shortcut {
     display: none;
   }
 }
@@ -595,7 +679,7 @@ html[data-dn-focus-mode="true"] {
   }
 
   html[data-dn-focus-mode="true"] .dn-instrument-dock:focus-within .dn-dock-utility-row > button > span:not(.sr-only),
-  html[data-dn-focus-mode="true"] .dn-instrument-dock:focus-within .dn-dock-utilities > button > span:not(.sr-only) {
+  html[data-dn-focus-mode="true"] .dn-instrument-dock:focus-within .dn-dock-utilities > button > .dn-dock-label {
     position: static;
     width: auto;
     height: auto;

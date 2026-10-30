@@ -1,22 +1,47 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useId, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/hooks/use-auth'
 import { useAuthStore } from '@/lib/stores/auth-store'
 import { getConfig } from '@/lib/config'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { AlertCircle, Eye, EyeOff } from 'lucide-react'
+import { AlertCircle, ChevronRight, Eye, EyeOff } from 'lucide-react'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatDateTime } from '@/lib/utils/date-locale'
 
 type LoginFormProps = {
-  headingLevel?: 1 | 2
+  /** Inside the V2 auth frame, which owns the brand, the heading and the description. */
+  embedded?: boolean
 }
 
-export function LoginForm({ headingLevel = 1 }: LoginFormProps) {
+// v0.8.130 — Phase 3c: embedded, the form drops its own card, full-screen wrapper and
+// "Deeper Notebook" heading (the login said the name three times). The legacy
+// AuthFolio route keeps the card.
+function Surface({ embedded, header, children }: { embedded: boolean; header: ReactNode; children: ReactNode }) {
+  if (embedded) {
+    return (
+      <div className="space-y-4">
+        {header}
+        {children}
+      </div>
+    )
+  }
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <Card className="w-full max-w-md">
+        <CardHeader className="text-center">{header}</CardHeader>
+        <CardContent>{children}</CardContent>
+      </Card>
+    </div>
+  )
+}
+
+export function LoginForm({ embedded = false }: LoginFormProps) {
   const { t, language } = useTranslation()
   const [password, setPassword] = useState('')
   // v0.7.198 — show/hide toggle. Standard password-field affordance;
@@ -24,6 +49,7 @@ export function LoginForm({ headingLevel = 1 }: LoginFormProps) {
   // devices where typos are more frequent). Toggled state is per-
   // render only; no persistence (cleared on remount).
   const [showPassword, setShowPassword] = useState(false)
+  const passwordId = useId()
   const { login, isLoading, error } = useAuth()
   const { authRequired, checkAuthRequired, hasHydrated, isAuthenticated } = useAuthStore()
   const [isCheckingAuth, setIsCheckingAuth] = useState(true)
@@ -80,7 +106,7 @@ export function LoginForm({ headingLevel = 1 }: LoginFormProps) {
   // Show loading while checking if auth is required
   if (!hasHydrated || isCheckingAuth) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className={embedded ? 'flex justify-center py-12' : 'min-h-screen flex items-center justify-center bg-background'}>
         <LoadingSpinner />
       </div>
     )
@@ -89,15 +115,22 @@ export function LoginForm({ headingLevel = 1 }: LoginFormProps) {
   // If we still don't know if auth is required (connection error), show error
   if (authRequired === null) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
+      <Surface
+        embedded={embedded}
+        header={embedded ? (
+          <div>
+            <p className="font-medium">{t('common.connectionError')}</p>
+            <p className="text-sm text-muted-foreground">{t('common.unableToConnect')}</p>
+          </div>
+        ) : (
+          <>
             <CardTitle>{t('common.connectionError')}</CardTitle>
             <CardDescription>
               {t('common.unableToConnect')}
             </CardDescription>
-          </CardHeader>
-          <CardContent>
+          </>
+        )}
+      >
             <div className="space-y-4">
               <div className="flex items-start gap-2 text-destructive text-sm">
                 <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
@@ -111,7 +144,7 @@ export function LoginForm({ headingLevel = 1 }: LoginFormProps) {
                   <div className="font-medium">{t('common.diagnosticInfo')}:</div>
                   <div className="space-y-1 font-mono">
                     <div>{t('common.version')}: {configInfo.version}</div>
-                    <div>{t('common.built')}: {new Date(configInfo.buildTime).toLocaleString(language === 'zh-CN' ? 'zh-CN' : language === 'zh-TW' ? 'zh-TW' : 'en-US')}</div>
+                    <div>{t('common.built')}: {formatDateTime(configInfo.buildTime, language)}</div>
                     <div className="break-all">{t('common.apiUrl')}: {configInfo.apiUrl}</div>
                     <div className="break-all">{t('common.frontendUrl')}: {typeof window !== 'undefined' ? window.location.href : 'N/A'}</div>
                   </div>
@@ -128,9 +161,7 @@ export function LoginForm({ headingLevel = 1 }: LoginFormProps) {
                 {t('common.retryConnection')}
               </Button>
             </div>
-          </CardContent>
-        </Card>
-      </div>
+      </Surface>
     )
   }
 
@@ -146,25 +177,33 @@ export function LoginForm({ headingLevel = 1 }: LoginFormProps) {
     }
   }
 
-  const Heading = headingLevel === 1 ? 'h1' : 'h2'
-
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <Heading className="leading-none font-semibold">{t('auth.loginTitle')}</Heading>
+    <Surface
+      embedded={embedded}
+      header={embedded ? null : (
+        <>
+          <h1 className="leading-none font-semibold">{t('auth.loginTitle')}</h1>
           <CardDescription>
             {t('auth.loginDesc')}
           </CardDescription>
-        </CardHeader>
-        <CardContent>
+        </>
+      )}
+    >
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* v0.8.130 — a real label (visible when embedded, screen-reader only on the
+                legacy card) and autocomplete, so password managers fill the field. */}
+            <Label htmlFor={passwordId} className={embedded ? undefined : 'sr-only'}>
+              {t('auth.passwordPlaceholder')}
+            </Label>
             {/* v0.7.198 — show/hide affordance. Relative wrapper so
                 the eye toggle absolute-positions inside the input. */}
             <div className="relative">
               <Input
+                id={passwordId}
+                autoComplete="current-password"
                 type={showPassword ? 'text' : 'password'}
-                placeholder={t('auth.passwordPlaceholder')}
+                // Embedded, the visible label already says "Password".
+                placeholder={embedded ? undefined : t('auth.passwordPlaceholder')}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={isLoading}
@@ -187,7 +226,7 @@ export function LoginForm({ headingLevel = 1 }: LoginFormProps) {
             </div>
 
             {error && (
-              <div className="flex items-center gap-2 text-destructive text-sm">
+              <div role="alert" className="flex items-center gap-2 text-destructive text-sm">
                 <AlertCircle className="h-4 w-4" />
                 {error}
               </div>
@@ -201,15 +240,29 @@ export function LoginForm({ headingLevel = 1 }: LoginFormProps) {
               {isLoading ? t('auth.signingIn') : t('auth.signIn')}
             </Button>
 
-            {configInfo && (
+            {/* v0.8.130 — Phase 3c: embedded, the version and API address are debug
+                details, so they sit behind a disclosure instead of a footer. */}
+            {configInfo && embedded ? (
+              <details className="group text-xs text-muted-foreground">
+                {/* role="button": Chromium exposes a bare summary with no action role. */}
+                <summary role="button" className="inline-flex min-h-11 cursor-pointer select-none items-center gap-1">
+                  {/* inline-flex drops the native marker; the chevron replaces it. */}
+                  <ChevronRight className="h-3.5 w-3.5 transition-transform group-open:rotate-90" aria-hidden="true" />
+                  {t('auth.connectionDetails')}
+                </summary>
+                <div className="mt-2 space-y-1">
+                  <div>{t('common.version')} {configInfo.version}</div>
+                  {configInfo.apiUrl ? <div className="font-mono break-all">{configInfo.apiUrl}</div> : null}
+                </div>
+              </details>
+            ) : configInfo ? (
               <div className="text-xs text-center text-muted-foreground pt-2 border-t">
                 <div>{t('common.version')} {configInfo.version}</div>
-                <div className="font-mono text-[10px]">{configInfo.apiUrl}</div>
+                {/* v0.8.130 — 12px type floor (UI audit Phase 1) */}
+                <div className="font-mono text-xs">{configInfo.apiUrl}</div>
               </div>
-            )}
+            ) : null}
           </form>
-        </CardContent>
-      </Card>
-    </div>
+    </Surface>
   )
 }

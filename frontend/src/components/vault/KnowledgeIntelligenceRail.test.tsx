@@ -16,18 +16,18 @@ describe('KnowledgeIntelligenceRail', () => {
       />,
     )
 
-    const rail = screen.getByRole('complementary', { name: 'Research intelligence' })
+    const rail = screen.getByRole('complementary', { name: 'knowledge.knowledgeIntelligenceRail.researchIntelligence' })
     expect(screen.getByTestId('knowledge-evidence-lens')).toBeInTheDocument()
     expect(rail).toHaveTextContent('4 source excerpts')
-    expect(screen.getByRole('button', { name: 'Connections' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Connections' }))
+    expect(screen.getByRole('button', { name: 'knowledge.knowledgeIntelligenceRail.connections' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.knowledgeIntelligenceRail.connections' }))
     expect(screen.getByTestId('links-inspector')).toBeInTheDocument()
 
-    const collapse = screen.getByRole('button', { name: 'Collapse intelligence rail' })
+    const collapse = screen.getByRole('button', { name: 'knowledge.knowledgeIntelligenceRail.collapseRail' })
     fireEvent.click(collapse)
     expect(collapse).toHaveFocus()
     expect(screen.queryByTestId('links-inspector')).not.toBeInTheDocument()
     expect(screen.queryByText('4 source excerpts')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Expand intelligence rail' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'knowledge.knowledgeIntelligenceRail.expandRail' })).toBeInTheDocument()
   })
 })

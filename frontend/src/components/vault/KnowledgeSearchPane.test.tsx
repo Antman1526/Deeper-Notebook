@@ -68,7 +68,7 @@ describe('KnowledgeSearchPane', () => {
   it('submits semantic search only after the user asks for it', () => {
     render(<KnowledgeSearchPane query="research" searchMode="semantic" spaceIds={[]} authorityKinds={[]} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Search knowledge' }))
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.knowledgeSearchPane.searchKnowledge' }))
 
     expect(indexedSearch.runSemanticSearch).toHaveBeenCalledOnce()
   })
@@ -76,7 +76,7 @@ describe('KnowledgeSearchPane', () => {
   it('shows the active Embedding route without starting semantic search', () => {
     routePlan.data = { role: 'embedding_retrieval', outcome: 'ready', selected_model_id: 'nomic-local', selected_provider: 'ollama', resource_tier: 'light', selection_source: 'automatic', route_reason: 'Verified local route.', escalation_model_ids: [], blocked_reason: null, selected_fingerprint: 'fingerprint', selected_measurements: {} }
     render(<KnowledgeSearchPane query="" searchMode="text" spaceIds={[]} authorityKinds={[]} />)
-    expect(screen.getByText('Embedding route')).toBeInTheDocument()
+    expect(screen.getByText('knowledge.knowledgeSearchPane.embeddingRoute')).toBeInTheDocument()
     expect(indexedSearch.runSemanticSearch).not.toHaveBeenCalled()
   })
 
@@ -109,6 +109,6 @@ describe('KnowledgeSearchPane', () => {
     render(<KnowledgeSearchPane query="research" searchMode="semantic" spaceIds={[]} authorityKinds={[]} />)
 
     expect(screen.getByRole('button', { name: 'Turn into podcast' })).toBeDisabled()
-    expect(screen.getByText('Semantic podcast selection needs a verified unified embedding index.')).toBeVisible()
+    expect(screen.getByText('knowledge.knowledgeSearchPane.semanticPodcastDisabled')).toBeVisible()
   })
 })

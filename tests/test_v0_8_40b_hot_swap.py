@@ -209,14 +209,16 @@ def test_set_active_rejects_outside_model_dir(app, tmp_path, monkeypatch):
     assert "must be inside" in resp.json()["detail"].lower()
 
 
-def test_set_active_503_when_no_control_url(app, tmp_path, monkeypatch):
+def test_set_active_503_when_no_control_url(app, tmp_path, monkeypatch, unset_setting):
     model_dir = tmp_path / "models"
     model_dir.mkdir()
     gguf = model_dir / "x.gguf"
     gguf.write_bytes(b"y" * 100)
     monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(model_dir))
-    monkeypatch.delenv("DEEPER_NOTEBOOK_LAUNCHER_CONTROL_URL", raising=False)
-    monkeypatch.delenv("DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN", raising=False)
+    unset_setting(
+        "DEEPER_NOTEBOOK_LAUNCHER_CONTROL_URL",
+        "DEEPER_NOTEBOOK_LAUNCHER_CONTROL_TOKEN",
+    )
 
     with TestClient(app) as client:
         resp = client.post(
@@ -227,7 +229,7 @@ def test_set_active_503_when_no_control_url(app, tmp_path, monkeypatch):
     assert "control plane" in resp.json()["detail"].lower()
 
 
-def test_set_active_happy_path_roundtrip(app, tmp_path, monkeypatch):
+def test_set_active_happy_path_roundtrip(app, tmp_path, monkeypatch, unset_setting):
     """End-to-end: stand up a real ControlServer with a happy-path
     callback, point env vars at it, POST → assert callback received
     the resolved absolute path and the API returned ok=True."""
@@ -236,12 +238,10 @@ def test_set_active_happy_path_roundtrip(app, tmp_path, monkeypatch):
     gguf = model_dir / "new-chat-q4.gguf"
     gguf.write_bytes(b"z" * 256)
     monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(model_dir))
-    active_aliases = (
-        "DEEPER_NOTEBOOK_ACTIVE_GGUF_MODEL",
-        "DEEPER_NOTEBOOK_ACTIVE_GGUF_MODEL",
-    )
-    for name in active_aliases:
-        monkeypatch.delenv(name, raising=False)
+    from deeper_notebook.environment import _setting_for
+
+    active_aliases = _setting_for("DEEPER_NOTEBOOK_ACTIVE_GGUF_MODEL").precedence
+    unset_setting("DEEPER_NOTEBOOK_ACTIVE_GGUF_MODEL")
 
     received_paths: list[str] = []
 
@@ -304,7 +304,7 @@ def test_set_active_launcher_rejection_maps_to_400(app, tmp_path, monkeypatch):
         srv.stop()
 
 
-def test_set_active_mlx_directory_happy_path(app, tmp_path, monkeypatch):
+def test_set_active_mlx_directory_happy_path(app, tmp_path, monkeypatch, unset_setting):
     """POST /api/local-models/set-active supports MLX model directories."""
     model_dir = tmp_path / "models"
     mlx_dir = model_dir / "MLX" / "mlx-community__test-7b"
@@ -313,7 +313,7 @@ def test_set_active_mlx_directory_happy_path(app, tmp_path, monkeypatch):
     (mlx_dir / "model.safetensors").write_bytes(b"mlx-weights")
 
     monkeypatch.setenv("DEEPER_NOTEBOOK_MODEL_DIR", str(model_dir))
-    monkeypatch.delenv("DEEPER_NOTEBOOK_ACTIVE_MLX_MODEL", raising=False)
+    unset_setting("DEEPER_NOTEBOOK_ACTIVE_MLX_MODEL")
 
     received_paths: list[str] = []
 

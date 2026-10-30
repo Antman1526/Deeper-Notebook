@@ -240,6 +240,22 @@ class OverlayStorage:
                             or published != temporary_identity
                         ):
                             raise OverlayStorageError("overlay_file_changed")
+                        # v0.8.130 — identity alone cannot prove the displaced
+                        # file is the one that was hashed: Linux reuses a freed
+                        # inode number at once, so a delete-and-recreate between
+                        # the hash check and the exchange keeps (device, inode).
+                        # Re-read what was displaced and require the bytes that
+                        # were snapshotted.
+                        displaced_bytes, _ = self._read_named_with_identity(
+                            parent.descriptor,
+                            temporary_name,
+                            relative_path,
+                        )
+                        if not hmac.compare_digest(
+                            displaced_bytes.content_hash,
+                            current.content_hash,
+                        ):
+                            raise OverlayStorageError("overlay_file_changed")
                     except BaseException as verification_error:
                         self._recover_posix_exchange(
                             parent.descriptor,

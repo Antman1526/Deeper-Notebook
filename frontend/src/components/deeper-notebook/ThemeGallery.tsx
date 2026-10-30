@@ -5,6 +5,7 @@ import { ChevronDown, ChevronUp, RotateCcw, Search } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { useTranslation } from '@/lib/hooks/use-translation'
 import {
   peekStoredTheme,
   readRecentThemeIds,
@@ -21,6 +22,7 @@ import {
   DEFAULT_THEME_ID,
   THEME_BY_ID,
   THEME_CATALOG,
+  themeLabel,
   THEME_GROUPS,
   isThemeId,
   type ThemeId,
@@ -73,6 +75,7 @@ function readValidatedRecentThemeIds(): ThemeId[] {
 }
 
 export function ThemeGallery() {
+  const { t } = useTranslation()
   const originalTheme = useRef<ThemeId>(DEFAULT_THEME_ID)
   const [selectedTheme, setSelectedTheme] = useState<ThemeId>(DEFAULT_THEME_ID)
   const [previewingTheme, setPreviewingTheme] = useState<ThemeId | null>(null)
@@ -109,9 +112,9 @@ export function ThemeGallery() {
     if (!normalizedQuery) return THEME_CATALOG
 
     return THEME_CATALOG.filter(theme =>
-      `${theme.label} ${theme.description}`.toLocaleLowerCase().includes(normalizedQuery),
+      `${themeLabel(theme, t)} ${t(theme.descriptionKey)}`.toLocaleLowerCase().includes(normalizedQuery),
     )
-  }, [query])
+  }, [query, t])
 
   const handlePreview = (themeId: ThemeId) => {
     setDocumentTheme(themeId)
@@ -173,7 +176,7 @@ export function ThemeGallery() {
             {label}
           </h3>
           <span className="text-xs tabular-nums text-muted-foreground">
-            {themes.length} {themes.length === 1 ? 'theme' : 'themes'}
+            {t(themes.length === 1 ? 'workspace.themeGallery.themeCountOne' : 'workspace.themeGallery.themeCountOther', { count: themes.length })}
           </span>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -197,7 +200,7 @@ export function ThemeGallery() {
     <div id="more-themes" className="space-y-6">
       {THEME_GROUPS.map(group => {
         const groupThemes = themes.filter(theme => theme.group === group.id)
-        return renderThemeSection(group.id, group.label, groupThemes)
+        return renderThemeSection(group.id, t(group.labelKey), groupThemes)
       })}
     </div>
   )
@@ -206,7 +209,7 @@ export function ThemeGallery() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 rounded-lg border bg-muted/25 p-3 sm:flex-row sm:items-center sm:justify-between">
         <label className="relative block flex-1">
-          <span className="sr-only">Search themes</span>
+          <span className="sr-only">{t('workspace.themeGallery.searchThemes')}</span>
           <Search
             className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
             aria-hidden="true"
@@ -215,29 +218,29 @@ export function ThemeGallery() {
             type="search"
             value={query}
             onChange={event => setQuery(event.target.value)}
-            placeholder="Search themes"
-            aria-label="Search themes"
+            placeholder={t('workspace.themeGallery.searchThemes')}
+            aria-label={t('workspace.themeGallery.searchThemes')}
             className="bg-background pl-9"
           />
         </label>
         {previewingTheme && (
           <Button type="button" variant="outline" size="sm" onClick={handleRestore}>
             <RotateCcw aria-hidden="true" />
-            Restore previous theme
+            {t('workspace.themeGallery.restorePrevious')}
           </Button>
         )}
       </div>
 
       <p className="sr-only" aria-live="polite">
         {previewingTheme
-          ? `Previewing ${THEME_BY_ID[previewingTheme].label}. Apply it to save this theme or restore the previous theme.`
-          : `${THEME_BY_ID[selectedTheme].label} is applied.`}
+          ? t('workspace.themeGallery.previewingAnnouncement', { theme: themeLabel(THEME_BY_ID[previewingTheme], t) })
+          : t('workspace.themeGallery.appliedAnnouncement', { theme: themeLabel(THEME_BY_ID[selectedTheme], t) })}
       </p>
 
       {matchingThemes.length === 0 && (
         <div className="rounded-lg border border-dashed px-4 py-10 text-center" role="status">
-          <p className="text-sm font-medium">No themes match “{query.trim()}”.</p>
-          <p className="mt-1 text-sm text-muted-foreground">Try a color, mood, or theme name.</p>
+          <p className="text-sm font-medium">{t('workspace.themeGallery.noMatches', { query: query.trim() })}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{t('workspace.themeGallery.noMatchesHint')}</p>
         </div>
       )}
 
@@ -245,8 +248,8 @@ export function ThemeGallery() {
         ? renderCatalogGroups(matchingThemes)
         : (
           <>
-            {renderThemeSection('recommended', 'Recommended', recommendedThemes)}
-            {renderThemeSection('recent', 'Recent', recentThemes)}
+            {renderThemeSection('recommended', t('workspace.themeGallery.recommended'), recommendedThemes)}
+            {renderThemeSection('recent', t('workspace.themeGallery.recent'), recentThemes)}
             <div className="flex justify-center">
               <Button
                 type="button"
@@ -257,7 +260,7 @@ export function ThemeGallery() {
                 onClick={() => setShowMoreThemes(value => !value)}
               >
                 {showMoreThemes ? <ChevronUp aria-hidden="true" /> : <ChevronDown aria-hidden="true" />}
-                {showMoreThemes ? 'Hide more themes' : 'Show more themes'}
+                {showMoreThemes ? t('workspace.themeGallery.hideMoreThemes') : t('workspace.themeGallery.showMoreThemes')}
               </Button>
             </div>
             {showMoreThemes && renderCatalogGroups(moreThemes)}

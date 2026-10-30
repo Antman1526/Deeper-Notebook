@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { AppShell } from '@/components/layout/AppShell'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DefaultPromptEditor } from './components/DefaultPromptEditor'
@@ -25,12 +24,12 @@ export default function TransformationsPage() {
   }
 
   return (
-    <AppShell>
+    <>
       <SystemRouteFrame
         route="/transformations"
         description={t('transformations.desc')}
         actions={
-          <Button variant="outline" size="sm" aria-label="Refresh transformations" onClick={() => refetch()}>
+          <Button variant="outline" size="sm" aria-label={t('transformations.transformationsPage.refresh')} onClick={() => refetch()}>
             <RefreshCw className="h-4 w-4" />
           </Button>
         }
@@ -49,7 +48,7 @@ export default function TransformationsPage() {
               all dashboard page titles weigh the same. */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('transformations.workspace')}</p>
+            <p className="text-xs font-semibold text-muted-foreground">{t('transformations.workspace')}</p>
             <TabsList aria-label={t('common.accessibility.transformationViews')} className="w-full max-w-xl">
               <TabsTrigger value="transformations" className="min-w-0 flex-1 gap-1 px-2 text-xs sm:gap-2 sm:px-4 sm:text-sm">
                 <Wand2 className="h-4 w-4" />
@@ -80,6 +79,6 @@ export default function TransformationsPage() {
         </Tabs>
         </div>
       </SystemRouteFrame>
-    </AppShell>
+    </>
   )
 }

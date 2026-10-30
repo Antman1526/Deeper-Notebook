@@ -9,8 +9,13 @@ const alertVariants = cva(
     variants: {
       variant: {
         default: "bg-background text-foreground",
+        // v0.8.130 — soft status variants (11 of 23 alerts overrode the default with
+        // amber or green classes); destructive now matches them.
         destructive:
-          "border-destructive/50 text-destructive dark:border-destructive [&>svg]:text-destructive",
+          "border-destructive/30 bg-destructive-soft text-destructive-ink [&>svg]:text-destructive-ink",
+        success: "border-success/30 bg-success-soft text-success-ink [&>svg]:text-success-ink",
+        warning: "border-warning/40 bg-warning-soft text-warning-ink [&>svg]:text-warning-ink",
+        info: "border-info/30 bg-info-soft text-info-ink [&>svg]:text-info-ink",
       },
     },
     defaultVariants: {
@@ -32,12 +37,15 @@ const Alert = React.forwardRef<
 ))
 Alert.displayName = "Alert"
 
+// v0.8.130 — Phase 4b: a div, not a fixed <h5>, so an alert does not break the page's
+// heading order.
 const AlertTitle = React.forwardRef<
-  HTMLParagraphElement,
-  React.HTMLAttributes<HTMLHeadingElement>
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
 >(({ className, ...props }, ref) => (
-  <h5
+  <div
     ref={ref}
+    data-slot="alert-title"
     className={cn("mb-1 font-medium leading-none tracking-tight", className)}
     {...props}
   />

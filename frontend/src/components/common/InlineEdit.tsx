@@ -87,7 +87,11 @@ export function InlineEdit({
       <button
         type="button"
         className={cn(
-          "min-w-0 max-w-full w-full cursor-pointer rounded px-2 py-1 text-left break-all transition-colors hover:bg-muted/50",
+          // v0.8.130 — `overflow-wrap: anywhere` moves a word that does not fit to the next line
+          // and only splits one that cannot fit on a line of its own. `break-all`
+          // split ordinary words mid-word ("wit / h"); `break-words` fixed that but
+          // kept each whole word as the minimum width, which overflowed narrow rows.
+          "min-w-0 max-w-full w-full cursor-pointer rounded px-2 py-1 text-left [overflow-wrap:anywhere] transition-colors hover:bg-muted/50",
           className
         )}
         onClick={(e) => {

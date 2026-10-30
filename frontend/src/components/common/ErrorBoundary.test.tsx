@@ -16,7 +16,7 @@ describe('ErrorBoundary recovery fallback', () => {
       </ErrorBoundary>,
     )
 
-    expect(screen.getByRole('alert')).toHaveTextContent('Recovery Center')
+    expect(screen.getByRole('alert')).toHaveTextContent('common.recoveryCenter.title')
     expect(screen.queryByText(/Users|private|failure-token|Error:/i)).not.toBeInTheDocument()
     errorSpy.mockRestore()
   })

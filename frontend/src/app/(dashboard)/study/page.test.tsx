@@ -24,8 +24,8 @@ describe('StudyPage', () => {
 
     render(<StudyPage />)
 
-    expect(screen.getByRole('main', { name: 'Study' })).toBeInTheDocument()
-    expect(screen.getByText('Discover')).toBeInTheDocument()
+    expect(screen.getByRole('main', { name: 'navigation.study' })).toBeInTheDocument()
+    expect(screen.getByText('knowledge.knowledgeRouteFrames.discover')).toBeInTheDocument()
     expect(screen.getByText('Study dashboard')).toBeInTheDocument()
     expect(screen.getByText('Study session')).toBeInTheDocument()
   })

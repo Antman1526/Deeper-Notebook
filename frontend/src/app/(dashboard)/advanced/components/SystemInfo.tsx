@@ -69,7 +69,8 @@ export function SystemInfo() {
                 {t('advanced.updateAvailable').replace('{version}', config.latestVersion || '')}
               </Badge>
             ) : config?.latestVersion ? (
-              <Badge variant="outline" className="text-green-600 border-green-600">
+              // v0.8.130 — status colours from theme tokens (UI audit Phase 1)
+              <Badge variant="success">
                 {t('advanced.upToDate')}
               </Badge>
             ) : (

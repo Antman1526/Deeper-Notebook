@@ -124,7 +124,7 @@ describe('useStudioCoursePack', () => {
 
     expect(notebooksApi.create).toHaveBeenCalledWith({
       name: 'Onboarding',
-      description: 'Instructor-ready Course Pack queued from Studio sources.',
+      description: 'common.useStudio.notebookDescription',
     })
     expect(sourcesApi.create).toHaveBeenNthCalledWith(1, expect.objectContaining({
       type: 'upload',
@@ -155,7 +155,7 @@ describe('useStudioCoursePack', () => {
     expect(studioApi.createArtifact).toHaveBeenCalledWith({
       notebook_id: 'notebook:course',
       artifact_type: 'course_pack',
-      title: 'Onboarding Course Pack',
+      title: 'common.useStudio.artifactTitle',
       source_ids: ['source:file', 'source:link'],
     })
     expect(studioApi.generateArtifact).not.toHaveBeenCalled()
@@ -224,7 +224,7 @@ describe('useStudioCoursePack', () => {
 
     expect(sourcesApi.status).toHaveBeenCalledWith('source:file')
     expect(studioApi.createWorkflowRun).toHaveBeenCalledWith('studio_artifact:course', {
-      title: 'Generate Onboarding Course Pack',
+      title: 'common.useStudio.workflowRunTitle',
       source_ids: ['source:file'],
       approval_required: false,
     })

@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { describe, it, expect, vi, beforeAll } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { ChatPanel } from './ChatPanel'
@@ -110,7 +110,7 @@ describe('ChatPanel — v0.8.97 Debate mode toggle', () => {
       />,
     )
     expect(screen.getByTestId('debate-mode-toggle')).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: 'Leave Debate mode' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'sources.chatPanel.leaveDebateMode' })).toBeInTheDocument()
   })
 
   it('does NOT render the toggle when onToggleDebateMode is omitted', () => {
@@ -121,5 +121,59 @@ describe('ChatPanel — v0.8.97 Debate mode toggle', () => {
       />,
     )
     expect(screen.queryByTestId('debate-mode-toggle')).not.toBeInTheDocument()
+  })
+})
+
+// v0.8.130 — when debate mode is on the composer card takes the warning tint and a
+// dismissible badge names the mode, so a user who toggled it earlier sees why answers
+// argue both sides. The badge and the Swords toggle share one piece of state.
+describe('ChatPanel — v0.8.130 debate mode badge and composer tint', () => {
+  function Harness({ initial }: { initial: boolean }) {
+    const [debateMode, setDebateMode] = useState(initial)
+    return (
+      <ChatPanel
+        {...baseProps}
+        onModelChange={vi.fn()}
+        debateMode={debateMode}
+        onToggleDebateMode={() => setDebateMode((v) => !v)}
+      />
+    )
+  }
+
+  it('debate on: shows the badge and marks the composer card', () => {
+    const { container } = render(<Harness initial={true} />)
+    const badge = screen.getByTestId('debate-mode-badge')
+    expect(badge).toHaveTextContent('sources.chatPanel.debateModeBadge')
+    const card = container.querySelector('[data-dn-composer]')!
+    expect(card).toHaveAttribute('data-debate', 'true')
+    expect(card.className).toMatch(/border-warning/)
+  })
+
+  it('dismissing the badge turns debate mode off and the toggle follows', () => {
+    const { container } = render(<Harness initial={true} />)
+    expect(screen.getByTestId('debate-mode-toggle')).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(screen.getByRole('button', { name: 'sources.chatPanel.turnOffDebateMode' }))
+    expect(screen.queryByTestId('debate-mode-badge')).not.toBeInTheDocument()
+    expect(screen.getByTestId('debate-mode-toggle')).toHaveAttribute('aria-pressed', 'false')
+    const card = container.querySelector('[data-dn-composer]')!
+    expect(card).toHaveAttribute('data-debate', 'false')
+    expect(card.className).not.toMatch(/warning/)
+  })
+
+  it('debate off: no badge and no tint; turning it on via the toggle shows the badge', () => {
+    const { container } = render(<Harness initial={false} />)
+    expect(screen.queryByTestId('debate-mode-badge')).not.toBeInTheDocument()
+    expect(container.querySelector('[data-dn-composer]')!.className).not.toMatch(/warning/)
+    fireEvent.click(screen.getByTestId('debate-mode-toggle'))
+    expect(screen.getByTestId('debate-mode-badge')).toBeInTheDocument()
+  })
+
+  it('the composer is one input card holding the textarea and its toolbar', () => {
+    const { container } = render(<Harness initial={false} />)
+    const card = container.querySelector('[data-dn-composer]')!
+    expect(card).toHaveClass('rounded-xl', 'border', 'bg-background/80', 'p-2.5', 'focus-within:border-primary/45')
+    expect(card).toContainElement(screen.getByRole('textbox'))
+    expect(card).toContainElement(screen.getByTestId('debate-mode-toggle'))
+    expect(card).toContainElement(screen.getByRole('button', { name: 'Send message' }))
   })
 })

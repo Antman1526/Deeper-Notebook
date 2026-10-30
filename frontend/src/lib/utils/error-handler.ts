@@ -63,7 +63,11 @@ export function getApiErrorMessage(
   fallbackKey?: string
 ): string {
   const message = formatApiError(errorOrMessage);
-  if (!message) return fallbackKey ? t(fallbackKey) : t("apiErrors.genericError");
+  // v0.8.130 — axios's own "Request failed with status code 500" is not a reason a
+  // person can act on; with no server detail, use the translated fallback.
+  if (!message || /^Request failed with status code \d+$/.test(message)) {
+    return fallbackKey ? t(fallbackKey) : t("apiErrors.genericError");
+  }
 
   // Try exact match
   if (ERROR_MAP[message]) return t(ERROR_MAP[message]);

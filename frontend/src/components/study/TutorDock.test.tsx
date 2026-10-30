@@ -62,21 +62,21 @@ describe('TutorDock', () => {
   it('supports keyboard role and mode selection while keeping one source-aware foreground tutor', async () => {
     render(<TutorDock planId="study_plan:one" sourceIds={['source:one']} />)
 
-    const role = screen.getByRole('combobox', { name: 'Tutor role' })
-    const mode = screen.getByRole('combobox', { name: 'Tutor mode' })
+    const role = screen.getByRole('combobox', { name: 'study.tutorDock.tutorRole' })
+    const mode = screen.getByRole('combobox', { name: 'study.tutorDock.tutorMode' })
     fireEvent.change(role, { target: { value: 'source_guide' } })
     fireEvent.change(mode, { target: { value: 'ask_question' } })
     expect(role).toHaveValue('source_guide')
     expect(mode).toHaveValue('ask_question')
-    expect(screen.getByText('Source-only')).toBeInTheDocument()
-    expect(screen.getAllByRole('region', { name: /Tutor dock/i })).toHaveLength(1)
+    expect(screen.getByText('study.tutorDock.sourceOnly')).toBeInTheDocument()
+    expect(screen.getAllByRole('region', { name: 'study.tutorDock.title' })).toHaveLength(1)
   })
 
   it('changes role and mode together using a compatible default mode policy', () => {
     render(<TutorDock planId="study_plan:one" />)
 
-    const role = screen.getByRole('combobox', { name: 'Tutor role' })
-    const mode = screen.getByRole('combobox', { name: 'Tutor mode' })
+    const role = screen.getByRole('combobox', { name: 'study.tutorDock.tutorRole' })
+    const mode = screen.getByRole('combobox', { name: 'study.tutorDock.tutorMode' })
 
     fireEvent.change(role, { target: { value: 'curriculum_architect' } })
     expect(role).toHaveValue('curriculum_architect')
@@ -89,11 +89,11 @@ describe('TutorDock', () => {
 
   it('requests web permission explicitly and maps it to an approved scope', async () => {
     render(<TutorDock planId="study_plan:one" approvedNetworkScope={['https://example.edu/']} />)
-    fireEvent.change(screen.getByRole('combobox', { name: 'Tutor mode' }), { target: { value: 'research_gap' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Request web research permission' }))
-    expect(screen.getByText('Web research permission requested for this invocation.')).toBeInTheDocument()
-    fireEvent.change(screen.getByRole('textbox', { name: 'Tutor prompt' }), { target: { value: 'Find the missing topic' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Ask tutor' }))
+    fireEvent.change(screen.getByRole('combobox', { name: 'study.tutorDock.tutorMode' }), { target: { value: 'research_gap' } })
+    fireEvent.click(screen.getByRole('button', { name: 'study.tutorDock.requestWebPermission' }))
+    expect(screen.getByText('study.tutorDock.webPermissionRequested')).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('textbox', { name: 'study.tutorDock.prompt.aria' }), { target: { value: 'Find the missing topic' } })
+    fireEvent.click(screen.getByRole('button', { name: 'study.tutorDock.askTutor' }))
     await waitFor(() => expect(invoke).toHaveBeenCalledWith(expect.objectContaining({
       planId: 'study_plan:one',
       role: 'research_scout',
@@ -108,8 +108,8 @@ describe('TutorDock', () => {
 
   it('gives each new submission an explicit bounded request id', async () => {
     render(<TutorDock planId="study_plan:one" />)
-    const prompt = screen.getByRole('textbox', { name: 'Tutor prompt' })
-    const ask = screen.getByRole('button', { name: 'Ask tutor' })
+    const prompt = screen.getByRole('textbox', { name: 'study.tutorDock.prompt.aria' })
+    const ask = screen.getByRole('button', { name: 'study.tutorDock.askTutor' })
     fireEvent.change(prompt, { target: { value: 'Explain this once' } })
     fireEvent.click(ask)
     await waitFor(() => expect(invoke).toHaveBeenCalledTimes(1))
@@ -129,20 +129,20 @@ describe('TutorDock', () => {
   it('requires approval before a tutor proposal changes the syllabus', async () => {
     invoke.mockResolvedValueOnce(ANSWER)
     render(<TutorDock planId="study_plan:one" sourceIds={['source:one']} />)
-    fireEvent.change(screen.getByRole('textbox', { name: 'Tutor prompt' }), { target: { value: 'Propose a prerequisite' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Ask tutor' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'study.tutorDock.prompt.aria' }), { target: { value: 'Propose a prerequisite' } })
+    fireEvent.click(screen.getByRole('button', { name: 'study.tutorDock.askTutor' }))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Apply proposed prerequisite unit' })).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: 'Apply proposed prerequisite unit' }))
-    expect(screen.getByRole('dialog', { name: 'Review tutor proposal' })).toBeVisible()
+    expect(screen.getByRole('dialog', { name: 'study.tutorDock.review.title' })).toBeVisible()
     expect(proposeSyllabus).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm proposal' }))
+    fireEvent.click(screen.getByRole('button', { name: 'study.tutorDock.review.confirmProposal' }))
     await waitFor(() => expect(proposeSyllabus).toHaveBeenCalledWith({ planId: 'study_plan:one', input: { expected_revision: 7 } }))
   })
 
   it('navigates citations and keeps unsupported actions inert', async () => {
     render(<TutorDock planId="study_plan:one" sourceIds={['source:one']} />)
-    fireEvent.change(screen.getByRole('textbox', { name: 'Tutor prompt' }), { target: { value: 'Explain' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Ask tutor' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'study.tutorDock.prompt.aria' }), { target: { value: 'Explain' } })
+    fireEvent.click(screen.getByRole('button', { name: 'study.tutorDock.askTutor' }))
     await waitFor(() => expect(screen.getByRole('button', { name: /Notes, page:2/i })).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: /Notes, page:2/i }))
     expect(router.push).toHaveBeenCalledWith('/sources/source%3Aone?locator=page%3A2')
@@ -151,16 +151,16 @@ describe('TutorDock', () => {
   it('cancels an invocation and exposes a compact drawer with focus return', async () => {
     pending = true
     render(<TutorDock planId="study_plan:one" />)
-    fireEvent.change(screen.getByRole('textbox', { name: 'Tutor prompt' }), { target: { value: 'Another request' } })
-    expect(screen.getByRole('button', { name: /Tutor is working/i })).toBeDisabled()
-    fireEvent.click(screen.getByRole('button', { name: /Tutor is working/i }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'study.tutorDock.prompt.aria' }), { target: { value: 'Another request' } })
+    expect(screen.getByRole('button', { name: 'study.tutorDock.working' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'study.tutorDock.working' }))
     expect(invoke).not.toHaveBeenCalled()
-    const toggle = screen.getByRole('button', { name: 'Close tutor dock' })
+    const toggle = screen.getByRole('button', { name: 'study.tutorDock.close' })
     fireEvent.click(toggle)
-    expect(screen.getByRole('button', { name: 'Open tutor dock' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Open tutor dock' }))
+    expect(screen.getByRole('button', { name: 'study.tutorDock.open' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'study.tutorDock.open' }))
     expect(toggle).toHaveFocus()
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel tutor invocation' }))
+    fireEvent.click(screen.getByRole('button', { name: 'study.tutorDock.cancelInvocation' }))
     expect(cancel).toHaveBeenCalledTimes(1)
   })
 
@@ -168,8 +168,8 @@ describe('TutorDock', () => {
     invocationFailed = true
     invocationError = { response: { data: { detail: { code: 'assistant_timeout' } } } }
     render(<TutorDock planId="study_plan:one" />)
-    expect(screen.getByRole('alert')).toHaveTextContent('timed out')
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('study.tutorDock.errors.timeout')
+    fireEvent.click(screen.getByRole('button', { name: 'study.tutorDock.retry' }))
     expect(retry).toHaveBeenCalledTimes(1)
   })
 
@@ -180,7 +180,7 @@ describe('TutorDock', () => {
         voiceTranscript={{ id: 1, text: 'Repeat this exact question' }}
       />,
     )
-    const prompt = screen.getByRole('textbox', { name: 'Tutor prompt' })
+    const prompt = screen.getByRole('textbox', { name: 'study.tutorDock.prompt.aria' })
     expect(prompt).toHaveValue('Repeat this exact question')
     fireEvent.change(prompt, { target: { value: 'Edited text' } })
 
@@ -190,6 +190,6 @@ describe('TutorDock', () => {
         voiceTranscript={{ id: 2, text: 'Repeat this exact question' }}
       />,
     )
-    expect(screen.getByRole('textbox', { name: 'Tutor prompt' })).toHaveValue('Repeat this exact question')
+    expect(screen.getByRole('textbox', { name: 'study.tutorDock.prompt.aria' })).toHaveValue('Repeat this exact question')
   })
 })

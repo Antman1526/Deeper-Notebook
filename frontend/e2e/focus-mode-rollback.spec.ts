@@ -23,10 +23,10 @@ for (const viewport of viewports) {
 
     await expect(page.locator('.dn-legacy-shell')).toBeVisible()
     await expect(page.locator('.dn-legacy-shell > .app-sidebar')).toBeVisible()
-    await page.getByRole('button', { name: 'Enter Focus mode' }).click()
+    await page.getByRole('button', { name: 'Enter focus mode' }).click()
 
     await expect(page.locator('html')).toHaveAttribute('data-dn-focus-mode', 'true')
-    await expect(page.getByRole('button', { name: 'Exit Focus mode' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Exit focus mode' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Notebooks', exact: true })).toBeVisible()
 
     const sidebar = page.locator('.dn-legacy-shell > .app-sidebar')

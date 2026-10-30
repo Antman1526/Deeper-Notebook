@@ -12,7 +12,7 @@
 //   - The DirectoryPicker is opened in `selectionMode='any'` so the
 //     user can pick a file (.zip or .md) as well as a folder.
 //   - Warnings from preview surface as a yellow Alert.
-//   - Overview notes (📋) are flagged in the lists per the v0.7.89
+//   - Overview notes (clipboard icon) are flagged in the lists per the v0.7.89
 //     manifest convention.
 //   - On success we navigate to the new/target notebook so the user
 //     can immediately see the imported content.
@@ -44,8 +44,9 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import { AlertTriangle, FolderOpen } from 'lucide-react'
+import { AlertTriangle, ClipboardList, FolderOpen } from 'lucide-react'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatDecimal } from '@/lib/utils/format'
 import { useFsHome } from '@/lib/hooks/use-fs'
 import {
   useImportPreview,
@@ -65,25 +66,25 @@ interface ImportNotebookDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-function formatBytes(bytes: number): string {
+function formatBytes(bytes: number, language: string): string {
   if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  if (bytes < 1024 * 1024) return `${formatDecimal(bytes / 1024, language, 1)} KB`
+  return `${formatDecimal(bytes / (1024 * 1024), language, 1)} MB`
 }
 
 function ItemRow({ item }: { item: NotebookImportPreviewItem }) {
+  const { language } = useTranslation()
   return (
     <div className="flex items-center justify-between gap-2 py-1 px-2 text-sm rounded hover:bg-accent/40">
       <div className="flex items-center gap-2 min-w-0">
         {item.is_overview ? (
-          <span aria-hidden className="text-base leading-none">
-            📋
-          </span>
+          // v0.8.130 — Phase 4c: an icon, not an emoji.
+          <ClipboardList aria-hidden className="h-4 w-4 shrink-0 text-muted-foreground" />
         ) : null}
         <span className="truncate">{item.title}</span>
       </div>
       <span className="text-xs text-muted-foreground shrink-0">
-        {formatBytes(item.bytes)}
+        {formatBytes(item.bytes, language)}
       </span>
     </div>
   )
@@ -367,7 +368,7 @@ export function ImportNotebookDialog({
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div className="border rounded-md">
-                    <div className="px-3 py-2 border-b text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    <div className="px-3 py-2 border-b text-xs font-medium text-muted-foreground">
                       {t('notebooks.import.notesHeading')} ({preview.notes.length})
                     </div>
                     <ScrollArea className="h-40">
@@ -386,7 +387,7 @@ export function ImportNotebookDialog({
                   </div>
 
                   <div className="border rounded-md">
-                    <div className="px-3 py-2 border-b text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    <div className="px-3 py-2 border-b text-xs font-medium text-muted-foreground">
                       {t('notebooks.import.sourcesHeading')} ({preview.sources.length})
                     </div>
                     <ScrollArea className="h-40">

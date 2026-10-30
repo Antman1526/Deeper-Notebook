@@ -128,8 +128,11 @@ def _providers(*, readiness=None, **overrides):
     return RuntimeSnapshotProviders(**values)
 
 
+# v0.8.130 — renamed: it asserts degraded + auto_export_unknown, never "ready".
 @pytest.mark.asyncio
-async def test_ready_snapshot_uses_only_injected_read_models(tmp_path: Path) -> None:
+async def test_snapshot_from_injected_read_models_is_degraded_only_by_missing_export(
+    tmp_path: Path,
+) -> None:
     from api.runtime_snapshot import build_runtime_snapshot
 
     snapshot = await build_runtime_snapshot(
@@ -554,8 +557,11 @@ async def test_auto_export_receipt_projects_bounded_valid_and_stale_metadata(
     assert "auto_export_stale" in stale.reasons
 
 
+# v0.8.130 — renamed: unknown holds only with no uptime/expected providers.
 @pytest.mark.asyncio
-async def test_absent_auto_export_receipt_is_unknown_without_paths() -> None:
+async def test_absent_auto_export_directory_is_unknown_by_default_without_paths() -> (
+    None
+):
     from api.runtime_snapshot import build_runtime_snapshot
 
     snapshot = await build_runtime_snapshot(
@@ -623,8 +629,9 @@ async def test_malformed_provenance_degrades_without_raw_details() -> None:
     assert "c" * 64 not in wire
 
 
+# v0.8.130 — renamed: unknown holds only with no uptime/expected providers.
 @pytest.mark.asyncio
-async def test_existing_backup_directory_without_exports_is_unknown(
+async def test_backup_directory_without_exports_is_unknown_by_default(
     tmp_path: Path,
 ) -> None:
     from api.runtime_snapshot import build_runtime_snapshot

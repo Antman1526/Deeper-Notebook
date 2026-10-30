@@ -1757,164 +1757,198 @@ async def healthz_deep(probe_providers: bool = False):
     checks["database"] = {"ok": False, "status": "unknown"}
     checks["migrations"] = {"ok": False}
 
-    # MUST-HAVE: Database
-    db_health = await check_database_health()
-    db_status = db_health.get("status", "unknown")
-    checks["database"] = {
-        "status": db_status,
-        "ok": db_status == "online",
-        "error": db_health.get("error"),
-    }
-
-    # MUST-HAVE: Migrations
-    try:
-        manager = async_migrate.AsyncMigrationManager()
-        pending = await asyncio.wait_for(manager.needs_migration(), timeout=3.0)
-        checks["migrations"] = {
-            "status": "applied" if not pending else "pending",
-            "ok": not pending,
-            "error": None,
-        }
-    except asyncio.TimeoutError:
-        checks["migrations"] = {
-            "status": "timeout",
-            "ok": False,
-            "error": "needs_migration() took longer than 3s",
-        }
-    except Exception as exc:
-        checks["migrations"] = {
-            "status": "error",
-            "ok": False,
-            "error": str(exc),
+    async def _probe_database() -> None:
+        db_health = await check_database_health()
+        db_status = db_health.get("status", "unknown")
+        checks["database"] = {
+            "status": db_status,
+            "ok": db_status == "online",
+            "error": db_health.get("error"),
         }
 
-    # OPTIONAL: Embedding model (required for vector search + chat-with-sources)
-    try:
-        from deeper_notebook.ai.models import model_manager
-
-        emb = await asyncio.wait_for(
-            model_manager.get_embedding_model(),
-            timeout=2.0,
-        )
-        checks["embedding_model"] = {
-            "status": "configured" if emb else "missing",
-            "ok": bool(emb),
-            "error": None
-            if emb
-            else (
-                "No default embedding model. Configure one in "
-                "Settings → Models to enable vector search."
-            ),
-        }
-    except asyncio.TimeoutError:
-        checks["embedding_model"] = {
-            "status": "timeout",
-            "ok": False,
-            "error": "embedding model lookup took longer than 2s",
-        }
-    except Exception as exc:
-        checks["embedding_model"] = {
-            "status": "error",
-            "ok": False,
-            "error": str(exc),
-        }
-
-    # OPTIONAL: Default chat model (required for /chat, /studio, /ask, etc.)
-    try:
-        from deeper_notebook.ai.models import model_manager
-
-        chat = await asyncio.wait_for(
-            model_manager.get_default_model("chat"),
-            timeout=2.0,
-        )
-        checks["chat_model"] = {
-            "status": "configured" if chat else "missing",
-            "ok": bool(chat),
-            "error": None
-            if chat
-            else (
-                "No default chat model. Configure one in "
-                "Settings → Models — without it, /chat, /studio, and "
-                "/search/ask cannot generate responses."
-            ),
-        }
-    except asyncio.TimeoutError:
-        checks["chat_model"] = {
-            "status": "timeout",
-            "ok": False,
-            "error": "chat model lookup took longer than 2s",
-        }
-    except Exception as exc:
-        checks["chat_model"] = {
-            "status": "error",
-            "ok": False,
-            "error": str(exc),
-        }
-
-    # OPTIONAL: Command registry (required for async embedding +
-    # podcast generation + Studio extract). Importing the command
-    # modules is the same check the routers do before submitting jobs;
-    # if these imports fail, async jobs can't be queued.
-    try:
-        import commands.embedding_commands  # noqa: F401
-        import commands.podcast_commands  # noqa: F401
-        import commands.source_commands  # noqa: F401
-
-        checks["command_registry"] = {
-            "status": "loaded",
-            "ok": True,
-            "error": None,
-        }
-    except Exception as exc:
-        checks["command_registry"] = {
-            "status": "error",
-            "ok": False,
-            "error": (
-                f"Failed to import command modules: {exc}. Async jobs "
-                "(podcast generation, embeddings) will fail to queue. "
-                "Check that the worker process is running."
-            ),
-        }
-
-    # OPTIONAL: Background worker heartbeat (v0.8.127). Podcasts,
-    # embeddings, and async source/studio jobs are all submitted as
-    # surreal-commands and only run if a `surreal-commands-worker`
-    # process is alive. Without this check, a missing worker was
-    # invisible here — jobs just sat `queued` until the stale-command
-    # reaper eventually failed them. Degraded, never not_ready: chat,
-    # search, and notes all work fine with no worker running.
-    try:
-        from deeper_notebook.worker_heartbeat import read_worker_status
-
-        worker_status = await read_worker_status()
-        online = bool(worker_status.get("online"))
-        if online:
-            checks["worker"] = {
-                "status": "online",
-                "ok": True,
+    async def _probe_migrations() -> None:
+        try:
+            manager = async_migrate.AsyncMigrationManager()
+            pending = await asyncio.wait_for(manager.needs_migration(), timeout=3.0)
+            checks["migrations"] = {
+                "status": "applied" if not pending else "pending",
+                "ok": not pending,
                 "error": None,
-                "age_seconds": worker_status.get("age_seconds"),
-                "active_workers": worker_status.get("active_workers_count", 1),
             }
-        else:
-            stale_after = resolve_env(
-                "DEEPER_NOTEBOOK_WORKER_HEARTBEAT_STALE_SEC", "180"
-            )
-            checks["worker"] = {
-                "status": "offline",
+        except asyncio.TimeoutError:
+            checks["migrations"] = {
+                "status": "timeout",
                 "ok": False,
-                "error": (
-                    f"No background worker heartbeat in the last "
-                    f"{stale_after} s — queued jobs (podcasts, "
-                    "embeddings, async imports) will not run."
+                "error": "needs_migration() took longer than 3s",
+            }
+        except Exception as exc:
+            checks["migrations"] = {
+                "status": "error",
+                "ok": False,
+                "error": str(exc),
+            }
+
+    async def _probe_embedding_model() -> None:
+        try:
+            from deeper_notebook.ai.models import model_manager
+
+            emb = await asyncio.wait_for(
+                model_manager.get_embedding_model(),
+                timeout=2.0,
+            )
+            checks["embedding_model"] = {
+                "status": "configured" if emb else "missing",
+                "ok": bool(emb),
+                "error": None
+                if emb
+                else (
+                    "No default embedding model. Configure one in "
+                    "Settings → Models to enable vector search."
                 ),
             }
-    except Exception as exc:
-        checks["worker"] = {
-            "status": "error",
-            "ok": False,
-            "error": f"Failed to read worker heartbeat status: {exc}",
-        }
+        except asyncio.TimeoutError:
+            checks["embedding_model"] = {
+                "status": "timeout",
+                "ok": False,
+                "error": "embedding model lookup took longer than 2s",
+            }
+        except Exception as exc:
+            checks["embedding_model"] = {
+                "status": "error",
+                "ok": False,
+                "error": str(exc),
+            }
+
+    async def _probe_chat_model() -> None:
+        try:
+            from deeper_notebook.ai.models import model_manager
+
+            chat = await asyncio.wait_for(
+                model_manager.get_default_model("chat"),
+                timeout=2.0,
+            )
+            checks["chat_model"] = {
+                "status": "configured" if chat else "missing",
+                "ok": bool(chat),
+                "error": None
+                if chat
+                else (
+                    "No default chat model. Configure one in "
+                    "Settings → Models — without it, /chat, /studio, and "
+                    "/search/ask cannot generate responses."
+                ),
+            }
+        except asyncio.TimeoutError:
+            checks["chat_model"] = {
+                "status": "timeout",
+                "ok": False,
+                "error": "chat model lookup took longer than 2s",
+            }
+        except Exception as exc:
+            checks["chat_model"] = {
+                "status": "error",
+                "ok": False,
+                "error": str(exc),
+            }
+
+    def _probe_command_registry() -> None:
+        try:
+            import commands.embedding_commands  # noqa: F401
+            import commands.podcast_commands  # noqa: F401
+            import commands.source_commands  # noqa: F401
+
+            checks["command_registry"] = {
+                "status": "loaded",
+                "ok": True,
+                "error": None,
+            }
+        except Exception as exc:
+            checks["command_registry"] = {
+                "status": "error",
+                "ok": False,
+                "error": (
+                    f"Failed to import command modules: {exc}. Async jobs "
+                    "(podcast generation, embeddings) will fail to queue. "
+                    "Check that the worker process is running."
+                ),
+            }
+
+    async def _probe_worker() -> None:
+        try:
+            from deeper_notebook.worker_heartbeat import read_worker_status
+
+            worker_status = await read_worker_status()
+            online = bool(worker_status.get("online"))
+            if online:
+                checks["worker"] = {
+                    "status": "online",
+                    "ok": True,
+                    "error": None,
+                    "age_seconds": worker_status.get("age_seconds"),
+                    "active_workers": worker_status.get("active_workers_count", 1),
+                }
+            else:
+                stale_after = resolve_env(
+                    "DEEPER_NOTEBOOK_WORKER_HEARTBEAT_STALE_SEC", "180"
+                )
+                checks["worker"] = {
+                    "status": "offline",
+                    "ok": False,
+                    "error": (
+                        f"No background worker heartbeat in the last "
+                        f"{stale_after} s — queued jobs (podcasts, "
+                        "embeddings, async imports) will not run."
+                    ),
+                }
+        except Exception as exc:
+            checks["worker"] = {
+                "status": "error",
+                "ok": False,
+                "error": f"Failed to read worker heartbeat status: {exc}",
+            }
+
+    async def _probe_disk_space() -> None:
+        try:
+            import shutil as _shutil
+            from deeper_notebook.config import DATA_FOLDER as _DATA_FOLDER
+
+            _probe_dir = _DATA_FOLDER if os.path.exists(_DATA_FOLDER) else "."
+            _usage = await asyncio.to_thread(_shutil.disk_usage, _probe_dir)
+            _free_mb = round(_usage.free / (1024 * 1024), 1)
+            try:
+                _min_mb = max(
+                    0, int(os.environ.get("DEEPER_NOTEBOOK_MIN_FREE_DISK_MB", "512") or "512")
+                )
+            except ValueError:
+                _min_mb = 512
+            _disk_ok = _free_mb >= _min_mb
+            checks["disk_space"] = {
+                "status": "ok" if _disk_ok else "low_disk",
+                "ok": _disk_ok,
+                "free_mb": _free_mb,
+                "error": None
+                if _disk_ok
+                else (
+                    f"Low disk space ({_free_mb:.0f} MB free, minimum {_min_mb} MB "
+                    "recommended) — database writes and uploads may fail."
+                ),
+            }
+        except Exception:
+            checks["disk_space"] = {
+                "status": "unknown",
+                "ok": True,
+                "error": None,
+            }
+
+    _probe_command_registry()
+    await asyncio.gather(
+        _probe_database(),
+        _probe_migrations(),
+        _probe_embedding_model(),
+        _probe_chat_model(),
+        _probe_worker(),
+        _probe_disk_space(),
+    )
 
     # v0.7.132 — Optional: probe upstream providers (Area for Review
     # #12). Only runs when caller passes ?probe_providers=true, since

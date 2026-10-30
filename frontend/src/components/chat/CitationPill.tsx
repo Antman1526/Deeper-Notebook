@@ -59,11 +59,30 @@ interface CitationPillProps {
    * or note/insight pills).
    */
   onViewSource?: () => void
+  /**
+   * v0.8.130 — Visible text of the chip. Callers that number their citations pass it so
+   * the pill reads like a footnote marker; omitted, the pill falls back to an
+   * abbreviated record ID (`so:abc12345`) or `[N]` for tool calls.
+   */
+  label?: string
 }
 
 // ---------------------------------------------------------------------------
 // Sub-components: popover body per kind
 // ---------------------------------------------------------------------------
+
+/**
+ * v0.8.130 — the cited text is what the reader came to check, so it reads as a
+ * quoted passage (rule + italic) instead of a third line of grey metadata under
+ * the label and title.
+ */
+function PopoverExcerpt({ text }: { text: string }) {
+  return (
+    <blockquote className="mt-1 line-clamp-3 rounded-r-sm border-l-2 border-primary/40 bg-muted/30 py-1 pl-2.5 text-xs italic text-foreground/85">
+      {text.slice(0, 200)}
+    </blockquote>
+  )
+}
 
 /** Popover body for [source:ID] pills */
 function SourcePopoverContent({ id }: { id: string }) {
@@ -86,11 +105,7 @@ function SourcePopoverContent({ id }: { id: string }) {
           {t('sources.untitledSource')}
         </p>
       )}
-      {data?.full_text && (
-        <p className="text-xs text-muted-foreground line-clamp-3 mt-1">
-          {data.full_text.slice(0, 200)}
-        </p>
-      )}
+      {data?.full_text && <PopoverExcerpt text={data.full_text} />}
     </div>
   )
 }
@@ -116,11 +131,7 @@ function NotePopoverContent({ id }: { id: string }) {
           {t('sources.untitledNote')}
         </p>
       )}
-      {data?.content && (
-        <p className="text-xs text-muted-foreground line-clamp-3 mt-1">
-          {data.content.slice(0, 200)}
-        </p>
-      )}
+      {data?.content && <PopoverExcerpt text={data.content} />}
     </div>
   )
 }
@@ -157,11 +168,7 @@ function InsightPopoverContent({ id }: { id: string }) {
           {t('common.insight')}
         </p>
       )}
-      {data?.content && (
-        <p className="text-xs text-muted-foreground line-clamp-3 mt-1">
-          {data.content.slice(0, 200)}
-        </p>
-      )}
+      {data?.content && <PopoverExcerpt text={data.content} />}
     </div>
   )
 }
@@ -220,7 +227,7 @@ function McpPopoverContent({ index, messageId }: { index: string; messageId?: st
       </div>
       <div className="space-y-1">
         <p className="text-xs font-medium text-muted-foreground">{t('chat.citations.mcpArgs')}</p>
-        <pre className="text-[0.65rem] bg-muted rounded p-1 overflow-x-auto max-w-full whitespace-pre-wrap break-all">
+        <pre className="text-xs bg-muted rounded p-1 overflow-x-auto max-w-full whitespace-pre-wrap break-all">
           {argsJson}
         </pre>
       </div>
@@ -239,11 +246,14 @@ function McpPopoverContent({ index, messageId }: { index: string; messageId?: st
 // Kind → badge style mapping
 // ---------------------------------------------------------------------------
 
+// v0.8.130 — the four citation kinds are a categorical set, so they take the
+// theme's chart tints with normal text. Status roles (info/warning/success) made a
+// note pill identical to a "Setup required" warning chip (UI audit Phase 1).
 const BADGE_STYLES: Record<CitationKind, string> = {
-  mcp: 'bg-violet-100 text-violet-700 border-violet-200 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-300 dark:border-violet-700 dark:hover:bg-violet-900/50',
-  source: 'bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700 dark:hover:bg-blue-900/50',
-  note: 'bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-700 dark:hover:bg-amber-900/50',
-  insight: 'bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-700 dark:hover:bg-emerald-900/50',
+  mcp: 'bg-primary/10 text-primary border-primary/30 hover:bg-primary/20',
+  source: 'bg-chart-2/15 text-foreground border-chart-2/40 hover:bg-chart-2/25',
+  note: 'bg-chart-5/20 text-foreground border-chart-5/50 hover:bg-chart-5/30',
+  insight: 'bg-chart-3/15 text-foreground border-chart-3/40 hover:bg-chart-3/25',
 }
 
 const KIND_ICONS: Record<CitationKind, React.ElementType> = {
@@ -264,7 +274,7 @@ const KIND_ICONS: Record<CitationKind, React.ElementType> = {
  * Accessibility: the trigger is a focusable button; Radix Popover handles
  * keyboard navigation (Enter/Space to open, Escape to close, focus-trap).
  */
-export function CitationPill({ kind, value, messageId, onViewSource }: CitationPillProps) {
+export function CitationPill({ kind, value, messageId, onViewSource, label: labelOverride }: CitationPillProps) {
   const { t } = useTranslation()
   const Icon = KIND_ICONS[kind]
 
@@ -298,11 +308,15 @@ export function CitationPill({ kind, value, messageId, onViewSource }: CitationP
   }, [])
   useEffect(() => () => clearTimers(), [clearTimers])
 
+  // v0.8.130 — callers that number their citations pass `label`; that is the footnote variant.
+  const isNumbered = labelOverride !== undefined
+
   // Visible badge label
   const label =
-    kind === 'mcp'
+    labelOverride ??
+    (kind === 'mcp'
       ? `[${value}]`
-      : `${kind.slice(0, 2)}:${value.slice(0, 8)}`
+      : `${kind.slice(0, 2)}:${value.slice(0, 8)}`)
 
   // Accessible aria-label
   const ariaLabel =
@@ -318,7 +332,14 @@ export function CitationPill({ kind, value, messageId, onViewSource }: CitationP
           aria-label={ariaLabel}
           className={[
             'inline-flex items-center gap-0.5',
-            'mx-0.5 px-1.5 py-0 rounded-full border text-[0.65rem] font-semibold',
+            // v0.8.130 — a numbered citation is a footnote marker: smaller, raised a
+            // pixel and round, so two or three in one sentence don't break the line
+            // rhythm of 14px prose. ID-fragment and [N] tool-call pills keep the chip.
+            // text-xs, not 11px: the design lint forbids type below 12px; leading-4
+            // keeps the marker inside the line box.
+            isNumbered
+              ? 'mx-0.5 align-baseline -translate-y-px rounded-full border px-1.5 py-0 text-xs leading-4 font-semibold tabular-nums shadow-xs'
+              : 'mx-0.5 px-1.5 py-0 rounded-sm border text-xs font-semibold',
             'cursor-pointer transition-colors',
             'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
             // Prevent citation click from navigating or propagating to parent anchor elements
@@ -356,17 +377,21 @@ export function CitationPill({ kind, value, messageId, onViewSource }: CitationP
         {kind === 'insight' && <InsightPopoverContent id={value} />}
         {/* v0.8.79 — citation jump-to-highlight: open the source reading view
             scrolled to + highlighting the cited passage. */}
+        {/* v0.8.130 — the action sits in a footer row under a hairline so it reads as
+            a next step, not as another block of the citation's metadata. */}
         {kind === 'source' && onViewSource && (
-          <button
-            type="button"
-            onClick={() => {
-              setOpen(false)
-              onViewSource()
-            }}
-            className="mt-2 w-full rounded-md border border-border/60 px-2 py-1.5 text-left text-xs font-medium text-primary transition-colors hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-          >
-            {t('chat.citations.viewSource', { defaultValue: 'View source →' })}
-          </button>
+          <div className="mt-2 flex justify-end border-t border-border/60 pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false)
+                onViewSource()
+              }}
+              className="rounded-md px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+            >
+              {t('chat.citations.viewSource', { defaultValue: 'View source →' })}
+            </button>
+          </div>
         )}
       </PopoverContent>
     </Popover>

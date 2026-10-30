@@ -20,10 +20,10 @@ describe('StudySession', () => {
       due: '2026-07-17T00:00:00Z', stability: null, difficulty: null, lapse_count: 0, current: true,
     }]} />)
 
-    expect(screen.queryByRole('button', { name: 'Good' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Reveal answer' }))
+    expect(screen.queryByRole('button', { name: 'study.studySession.ratings.good' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'study.studySession.revealAnswer' }))
     expect(screen.getByText('Keep source data on this device.')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Good' }))
+    fireEvent.click(screen.getByRole('button', { name: 'study.studySession.ratings.good' }))
     expect(mutateAsync).toHaveBeenCalledWith({ cardId: 'study_card:one', rating: 'good' })
   })
 })

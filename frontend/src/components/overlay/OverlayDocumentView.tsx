@@ -351,7 +351,7 @@ export function OverlayDocumentView({
       />
     </div>
   ) : mode === 'reading' ? (
-    <section aria-label={`${title} reading view`}>
+    <section aria-label={t('notes.overlayDocumentView.readingView', { title })}>
       {readableBlocks.length > 0 ? readableBlocks.map((block, index) => <section key={block.knowledge_block_id} data-knowledge-block-id={block.knowledge_block_id!} data-source-revision-id={block.source_revision_id ?? undefined}>
         <VaultMarkdown noteId={loadedPage.note.id} headingIdPrefix={`${headingIdPrefix}-${index}`} markdown={block.markdown!} links={displayOutgoingLinks} onNavigate={onNavigate} footnoteLabel={t('knowledge.footnotes')} />
       </section>) : <VaultMarkdown

@@ -118,6 +118,16 @@ export async function installResearchWorkbenchMocks(
     knowledge: { state: 'ready', projected: 1, unchanged: 0, failed: 0 },
     backup: { state: 'ready', file_count: 1, newest_age_seconds: 0 },
   })
+  await fulfillJson(page, '/api/features', {
+    features: {
+      evidenceStudio: true,
+      visualRefresh: true,
+      modelFleet: true,
+      researchRuns: true,
+      studyWorkbench: true,
+      sourceVisuals: true,
+    },
+  })
   await fulfillJson(page, '/healthz/deep', {
     status: 'healthy',
     checks: {
@@ -126,6 +136,7 @@ export async function installResearchWorkbenchMocks(
       embedding_model: { status: 'ready', ok: true, error: null },
       chat_model: { status: 'ready', ok: true, error: null },
       command_registry: { status: 'ready', ok: true, error: null },
+      worker: { status: 'ready', ok: true, error: null },
     },
   })
   await fulfillJson(page, '/api/healthz/deep', {
@@ -136,6 +147,7 @@ export async function installResearchWorkbenchMocks(
       embedding_model: { status: 'ready', ok: true, error: null },
       chat_model: { status: 'ready', ok: true, error: null },
       command_registry: { status: 'ready', ok: true, error: null },
+      worker: { status: 'ready', ok: true, error: null },
     },
   })
   await fulfillJson(page, '/api/notebooks**', [researchWorkbenchFixtures.notebook])
@@ -154,9 +166,11 @@ type ResearchWorkbenchFixtures = {
 }
 
 export const test = base.extend<ResearchWorkbenchFixtures>({
-  researchWorkbench: async ({ page }, use) => {
+  // v0.8.130 — the fixture callback is named `provide`, not `use`: eslint's react-hooks
+  // rule reads any call to `use(...)` as a React hook call.
+  researchWorkbench: async ({ page }, provide) => {
     await installResearchWorkbenchMocks(page)
-    await use(researchWorkbenchFixtures)
+    await provide(researchWorkbenchFixtures)
   },
 })
 

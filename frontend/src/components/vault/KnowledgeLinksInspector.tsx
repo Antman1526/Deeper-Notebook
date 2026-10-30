@@ -171,7 +171,7 @@ export function KnowledgeLinksInspector({
   )
 
   if (embedded) {
-    return <div className="space-y-6" aria-label={t('knowledge.noteLinks')}>{content}</div>
+    return <div className="space-y-6" role="group" aria-label={t('knowledge.noteLinks')}>{content}</div>
   }
 
   return (

@@ -4,6 +4,24 @@ import { ExecutiveSynthesisDialog } from './ExecutiveSynthesisDialog'
 import { notebooksApi } from '@/lib/api/notebooks'
 import { useCreateNote } from '@/lib/hooks/use-notes'
 
+// v0.8.130 — resolve the real en-US strings (with {{name}} interpolation) so the
+// counts, names and reasons below stay asserted after the strings moved to keys.
+vi.mock('@/lib/hooks/use-translation', async () => {
+  const { enUS } = await import('@/lib/locales/en-US')
+  const resolve = (key: string, options?: Record<string, unknown>): string => {
+    let node: unknown = enUS
+    for (const part of key.split('.')) {
+      if (typeof node !== 'object' || node === null || !(part in (node as Record<string, unknown>))) return key
+      node = (node as Record<string, unknown>)[part]
+    }
+    if (typeof node !== 'string') return key
+    return options
+      ? node.replace(/\{\{\s*(\w+)\s*\}\}/g, (match, name: string) => (name in options ? String(options[name]) : match))
+      : node
+  }
+  return { useTranslation: () => ({ t: resolve, i18n: { language: 'en-US' }, language: 'en-US', setLanguage: async () => 'en-US' }) }
+})
+
 vi.mock('@/lib/api/notebooks', () => ({
   notebooksApi: {
     getExecutiveSynthesis: vi.fn(),
@@ -97,7 +115,7 @@ describe('ExecutiveSynthesisDialog', () => {
     await waitFor(() => {
       expect(mockMutateAsync).toHaveBeenCalledWith({
         notebook_id: 'nb-123',
-        title: 'Executive Synthesis — Quantum Computing Research',
+        title: 'Executive synthesis — Quantum Computing Research',
         content: 'Key consensus points.',
       })
     })

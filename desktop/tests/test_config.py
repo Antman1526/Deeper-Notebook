@@ -115,9 +115,15 @@ def test_save_handles_quote_in_value(tmp_path):
     assert loaded.default_model == 'weird"name.gguf'
 
 
-def test_theme_defaults_to_research_core_dark(tmp_path):
+def test_theme_defaults_to_gemini_forward_light(tmp_path):
+    # v0.8.130 — indigo (Gemini-Forward) is the one brand (decision of
+    # 2026-09-30). A fresh install used to start in teal Research Core Dark,
+    # while the web app's fresh default was already Gemini-Forward Light.
+    from desktop.config import DEFAULT_THEME
+
+    assert DEFAULT_THEME == "gemini-forward-light"
     cfg = load_or_create(tmp_path / "config.toml")
-    assert cfg.theme == "research-core-dark"
+    assert cfg.theme == DEFAULT_THEME
 
 
 def test_existing_theme_is_not_replaced_by_new_default(tmp_path):

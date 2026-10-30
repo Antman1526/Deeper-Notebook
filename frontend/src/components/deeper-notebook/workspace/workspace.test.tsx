@@ -19,6 +19,8 @@ import { WorkspacePage } from './WorkspacePage'
 vi.mock('@/components/chat/LocalModelHealthBadges', () => ({
   LocalModelHealthBadges: () => <div data-testid="local-model-health" />,
 }))
+// The phone-bar model-health link reads the same health query; stubbed like the rail's badges.
+vi.mock('@/components/deeper-notebook/shell/ModelHealthIndicator', () => ({ ModelHealthIndicator: () => null }))
 vi.mock('@/components/layout/SetupBanner', () => ({ SetupBanner: () => null }))
 vi.mock('@/components/layout/DbRepairBanner', () => ({ DbRepairBanner: () => null }))
 vi.mock('@/components/layout/UpdateBanner', () => ({ UpdateBanner: () => null }))
@@ -61,9 +63,9 @@ describe('shared workspace primitives', () => {
           <body>
             <main class="dn-workspace-auth-frame" data-dn-visual-system="v2">
               <section class="dn-workspace-auth-panel">
-                <p class="dn-workspace-auth-eyebrow">Deeper Notebook</p>
+                <p class="dn-workspace-auth-brand"><span class="dn-rail-brand-mark">DN</span>Deeper Notebook</p>
                 <h1 class="dn-workspace-auth-title">Welcome back</h1>
-                <p class="dn-workspace-auth-description">Continue working with your local sources, notebooks, and grounded questions.</p>
+                <p class="dn-workspace-auth-description">Enter your password to open your notebooks.</p>
                 <div class="dn-workspace-auth-content" data-testid="auth-content"></div>
               </section>
             </main>
@@ -74,7 +76,8 @@ describe('shared workspace primitives', () => {
       const before = await page.locator('.dn-workspace-auth-panel').boundingBox()
       await page.locator('[data-testid="auth-content"]').evaluate((element) => {
         const form = document.createElement('form')
-        form.style.blockSize = '255px'
+        // v0.8.130 — Phase 3c: the embedded LoginForm measures 190px (it was a 255px card).
+        form.style.blockSize = '190px'
         element.appendChild(form)
       })
       const after = await page.locator('.dn-workspace-auth-panel').boundingBox()
@@ -82,7 +85,7 @@ describe('shared workspace primitives', () => {
         (element) => getComputedStyle(element).minBlockSize,
       )
 
-      expect(minBlockSize).toBe('256px')
+      expect(minBlockSize).toBe('192px')
       expect(before).not.toBeNull()
       expect(after).not.toBeNull()
       expect(after!.height).toBeCloseTo(before!.height, 0)
@@ -92,13 +95,15 @@ describe('shared workspace primitives', () => {
     }
   })
 
-  it('reserves setup health geometry in short desktop windows without affecting roomy desktops', async () => {
+  // v0.8.130 — Phase 3c: the six-row health table moved behind "Show details", so the
+  // 55rem reservation for it is gone; e2e/phase3-firstrun.spec.ts measures that the
+  // summary card keeps its height when the check returns.
+  it('no longer reserves the old health-table height on the setup summary', async () => {
     const browser = await chromium.launch({ headless: true })
 
     try {
       const shortPage = await browser.newPage({ viewport: { width: 1020, height: 631 } })
-      const roomyPage = await browser.newPage({ viewport: { width: 1020, height: 900 } })
-      const markup = `
+      await shortPage.setContent(`
         <!doctype html>
         <html>
           <head><style>${workspaceStyles}</style></head>
@@ -106,15 +111,9 @@ describe('shared workspace primitives', () => {
             <div class="dn-workspace-setup-card-content">Setup health</div>
           </body>
         </html>
-      `
-
-      await shortPage.setContent(markup)
-      await roomyPage.setContent(markup)
+      `)
 
       await expect(shortPage.locator('.dn-workspace-setup-card-content').evaluate(
-        (element) => getComputedStyle(element).minBlockSize,
-      )).resolves.toBe('880px')
-      await expect(roomyPage.locator('.dn-workspace-setup-card-content').evaluate(
         (element) => getComputedStyle(element).minBlockSize,
       )).resolves.toBe('0px')
     } finally {
@@ -147,15 +146,15 @@ describe('shared workspace primitives', () => {
     )
     expect(screen.getAllByRole('main')).toHaveLength(1)
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
-    expect(screen.getByRole('link', { name: 'Studio' })).toHaveAttribute('href', '/studio')
-    expect(screen.getByRole('button', { name: 'New Notebook' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'Podcast' })).toBeEnabled()
-    expect(screen.getByRole('link', { name: 'Ask' })).toHaveAttribute('href', '/search')
+    expect(screen.getByRole('link', { name: 'workspace.workspaceHome.studio' })).toHaveAttribute('href', '/studio')
+    expect(screen.getByRole('button', { name: 'workspace.workspaceHome.newNotebook' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'workspace.workspaceHome.podcast' })).toBeEnabled()
+    expect(screen.getByRole('link', { name: 'workspace.workspaceHome.ask' })).toHaveAttribute('href', '/search')
 
-    fireEvent.click(screen.getByRole('link', { name: 'Studio' }))
-    fireEvent.click(screen.getByRole('button', { name: 'New Notebook' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Podcast' }))
-    fireEvent.click(screen.getByRole('link', { name: 'Ask' }))
+    fireEvent.click(screen.getByRole('link', { name: 'workspace.workspaceHome.studio' }))
+    fireEvent.click(screen.getByRole('button', { name: 'workspace.workspaceHome.newNotebook' }))
+    fireEvent.click(screen.getByRole('button', { name: 'workspace.workspaceHome.podcast' }))
+    fireEvent.click(screen.getByRole('link', { name: 'workspace.workspaceHome.ask' }))
 
     expect(onOpenStudio).toHaveBeenCalledTimes(1)
     expect(onCreateNotebook).toHaveBeenCalledTimes(1)
@@ -186,9 +185,9 @@ describe('shared workspace primitives', () => {
       '/notebooks/notebook%3Aone',
     )
     expect(screen.getByTestId('runtime-status-panel')).toBeInTheDocument()
-    expect(screen.queryByRole('status', { name: 'Your notebook is ready to begin' })).toBeNull()
+    expect(screen.queryByRole('status', { name: 'workspace.workspaceHome.emptyTitle' })).toBeNull()
 
-    fireEvent.click(screen.getByRole('link', { name: 'Studio' }))
+    fireEvent.click(screen.getByRole('link', { name: 'workspace.workspaceHome.studio' }))
     expect(onOpenStudio).toHaveBeenCalledTimes(1)
   })
 
@@ -201,8 +200,10 @@ describe('shared workspace primitives', () => {
 
     expect(screen.getAllByTestId('v2-page-slot')).toHaveLength(1)
     expect(screen.getAllByTestId('focus-mode-control')).toHaveLength(1)
-    expect(screen.getAllByRole('navigation', { name: 'Primary tools' })).toHaveLength(1)
-    expect(screen.getAllByRole('navigation', { name: 'Notebook index' })).toHaveLength(1)
+    // v0.8.130 — Phase 3b: one rail replaces the instrument dock and the notebook index.
+    expect(screen.getAllByRole('navigation', { name: 'navigation.primary' })).toHaveLength(1)
+    expect(screen.queryByRole('navigation', { name: 'Primary tools' })).toBeNull()
+    expect(screen.queryByRole('navigation', { name: 'Notebook index' })).toBeNull()
     expect(document.querySelectorAll('.dn-workspace-canvas')).toHaveLength(1)
   })
 
@@ -289,7 +290,7 @@ describe('shared workspace primitives', () => {
     expect(error).toHaveAttribute('aria-labelledby')
     expect(error).toHaveAttribute('aria-describedby')
     expect(error.getAttribute('aria-labelledby')).not.toBe(loading.getAttribute('aria-labelledby'))
-    expect(screen.getByText('Details')).toBeInTheDocument()
+    expect(screen.getByText('workspace.statePanel.details')).toBeInTheDocument()
     expect(screen.getByText('Request ID: fixture-001')).not.toBeVisible()
     expect(screen.getByText('No saved sources were changed.')).toBeInTheDocument()
   })
@@ -437,8 +438,10 @@ describe('shared workspace primitives', () => {
     expect(desktopStyles).toMatch(
       /html\[data-dn-focus-mode="true"\]\s+\.dn-workspace-shell\s*\{[\s\S]*?grid-template-columns:\s*var\(--dn-focus-rail\)\s+minmax\(0,\s*1fr\);/,
     )
+    // v0.8.130 — two tracks: the navigator's keyboard-revealable rail and the canvas. The
+    // third rail belonged to the Context lens, which the V2 shell no longer mounts.
     expect(desktopStyles).toMatch(
-      /html\[data-dn-focus-mode="true"\]\s+\.dn-workspace-shell-body\s*\{[\s\S]*?grid-template-columns:\s*var\(--dn-focus-rail\)\s+minmax\(0,\s*1fr\)\s+var\(--dn-focus-rail\);/,
+      /html\[data-dn-focus-mode="true"\]\s+\.dn-workspace-shell-body\s*\{[\s\S]*?grid-template-columns:\s*var\(--dn-focus-rail\)\s+minmax\(0,\s*1fr\);/,
     )
   })
 
@@ -551,73 +554,91 @@ describe('shared workspace primitives', () => {
     }
   })
 
-  it('keeps an opened Context Lens fully visible when desktop V2 Focus is active', async () => {
+  // v0.8.130 — the Context lens was static placeholder copy on every route: an empty
+  // 320px rail at 1536px+, and a floating button that covered content below that.
+  it('does not mount the placeholder Context lens in the V2 shell', () => {
+    render(
+      <WorkspaceAppShell>
+        <div data-testid="v2-page-slot">Page content</div>
+      </WorkspaceAppShell>,
+    )
+
+    expect(document.querySelector('.dn-context-lens')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Context lens' })).toBeNull()
+    expect(screen.queryByRole('complementary', { name: 'Context lens' })).toBeNull()
+  })
+
+  // v0.8.130 — Phase 3b: the shell is "rail | body" and the body is the command bar over
+  // the canvas, so the canvas still takes all the space beside the chrome (no lens rail).
+  it('gives the canvas all the space beside the rail: one body column, no lens rail', async () => {
     const browser = await chromium.launch({ headless: true })
+    const shell = `
+      <div class="dn-workspace-shell">
+        <nav class="dn-rail"></nav>
+        <div class="dn-workspace-shell-body">
+          <header class="dn-command-bar"></header>
+          <main class="dn-workspace-canvas">Canvas</main>
+        </div>
+      </div>
+    `
 
     try {
-      const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
-      await page.setContent(`
-        <!doctype html>
-        <html data-dn-focus-mode="true">
-          <head>
-            <style>
-              html, body { margin: 0; width: 100%; height: 100%; }
-              ${shellStyles}
-              ${workspaceStyles}
-            </style>
-          </head>
-          <body>
-            <div class="dn-workspace-shell">
-              <div class="dn-instrument-dock"></div>
-              <div class="dn-workspace-shell-body">
-                <div class="dn-command-bar"></div>
-                <nav class="dn-adaptive-navigator"></nav>
-                <main class="dn-workspace-canvas"></main>
-                <aside class="dn-context-lens is-open">Context lens</aside>
-              </div>
-            </div>
-          </body>
-        </html>
-      `)
+      for (const width of [1280, 1600, 1920]) {
+        const page = await browser.newPage({ viewport: { width, height: 800 } })
+        await page.setContent(`<!doctype html><html><head><style>
+          html, body { margin: 0; width: 100%; height: 100%; }
+          ${shellStyles}
+          ${workspaceStyles}
+        </style></head><body>${shell}</body></html>`)
 
-      const geometry = await page.locator('.dn-context-lens').evaluate((element) => {
-        const lens = element.getBoundingClientRect()
-        const shell = element.parentElement?.getBoundingClientRect()
+        const layout = await page.evaluate(() => {
+          const shellEl = document.querySelector('.dn-workspace-shell')!
+          const body = document.querySelector('.dn-workspace-shell-body')!
+          const rail = document.querySelector('.dn-rail')!.getBoundingClientRect()
+          const canvas = document.querySelector('.dn-workspace-canvas')!.getBoundingClientRect()
+          return {
+            shellTracks: getComputedStyle(shellEl).gridTemplateColumns.trim().split(/\s+/).length,
+            bodyTracks: getComputedStyle(body).gridTemplateColumns.trim().split(/\s+/).length,
+            canvasEndsAtBodyEdge: Math.abs(canvas.right - body.getBoundingClientRect().right) < 1,
+            canvasStartsAfterRail: Math.abs(canvas.left - rail.right) < 1,
+          }
+        })
 
-        return {
-          left: lens.left,
-          right: lens.right,
-          width: lens.width,
-          shellRight: shell?.right ?? Number.NaN,
-        }
-      })
-
-      expect(geometry.width).toBeGreaterThanOrEqual(17 * 16)
-      expect(geometry.left).toBeGreaterThanOrEqual(0)
-      expect(geometry.right).toBeLessThanOrEqual(1280)
-      expect(geometry.right).toBeCloseTo(geometry.shellRight, 0)
+        expect(layout, `${width}px`).toEqual({ shellTracks: 2, bodyTracks: 1, canvasEndsAtBodyEdge: true, canvasStartsAfterRail: true })
+        await page.close()
+      }
     } finally {
       await browser.close()
     }
   })
 
-  it('turns the Context Lens into an on-demand drawer when the desktop canvas is compact', () => {
-    const compactDesktopStyles = workspaceStyles.slice(
-      workspaceStyles.indexOf('@media (min-width: 1024px) and (max-width: 1535px)'),
-      workspaceStyles.indexOf('@media (min-width: 1024px) {'),
-    )
+  it('folds the rail to a strip in Focus mode and still reserves no right rail', async () => {
+    const browser = await chromium.launch({ headless: true })
 
-    expect(compactDesktopStyles).toMatch(
-      /\.dn-workspace-shell-body\s*\{[\s\S]*?grid-template-areas:\s*"command command"\s*"navigator canvas";/,
-    )
-    expect(compactDesktopStyles).toMatch(
-      /\.dn-workspace-shell\s+\.dn-context-lens\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?visibility:\s*hidden;[\s\S]*?pointer-events:\s*none;[\s\S]*?transform:\s*translateX/,
-    )
-    expect(compactDesktopStyles).toMatch(
-      /\.dn-workspace-shell\s+\.dn-context-lens\.is-open\s*\{[\s\S]*?visibility:\s*visible;[\s\S]*?pointer-events:\s*auto;[\s\S]*?transform:\s*translateX\(0\);/,
-    )
-    expect(compactDesktopStyles).toMatch(
-      /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.dn-workspace-shell\s+\.dn-context-lens\s*\{[\s\S]*?transition:\s*none;/,
-    )
+    try {
+      const page = await browser.newPage({ viewport: { width: 1440, height: 800 } })
+      await page.setContent(`<!doctype html><html data-dn-focus-mode="true"><head><style>
+        html, body { margin: 0; width: 100%; height: 100%; }
+        ${shellStyles}
+        ${workspaceStyles}
+      </style></head><body>
+        <div class="dn-workspace-shell">
+          <nav class="dn-rail"></nav>
+          <div class="dn-workspace-shell-body">
+            <header class="dn-command-bar"></header>
+            <main class="dn-workspace-canvas">Canvas</main>
+          </div>
+        </div>
+      </body></html>`)
+
+      const layout = await page.evaluate(() => ({
+        bodyTracks: getComputedStyle(document.querySelector('.dn-workspace-shell-body')!).gridTemplateColumns.trim().split(/\s+/).length,
+        railWidth: Math.round(document.querySelector('.dn-rail')!.getBoundingClientRect().width),
+      }))
+      // The rail folds to the 3rem Focus strip; the body stays one column.
+      expect(layout).toEqual({ bodyTracks: 1, railWidth: 48 })
+    } finally {
+      await browser.close()
+    }
   })
 })

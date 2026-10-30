@@ -25,8 +25,9 @@ export function NetworkStatusBadge() {
 
   return (
     <div className="px-4 pt-2">
+      {/* v0.8.130 — status colours from theme tokens (UI audit Phase 1) */}
       <div
-        className="flex items-center gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-1.5 text-sm text-amber-700 dark:text-amber-400"
+        className="flex items-center gap-2 rounded-md border border-warning/40 bg-warning-soft px-3 py-1.5 text-sm text-warning-ink"
         data-testid="network-status-badge"
       >
         <WifiOff className="h-4 w-4 shrink-0" />

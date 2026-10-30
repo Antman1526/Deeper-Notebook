@@ -23,12 +23,14 @@ import {
 export type ChatStreamEvent =
   | { type: 'start'; session_id: string }
   | { type: 'token'; content: string }
+  | { type: 'thinking'; content: string; active: boolean }
   | { type: 'mcp_tool_calls'; calls: McpToolCall[] }
   | {
       type: 'done'
       messages: NotebookChatMessage[]
       selected_provider: string | null
       selected_model_id: string | null
+      routing_note?: string | null
       // v0.8.58 — privacy-gate decision (kept-on-device). v0.8.60 —
       // agent-FSM terminal state. Optional: older backends omit them.
       privacy_gated?: boolean | null
@@ -97,6 +99,7 @@ export const chatApi = {
       messages: NotebookChatMessage[]
       selected_provider: string | null
       selected_model_id: string | null
+      routing_note?: string | null
       mcp_tool_calls: McpToolCall[] | null
       privacy_gated?: boolean | null
       privacy_categories?: string[] | null

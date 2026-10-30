@@ -6,6 +6,7 @@ import { ClaimReviewDrawer } from './ClaimReviewDrawer'
 import { EvidenceQualityBadge } from './EvidenceQualityBadge'
 import { useLatestEvaluation } from '@/lib/hooks/use-evaluation'
 import type { EvaluationDetail } from '@/lib/api/evaluations'
+import { useTranslation } from '@/lib/hooks/use-translation'
 
 export function EvidenceReview({
   notebookId,
@@ -25,6 +26,7 @@ export function EvidenceReview({
   batchLoading?: boolean
   batchError?: boolean
 }) {
+  const { t } = useTranslation()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const selector = useMemo(() => {
     if (artifactId && !messageId) return { artifactId }
@@ -41,28 +43,28 @@ export function EvidenceReview({
   if (!selector) {
     return (
       <span className={className} role="status" data-testid="evidence-review">
-        Evidence review unavailable
+        {t('evaluation.evidenceReview.unavailable')}
       </span>
     )
   }
   if (batchLoading || latestQuery.isLoading) {
     return (
       <span className={className} role="status" data-testid="evidence-review">
-        Checking evidence
+        {t('evaluation.evidenceReview.checking')}
       </span>
     )
   }
   if (batchError || latestQuery.isError) {
     return (
       <span className={className} role="status" data-testid="evidence-review">
-        Evidence review unavailable
+        {t('evaluation.evidenceReview.unavailable')}
       </span>
     )
   }
   if (!data) {
     return (
       <span className={className} role="status" data-testid="evidence-review">
-        No evidence review yet
+        {t('evaluation.evidenceReview.none')}
       </span>
     )
   }

@@ -36,7 +36,7 @@ describe('BulkVectorizeButton', () => {
     render(<BulkVectorizeButton notebookId="notebook:abc" />)
 
     // Open the dialog.
-    fireEvent.click(screen.getAllByText('notebooks.bulkVectorize.button')[0])
+    fireEvent.click(screen.getByRole('button', { name: 'notebooks.bulkVectorize.button' })) // v0.8.130 — icon-only trigger, same accessible name
 
     // Default checkbox state should be true (label is present).
     expect(
@@ -67,7 +67,7 @@ describe('BulkVectorizeButton', () => {
 
     render(<BulkVectorizeButton notebookId="notebook:abc" />)
 
-    fireEvent.click(screen.getAllByText('notebooks.bulkVectorize.button')[0])
+    fireEvent.click(screen.getByRole('button', { name: 'notebooks.bulkVectorize.button' })) // v0.8.130 — icon-only trigger, same accessible name
     fireEvent.click(screen.getByLabelText('notebooks.bulkVectorize.onlyMissingLabel'))
     fireEvent.click(screen.getByText('notebooks.bulkVectorize.confirm'))
 
@@ -77,5 +77,24 @@ describe('BulkVectorizeButton', () => {
         data: { only_missing: false },
       })
     })
+  })
+
+  // v0.8.130 — Phase 2b: the Sources "Source options" menu opens this dialog
+  // itself, so the component must support a controlled, trigger-less mode.
+  it('renders no trigger and follows the controlled open prop when hideTrigger is set', () => {
+    const onOpenChange = vi.fn()
+    const { rerender } = render(
+      <BulkVectorizeButton notebookId="notebook:abc" open={false} onOpenChange={onOpenChange} hideTrigger />,
+    )
+    expect(screen.queryByRole('button', { name: 'notebooks.bulkVectorize.button' })).toBeNull()
+    expect(screen.queryByText('notebooks.bulkVectorize.title')).toBeNull()
+
+    rerender(
+      <BulkVectorizeButton notebookId="notebook:abc" open onOpenChange={onOpenChange} hideTrigger />,
+    )
+    expect(screen.getByText('notebooks.bulkVectorize.title')).toBeTruthy()
+
+    fireEvent.click(screen.getByText('filesystem.cancel'))
+    expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 })

@@ -5,7 +5,9 @@ import { ContextToggle } from './ContextToggle'
 
 vi.mock('@/lib/hooks/use-translation', () => ({
   useTranslation: () => ({
-    t: (key: string) => ({
+    t: (key: string, options?: { label?: string; hint?: string }) => key === 'common.contextToggle.ariaLabel'
+      ? `${options?.label}: ${options?.hint}`
+      : ({
       'common.contextModes.off': 'Off',
       'common.contextModes.insights': 'Insights',
       'common.contextModes.full': 'Full source',

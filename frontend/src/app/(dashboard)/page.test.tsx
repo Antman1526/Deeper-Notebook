@@ -54,6 +54,11 @@ vi.mock('@/components/layout/AppShell', () => ({
   ),
 }))
 
+// v0.8.130 — the page asks /api/config for the data folder (see page.data-path.test.tsx).
+vi.mock('@/lib/config', () => ({
+  getConfig: async () => ({ apiUrl: '', version: 'test', buildTime: '', dataPath: null }),
+}))
+
 vi.mock('@/lib/hooks/use-notebooks', () => ({
   useNotebooks: () => dashboardFixtures.notebooks,
 }))
@@ -90,7 +95,7 @@ describe('DashboardPage active product identity', () => {
     expect(
       screen.getByRole('heading', { level: 1, name: 'Deeper Notebook' }),
     ).toBeInTheDocument()
-    expect(screen.getByText('Think further with every source')).toBeVisible()
+    expect(screen.getByText('workspace.intelligenceHorizon.subtitle')).toBeVisible()
   })
 
   it.each(['0', '1'])('keeps the Horizon presentation compatible with shell flag %s', (flag) => {
@@ -98,15 +103,15 @@ describe('DashboardPage active product identity', () => {
     render(<DashboardPage />)
 
     expect(screen.getByRole('heading', { level: 1, name: 'Deeper Notebook' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Studio' })).toHaveAttribute('href', '/studio')
-    expect(screen.getByRole('link', { name: 'Ask' })).toHaveAttribute('href', '/search')
+    expect(screen.getByRole('link', { name: 'workspace.intelligenceHorizon.studio' })).toHaveAttribute('href', '/studio')
+    expect(screen.getByRole('link', { name: 'workspace.intelligenceHorizon.ask' })).toHaveAttribute('href', '/search')
   })
 
   it('keeps route navigation in the page callback wiring', () => {
     render(<DashboardPage />)
 
-    fireEvent.click(screen.getByRole('link', { name: 'Studio' }))
-    fireEvent.click(screen.getByRole('link', { name: 'Ask' }))
+    fireEvent.click(screen.getByRole('link', { name: 'workspace.intelligenceHorizon.studio' }))
+    fireEvent.click(screen.getByRole('link', { name: 'workspace.intelligenceHorizon.ask' }))
 
     expect(routerPush).toHaveBeenNthCalledWith(1, '/studio')
     expect(routerPush).toHaveBeenNthCalledWith(2, '/search')
@@ -143,10 +148,10 @@ describe('DashboardPage active product identity', () => {
       'href',
       '/notebooks/offline-notebook',
     )
-    expect(screen.getByText('Database is offline')).toBeInTheDocument()
-    expect(screen.getByText('Migrations are pending')).toBeInTheDocument()
-    expect(screen.getByText('Database status is unavailable')).toBeInTheDocument()
-    expect(screen.getByText('Migration status is unavailable')).toBeInTheDocument()
+    expect(screen.getByText('workspace.runtimeStatusPanel.reasons.databaseOffline')).toBeInTheDocument()
+    expect(screen.getByText('workspace.runtimeStatusPanel.reasons.migrationsPending')).toBeInTheDocument()
+    expect(screen.getByText('workspace.runtimeStatusPanel.reasons.databaseCheckFailed')).toBeInTheDocument()
+    expect(screen.getByText('workspace.runtimeStatusPanel.reasons.migrationsCheckFailed')).toBeInTheDocument()
     expect(screen.queryByText(/database unavailable|pending migrations/)).not.toBeInTheDocument()
   })
 
@@ -160,8 +165,8 @@ describe('DashboardPage active product identity', () => {
 
     render(<DashboardPage />)
 
-    expect(screen.getByRole('status', { name: 'Runtime status Ready' })).toBeInTheDocument()
-    expect(screen.getByRole('status', { name: 'Loading your notebook desk' })).toBeInTheDocument()
+    expect(screen.getByRole('status', { name: 'workspace.runtimeStatusPanel.ariaLabelReady' })).toBeInTheDocument()
+    expect(screen.getByRole('status', { name: 'workspace.intelligenceHorizon.loadingTitle' })).toBeInTheDocument()
     expect(screen.queryByRole('status', { name: 'Runtime loading' })).toBeNull()
   })
 
@@ -176,9 +181,9 @@ describe('DashboardPage active product identity', () => {
     expect(screen.getAllByRole('main')).toHaveLength(1)
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
 
-    fireEvent.click(screen.getByRole('button', { name: 'New Notebook' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Podcast' }))
-    fireEvent.click(screen.getByRole('link', { name: 'Ask' }))
+    fireEvent.click(screen.getByRole('button', { name: 'workspace.workspaceHome.newNotebook' }))
+    fireEvent.click(screen.getByRole('button', { name: 'workspace.workspaceHome.podcast' }))
+    fireEvent.click(screen.getByRole('link', { name: 'workspace.workspaceHome.ask' }))
 
     expect(dashboardFixtures.dialogs.openNotebookDialog).toHaveBeenCalledTimes(1)
     expect(dashboardFixtures.dialogs.openPodcastDialog).toHaveBeenCalledTimes(1)
@@ -190,13 +195,13 @@ describe('DashboardPage active product identity', () => {
     process.env.NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2 = '0'
     render(<DashboardPage />)
 
-    expect(screen.getByTestId('app-shell')).toBeInTheDocument()
+    // v0.8.130 — Phase 3b: the shell is mounted by (dashboard)/layout.tsx, not the page.
     expect(screen.getByRole('main', { name: 'Deeper Notebook' })).toHaveAttribute(
       'data-dn-horizon-page',
       'true',
     )
     expect(screen.queryByTestId('visual-system-v2-home')).toBeNull()
-    expect(screen.getByRole('button', { name: 'New Notebook' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'Podcast' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'workspace.intelligenceHorizon.newNotebook' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'workspace.intelligenceHorizon.podcast' })).toBeEnabled()
   })
 })

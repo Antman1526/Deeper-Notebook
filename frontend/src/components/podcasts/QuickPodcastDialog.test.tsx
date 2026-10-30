@@ -49,7 +49,7 @@ describe('QuickPodcastDialog', () => {
     document.body.style.pointerEvents = 'none'
 
     render(<QuickPodcastDialog />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Customize in Studio' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'podcasts.quickPodcastDialog.customizeInStudio' }))
 
     await waitFor(() => expect(usePodcastStudioStore.getState()).toMatchObject({
       isOpen: false,
@@ -81,11 +81,11 @@ describe('QuickPodcastDialog', () => {
 
     render(<QuickPodcastDialog />)
 
-    expect(await screen.findByText('Review selection')).toBeVisible()
+    expect(await screen.findByText('podcasts.quickPodcastDialog.title')).toBeVisible()
     expect(screen.getByText('Research')).toBeVisible()
-    expect(screen.getByText(/Outline storyboard review/)).toBeVisible()
+    expect(screen.getByText('podcasts.quickPodcastDialog.policySummary')).toBeVisible()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    fireEvent.click(screen.getByRole('button', { name: 'common.cancel' }))
 
     await waitFor(() => expect(usePodcastStudioStore.getState().isOpen).toBe(false))
     expect(podcastsApi.getPodcastReadiness).toHaveBeenCalledOnce()
@@ -106,7 +106,7 @@ describe('QuickPodcastDialog', () => {
     }], 'quick')
 
     render(<QuickPodcastDialog />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'common.cancel' }))
 
     await waitFor(() => expect(invoker).toHaveFocus())
     invoker.remove()
@@ -133,10 +133,10 @@ describe('QuickPodcastDialog', () => {
 
     render(<QuickPodcastDialog />)
 
-    const continueButton = await screen.findByRole('button', { name: 'Continue to confirmation' })
+    const continueButton = await screen.findByRole('button', { name: 'podcasts.quickPodcastDialog.continueToConfirmation' })
     await waitFor(() => expect(continueButton).toBeEnabled())
     fireEvent.click(continueButton)
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm production' }))
+    fireEvent.click(screen.getByRole('button', { name: 'podcasts.quickPodcastDialog.confirmProduction' }))
 
     await waitFor(() => expect(podcastsApi.submitStudioPodcast).toHaveBeenCalledWith(
       expect.objectContaining({ notebookId: 'notebook:research' }),
@@ -165,10 +165,10 @@ describe('QuickPodcastDialog', () => {
 
     render(<QuickPodcastDialog />)
 
-    const continueButton = await screen.findByRole('button', { name: 'Continue to confirmation' })
+    const continueButton = await screen.findByRole('button', { name: 'podcasts.quickPodcastDialog.continueToConfirmation' })
     await waitFor(() => expect(continueButton).toBeEnabled())
     fireEvent.click(continueButton)
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm production' }))
+    fireEvent.click(screen.getByRole('button', { name: 'podcasts.quickPodcastDialog.confirmProduction' }))
 
     await waitFor(() => expect(podcastsApi.submitStudioPodcast).toHaveBeenCalledWith(
       expect.objectContaining({ notebookId: 'notebook:alpha' }),

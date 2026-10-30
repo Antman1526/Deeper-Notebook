@@ -4,32 +4,35 @@ import { RefreshCw } from 'lucide-react'
 import * as React from 'react'
 
 import { Button } from '@/components/ui/button'
+import { RUNTIME_STARTUP_STAGE_KEYS, enumLabel, spacedEnum } from '@/lib/enum-labels'
+import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatDecimal } from '@/lib/utils/format'
 import {
   normalizeRuntimeSnapshot,
   type RuntimeReasonCode,
   type RuntimeState,
 } from '@/lib/api/runtime'
 
-const REASON_LABELS: Record<RuntimeReasonCode, string> = {
-  readiness_unknown: 'Core readiness is unavailable',
-  database_offline: 'Database is offline',
-  database_check_failed: 'Database status is unavailable',
-  migrations_pending: 'Migrations are pending',
-  migrations_check_failed: 'Migration status is unavailable',
-  vault_degraded: 'A local source is degraded',
-  vault_unavailable: 'A local source is unavailable',
-  vault_unknown: 'Local source status is unavailable',
-  knowledge_degraded: 'Knowledge projection is degraded',
-  knowledge_unknown: 'Knowledge status is unavailable',
-  startup_receipt_unavailable: 'Startup receipt is unavailable',
-  startup_receipt_invalid: 'Startup receipt is unreadable',
-  updates_disabled: 'Update checks are off',
-  updates_unknown: 'Update status is unavailable',
-  auto_export_unknown: 'Local backup status is unavailable',
-  auto_export_stale: 'Local backup is stale',
-  provenance_unknown: 'External source provenance is unavailable',
-  model_config_degraded: 'Model configuration needs attention',
-  model_config_unknown: 'Model configuration status is unavailable',
+const REASON_LABEL_KEYS: Record<RuntimeReasonCode, string> = {
+  readiness_unknown: 'workspace.runtimeStatusPanel.reasons.readinessUnknown',
+  database_offline: 'workspace.runtimeStatusPanel.reasons.databaseOffline',
+  database_check_failed: 'workspace.runtimeStatusPanel.reasons.databaseCheckFailed',
+  migrations_pending: 'workspace.runtimeStatusPanel.reasons.migrationsPending',
+  migrations_check_failed: 'workspace.runtimeStatusPanel.reasons.migrationsCheckFailed',
+  vault_degraded: 'workspace.runtimeStatusPanel.reasons.vaultDegraded',
+  vault_unavailable: 'workspace.runtimeStatusPanel.reasons.vaultUnavailable',
+  vault_unknown: 'workspace.runtimeStatusPanel.reasons.vaultUnknown',
+  knowledge_degraded: 'workspace.runtimeStatusPanel.reasons.knowledgeDegraded',
+  knowledge_unknown: 'workspace.runtimeStatusPanel.reasons.knowledgeUnknown',
+  startup_receipt_unavailable: 'workspace.runtimeStatusPanel.reasons.startupReceiptUnavailable',
+  startup_receipt_invalid: 'workspace.runtimeStatusPanel.reasons.startupReceiptInvalid',
+  updates_disabled: 'workspace.runtimeStatusPanel.reasons.updatesDisabled',
+  updates_unknown: 'workspace.runtimeStatusPanel.reasons.updatesUnknown',
+  auto_export_unknown: 'workspace.runtimeStatusPanel.reasons.autoExportUnknown',
+  auto_export_stale: 'workspace.runtimeStatusPanel.reasons.autoExportStale',
+  provenance_unknown: 'workspace.runtimeStatusPanel.reasons.provenanceUnknown',
+  model_config_degraded: 'workspace.runtimeStatusPanel.reasons.modelConfigDegraded',
+  model_config_unknown: 'workspace.runtimeStatusPanel.reasons.modelConfigUnknown',
 }
 
 export interface RuntimeStatusPanelProps {
@@ -40,75 +43,95 @@ export interface RuntimeStatusPanelProps {
   compact?: boolean
 }
 
-function stateLabel(state: RuntimeState): string {
-  return state === 'ready' ? 'Ready' : state === 'degraded' ? 'Degraded' : 'Unknown'
+type TranslateFn = ReturnType<typeof useTranslation>['t']
+
+const STATE_ARIA_LABEL_KEYS: Record<RuntimeState, string> = {
+  ready: 'workspace.runtimeStatusPanel.ariaLabelReady',
+  degraded: 'workspace.runtimeStatusPanel.ariaLabelDegraded',
+  unknown: 'workspace.runtimeStatusPanel.ariaLabelUnknown',
 }
 
-function readinessLabel(value: string): string {
+function stateLabel(t: TranslateFn, state: RuntimeState): string {
+  return state === 'ready'
+    ? t('workspace.runtimeStatusPanel.stateReady')
+    : state === 'degraded'
+      ? t('workspace.runtimeStatusPanel.stateDegraded')
+      : t('workspace.runtimeStatusPanel.stateUnknown')
+}
+
+function readinessLabel(t: TranslateFn, value: string): string {
   return value === 'online' || value === 'applied'
-    ? 'Ready'
+    ? t('workspace.runtimeStatusPanel.stateReady')
     : value === 'offline' || value === 'pending'
-      ? 'Degraded'
-      : 'Unknown'
+      ? t('workspace.runtimeStatusPanel.stateDegraded')
+      : t('workspace.runtimeStatusPanel.stateUnknown')
 }
 
-function countLabel(value: number | null): string {
-  return value === null ? 'Unknown' : String(value)
+function countLabel(t: TranslateFn, value: number | null): string {
+  return value === null ? t('workspace.runtimeStatusPanel.stateUnknown') : String(value)
 }
 
 function RefreshButton({ onRefresh }: { onRefresh: () => void }) {
+  const { t } = useTranslation()
   return (
     <Button type="button" variant="outline" size="sm" onClick={onRefresh}>
       <RefreshCw aria-hidden="true" className="mr-2 h-4 w-4" />
-      Refresh runtime status
+      {t('workspace.runtimeStatusPanel.refresh')}
     </Button>
   )
 }
 
 export function RuntimeStatusPanel({ snapshot, isLoading, onRefresh, compact = false }: RuntimeStatusPanelProps) {
+  const { t, language } = useTranslation()
   const loading = isLoading ?? false
   const normalized = normalizeRuntimeSnapshot(snapshot)
   const refresh = onRefresh ?? (() => {})
-  const overallLabel = stateLabel(normalized.status)
+  const overallLabel = stateLabel(t, normalized.status)
 
   if (loading) {
     return (
       <section
         role="status"
-        aria-label="Runtime status loading"
+        aria-label={t('workspace.runtimeStatusPanel.loadingAriaLabel')}
         data-testid="runtime-status-panel"
+        data-dn-runtime-status=""
         className="grid gap-3 rounded-xl border border-[var(--dn-paper-edge)] bg-[var(--dn-lens)] p-4 motion-reduce:transition-none"
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--dn-brass)]">
-              Runtime status
+            <p className="text-xs font-medium text-muted-foreground">
+              {t('workspace.runtimeStatusPanel.title')}
             </p>
-            <h2 className="mt-1 text-base font-semibold">Checking local runtime</h2>
+            <h2 className="mt-1 text-base font-semibold">{t('workspace.runtimeStatusPanel.checking')}</h2>
           </div>
           <RefreshButton onRefresh={refresh} />
         </div>
-        <p className="text-sm text-muted-foreground">Reading a bounded local snapshot. No repair or source action runs.</p>
+        <p className="text-sm text-muted-foreground">{t('workspace.runtimeStatusPanel.checkingDescription')}</p>
       </section>
     )
   }
 
   const role = normalized.status === 'degraded' ? 'alert' : 'status'
-  const reasonLabels = normalized.reasons.map((reason) => REASON_LABELS[reason]).filter(Boolean)
+  const reasonLabels = normalized.reasons
+    .map((reason) => (REASON_LABEL_KEYS[reason] ? t(REASON_LABEL_KEYS[reason]) : undefined))
+    .filter(Boolean)
   const modelConfigIssues = normalized.model_config_health?.issues ?? []
-  const apiLabel = normalized.status === 'unknown' ? 'Unknown' : 'Ready'
+  const apiLabel = normalized.status === 'unknown'
+    ? t('workspace.runtimeStatusPanel.stateUnknown')
+    : t('workspace.runtimeStatusPanel.stateReady')
 
   return (
     <section
       role={role}
-      aria-label={`Runtime status ${overallLabel}`}
+      aria-label={t(STATE_ARIA_LABEL_KEYS[normalized.status])}
       data-testid="runtime-status-panel"
+      data-dn-runtime-status=""
       className="grid gap-4 rounded-xl border border-[var(--dn-paper-edge)] bg-[var(--dn-lens)] p-4 motion-reduce:transition-none"
     >
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--dn-brass)]">
-            Runtime status
+          <p className="text-xs font-medium text-muted-foreground">
+            {t('workspace.runtimeStatusPanel.title')}
           </p>
           <h2 className="mt-1 text-base font-semibold">{overallLabel}</h2>
         </div>
@@ -116,7 +139,7 @@ export function RuntimeStatusPanel({ snapshot, isLoading, onRefresh, compact = f
       </header>
 
       {reasonLabels.length ? (
-        <ul aria-label="Runtime reasons" className="grid gap-1 text-sm text-muted-foreground">
+        <ul aria-label={t('workspace.runtimeStatusPanel.reasonsAriaLabel')} className="grid gap-1 text-sm text-muted-foreground">
           {reasonLabels.map((label) => <li key={label}>{label}</li>)}
         </ul>
       ) : null}
@@ -127,7 +150,7 @@ export function RuntimeStatusPanel({ snapshot, isLoading, onRefresh, compact = f
           and the remedy (where to go), so both are rendered verbatim. */}
       {modelConfigIssues.length ? (
         <ul
-          aria-label="Model configuration issues"
+          aria-label={t('workspace.runtimeStatusPanel.modelConfigIssuesAriaLabel')}
           data-testid="runtime-model-config-issues"
           className="grid gap-2 rounded-lg border border-[var(--dn-paper-edge)] p-3 text-sm"
         >
@@ -142,19 +165,19 @@ export function RuntimeStatusPanel({ snapshot, isLoading, onRefresh, compact = f
 
       <div className="grid gap-3 text-sm sm:grid-cols-2">
         <div>
-          <h3 className="font-semibold">Core services</h3>
+          <h3 className="font-semibold">{t('workspace.runtimeStatusPanel.coreServices')}</h3>
           <dl className="mt-2 grid gap-1 text-muted-foreground">
-            <div className="flex justify-between gap-3"><dt>API</dt><dd>{apiLabel}</dd></div>
-            <div className="flex justify-between gap-3"><dt>Database</dt><dd>{readinessLabel(normalized.readiness.database)}</dd></div>
-            <div className="flex justify-between gap-3"><dt>Migrations</dt><dd>{readinessLabel(normalized.readiness.migrations)}</dd></div>
+            <div className="flex justify-between gap-3"><dt>{t('workspace.runtimeStatusPanel.api')}</dt><dd>{apiLabel}</dd></div>
+            <div className="flex justify-between gap-3"><dt>{t('workspace.runtimeStatusPanel.database')}</dt><dd>{readinessLabel(t, normalized.readiness.database)}</dd></div>
+            <div className="flex justify-between gap-3"><dt>{t('workspace.runtimeStatusPanel.migrations')}</dt><dd>{readinessLabel(t, normalized.readiness.migrations)}</dd></div>
           </dl>
         </div>
 
         {!compact ? (
           <div>
-            <h3 className="font-semibold">Optional capabilities</h3>
+            <h3 className="font-semibold">{t('workspace.runtimeStatusPanel.optionalCapabilities')}</h3>
             <dl className="mt-2 grid gap-1 text-muted-foreground">
-              <div className="flex justify-between gap-3"><dt>Startup receipt</dt><dd>{stateLabel(normalized.startup.state)}</dd></div>
+              <div className="flex justify-between gap-3"><dt>{t('workspace.runtimeStatusPanel.startupReceipt')}</dt><dd>{stateLabel(t, normalized.startup.state)}</dd></div>
               {/* v0.8.86 — Phase 2B startup measurement: the receipt's stage
                   timings flowed all the way to this payload and stopped here.
                   Show the slow stages (>=100ms) so a degraded launch is
@@ -163,15 +186,15 @@ export function RuntimeStatusPanel({ snapshot, isLoading, onRefresh, compact = f
                 .filter((stage) => stage.elapsed_ms >= 100)
                 .map((stage) => (
                   <div key={stage.stage} className="flex justify-between gap-3 pl-3">
-                    <dt className="truncate">{stage.stage.replaceAll('_', ' ')}</dt>
+                    <dt className="truncate">{enumLabel(t, RUNTIME_STARTUP_STAGE_KEYS, stage.stage, spacedEnum(stage.stage))}</dt>
                     <dd>{stage.elapsed_ms >= 1000
-                      ? `${(stage.elapsed_ms / 1000).toFixed(1)}s`
-                      : `${stage.elapsed_ms}ms`}</dd>
+                      ? t('workspace.runtimeStatusPanel.stageSeconds', { value: formatDecimal(stage.elapsed_ms / 1000, language, 1) })
+                      : t('workspace.runtimeStatusPanel.stageMilliseconds', { value: stage.elapsed_ms })}</dd>
                   </div>
                 ))}
-              <div className="flex justify-between gap-3"><dt>Local sources</dt><dd>{stateLabel(normalized.vault.state)}</dd></div>
-              <div className="flex justify-between gap-3"><dt>Knowledge</dt><dd>{stateLabel(normalized.knowledge.state)}</dd></div>
-              <div className="flex justify-between gap-3"><dt>Backup receipt</dt><dd>{stateLabel(normalized.backup.state)}</dd></div>
+              <div className="flex justify-between gap-3"><dt>{t('workspace.runtimeStatusPanel.localSources')}</dt><dd>{stateLabel(t, normalized.vault.state)}</dd></div>
+              <div className="flex justify-between gap-3"><dt>{t('workspace.runtimeStatusPanel.knowledge')}</dt><dd>{stateLabel(t, normalized.knowledge.state)}</dd></div>
+              <div className="flex justify-between gap-3"><dt>{t('workspace.runtimeStatusPanel.backupReceipt')}</dt><dd>{stateLabel(t, normalized.backup.state)}</dd></div>
             </dl>
           </div>
         ) : null}
@@ -179,9 +202,9 @@ export function RuntimeStatusPanel({ snapshot, isLoading, onRefresh, compact = f
 
       {!compact ? (
         <dl className="grid gap-1 border-t border-border/70 pt-3 text-xs text-muted-foreground sm:grid-cols-3">
-          <div><dt>Sources ready</dt><dd>{normalized.vault.ready}</dd></div>
-          <div><dt>Knowledge projected</dt><dd>{countLabel(normalized.knowledge.projected)}</dd></div>
-          <div><dt>Backup files</dt><dd>{normalized.backup.file_count}</dd></div>
+          <div><dt>{t('workspace.runtimeStatusPanel.sourcesReady')}</dt><dd>{normalized.vault.ready}</dd></div>
+          <div><dt>{t('workspace.runtimeStatusPanel.knowledgeProjected')}</dt><dd>{countLabel(t, normalized.knowledge.projected)}</dd></div>
+          <div><dt>{t('workspace.runtimeStatusPanel.backupFiles')}</dt><dd>{normalized.backup.file_count}</dd></div>
         </dl>
       ) : null}
     </section>

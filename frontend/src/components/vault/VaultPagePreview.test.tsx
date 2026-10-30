@@ -20,6 +20,17 @@ vi.mock('@/lib/api/vault', async (importOriginal) => {
   }
 })
 
+// The preview dialog's accessible name interpolates the page title, which these tests use to
+// tell one preview from another; resolve just that key to its English.
+vi.mock('@/lib/hooks/use-translation', () => {
+  const en: Record<string, string> = {
+    'knowledge.pagePreview': '{{title}} preview',
+  }
+  const t = (key: string, options?: Record<string, unknown>) => (en[key] ?? key)
+    .replace(/\{\{(\w+)\}\}/g, (_match, name: string) => String(options?.[name] ?? ''))
+  return { useTranslation: () => ({ t, language: 'en-US', setLanguage: vi.fn() }) }
+})
+
 import { VaultPagePreview } from './VaultPagePreview'
 
 const resolvedLinkFixture = {

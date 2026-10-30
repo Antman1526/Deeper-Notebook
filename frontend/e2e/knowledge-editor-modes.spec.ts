@@ -53,7 +53,7 @@ test.describe('knowledge editor modes', () => {
     const switcher = page.getByRole('dialog', { name: 'Quick switcher' })
     await switcher.getByRole('combobox').fill('plan')
     await switcher.getByRole('option', { name: 'plan pages/plan.md · Fixture vault', exact: true }).click()
-    await page.getByRole('button', { name: 'Live Preview', exact: true }).click()
+    await page.getByRole('button', { name: 'Live preview', exact: true }).click()
 
     const livePreview = page.locator(
       '[aria-label="Plan live preview"][aria-readonly="true"]',

@@ -30,6 +30,15 @@ vi.mock('@/components/ui/dropdown-menu', () => ({
   DropdownMenuSeparator: () => <hr />,
 }))
 
+// Keys come back unchanged; interpolated values are appended so per-theme
+// accessible names ("apply Archive Paper") stay distinguishable.
+vi.mock('@/lib/hooks/use-translation', () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: Record<string, unknown>) =>
+      opts ? `${key} ${Object.values(opts).join(' ')}` : key,
+  }),
+}))
+
 import { ThemeSwitcher } from './ThemeSwitcher'
 import { ThemeGallery } from './ThemeGallery'
 
@@ -37,7 +46,7 @@ type ThemeBridge = { setTheme: ReturnType<typeof vi.fn> }
 type ThemeWindow = Window & { DN?: ThemeBridge; ONP?: ThemeBridge }
 
 function selectDarkTheme() {
-  fireEvent.click(screen.getByRole('button', { name: 'Dark' }))
+  fireEvent.click(screen.getByRole('button', { name: 'workspace.catalog2.themeNameDark' }))
 }
 
 describe('ThemeSwitcher Deeper Notebook compatibility', () => {
@@ -124,11 +133,14 @@ describe('ThemeSwitcher Deeper Notebook compatibility', () => {
 
     render(<ThemeSwitcher />)
 
-    expect(screen.getByText('Featured')).toBeVisible()
-    expect(screen.getByText('Light')).toBeVisible()
-    expect(screen.getAllByText('Dark')).toHaveLength(2)
-    expect(screen.getByText('Accessibility')).toBeVisible()
-    expect(screen.getByText('Classics')).toBeVisible()
+    expect(screen.getByText('workspace.catalog2.groupFeatured')).toBeVisible()
+    expect(screen.getByText('workspace.catalog2.groupLight')).toBeVisible()
+    expect(screen.getByText('workspace.catalog2.groupDark')).toBeVisible()
+    // Proper-noun theme names stay as written and the generic ones are keyed, so the
+    // old group-plus-theme pair of "Dark" matches is now a single theme match.
+    expect(screen.getAllByText('workspace.catalog2.themeNameDark')).toHaveLength(1)
+    expect(screen.getByText('workspace.catalog2.groupAccessibility')).toBeVisible()
+    expect(screen.getByText('workspace.catalog2.groupClassics')).toBeVisible()
     expect(screen.getAllByRole('button')).toHaveLength(THEME_CATALOG.length + 1)
 
     fireEvent.click(screen.getByRole('button', { name: 'Research Core Light' }))
@@ -142,7 +154,7 @@ describe('ThemeSwitcher Deeper Notebook compatibility', () => {
 
     render(<ThemeSwitcher />)
 
-    expect(screen.getByRole('button', { name: 'Dark Current theme' })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('button', { name: 'workspace.catalog2.themeNameDark workspace.themeSwitcher.currentTheme' })).toHaveAttribute('aria-current', 'true')
   })
 
   it('prefers persisted system selection over its resolved dark document palette', () => {
@@ -151,8 +163,8 @@ describe('ThemeSwitcher Deeper Notebook compatibility', () => {
 
     render(<ThemeSwitcher />)
 
-    expect(screen.getByRole('button', { name: 'System Current theme' })).toHaveAttribute('aria-current', 'true')
-    expect(screen.getByRole('button', { name: 'Dark' })).not.toHaveAttribute('aria-current')
+    expect(screen.getByRole('button', { name: 'workspace.catalog2.themeNameSystem workspace.themeSwitcher.currentTheme' })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('button', { name: 'workspace.catalog2.themeNameDark' })).not.toHaveAttribute('aria-current')
   })
 
   it('synchronizes current selection and the gallery restore baseline across pickers', () => {
@@ -169,20 +181,20 @@ describe('ThemeSwitcher Deeper Notebook compatibility', () => {
       </>,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Apply Archive Paper' }))
-    expect(screen.getByRole('button', { name: 'Archive Paper Current theme' })).toHaveAttribute('aria-current', 'true')
-    expect(screen.getByRole('article', { name: 'Archive Paper theme' })).toHaveTextContent('Current')
+    fireEvent.click(screen.getByRole('button', { name: 'workspace.themePreviewCard.applyLabel Archive Paper' }))
+    expect(screen.getByRole('button', { name: 'Archive Paper workspace.themeSwitcher.currentTheme' })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('article', { name: 'workspace.themePreviewCard.articleLabel Archive Paper' })).toHaveTextContent('workspace.themePreviewCard.current')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Preview Research Core Light' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Dark' }))
-    expect(screen.getByRole('button', { name: 'Dark Current theme' })).toHaveAttribute('aria-current', 'true')
-    expect(screen.getByRole('article', { name: 'Dark theme' })).toHaveTextContent('Current')
-    expect(screen.queryByRole('button', { name: 'Restore previous theme' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'workspace.themePreviewCard.previewLabel Research Core Light' }))
+    fireEvent.click(screen.getByRole('button', { name: 'workspace.catalog2.themeNameDark' }))
+    expect(screen.getByRole('button', { name: 'workspace.catalog2.themeNameDark workspace.themeSwitcher.currentTheme' })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('article', { name: 'workspace.themePreviewCard.articleLabel workspace.catalog2.themeNameDark' })).toHaveTextContent('workspace.themePreviewCard.current')
+    expect(screen.queryByRole('button', { name: 'workspace.themeGallery.restorePrevious' })).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Preview Research Core Light' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Restore previous theme' }))
+    fireEvent.click(screen.getByRole('button', { name: 'workspace.themePreviewCard.previewLabel Research Core Light' }))
+    fireEvent.click(screen.getByRole('button', { name: 'workspace.themeGallery.restorePrevious' }))
     expect(document.documentElement.dataset.theme).toBe('dark')
-    expect(screen.getByRole('article', { name: 'Dark theme' })).toHaveTextContent('Current')
+    expect(screen.getByRole('article', { name: 'workspace.themePreviewCard.articleLabel workspace.catalog2.themeNameDark' })).toHaveTextContent('workspace.themePreviewCard.current')
 
     view.unmount()
     const selectionAdds = addListener.mock.calls.filter(([type]) => type === THEME_SELECTION_CHANGE_EVENT)
@@ -207,8 +219,8 @@ describe('ThemeSwitcher Deeper Notebook compatibility', () => {
 
     expect(localStorage.getItem('dn-theme')).toBe('light-blue')
     expect(localStorage.getItem('onp-theme')).toBe('light-blue')
-    expect(screen.getByRole('button', { name: 'Light Blue Current theme' })).toHaveAttribute('aria-current', 'true')
-    expect(screen.getByRole('article', { name: 'Light Blue theme' })).toHaveTextContent('Current')
+    expect(screen.getByRole('button', { name: 'workspace.catalog2.themeNameLightBlue workspace.themeSwitcher.currentTheme' })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('article', { name: 'workspace.themePreviewCard.articleLabel workspace.catalog2.themeNameLightBlue' })).toHaveTextContent('workspace.themePreviewCard.current')
     expect(document.documentElement.dataset.theme).toBe('light-blue')
     expect(document.documentElement).not.toHaveClass('dark')
   })
@@ -224,12 +236,12 @@ describe('ThemeSwitcher Deeper Notebook compatibility', () => {
     act(() => useThemeStore.getState().setTheme('dark'))
     expect(document.documentElement.dataset.theme).toBe('dark')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Apply Archive Paper' }))
+    fireEvent.click(screen.getByRole('button', { name: 'workspace.themePreviewCard.applyLabel Archive Paper' }))
 
     expect(localStorage.getItem('dn-theme')).toBe('archive-paper')
     expect(localStorage.getItem('onp-theme')).toBe('archive-paper')
-    expect(screen.getByRole('button', { name: 'Archive Paper Current theme' })).toHaveAttribute('aria-current', 'true')
-    expect(screen.getByRole('article', { name: 'Archive Paper theme' })).toHaveTextContent('Current')
+    expect(screen.getByRole('button', { name: 'Archive Paper workspace.themeSwitcher.currentTheme' })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('article', { name: 'workspace.themePreviewCard.articleLabel Archive Paper' })).toHaveTextContent('workspace.themePreviewCard.current')
     expect(document.documentElement.dataset.theme).toBe('archive-paper')
     expect(document.documentElement).not.toHaveClass('dark')
     expect(useThemeStore.getState().legacyThemeOverride).toBe(false)

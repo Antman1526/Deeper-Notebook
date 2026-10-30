@@ -1,6 +1,5 @@
 'use client'
 
-import { AppShell } from '@/components/layout/AppShell'
 import { RebuildEmbeddings } from './components/RebuildEmbeddings'
 import { SystemInfo } from './components/SystemInfo'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -9,7 +8,7 @@ import { SystemRouteFrame } from '@/components/deeper-notebook/route-frames/Syst
 export default function AdvancedPage() {
   const { t } = useTranslation()
   return (
-    <AppShell>
+    <>
       <SystemRouteFrame route="/advanced" description={t('advanced.desc')}>
         {/* v0.7.183 — outer padding promoted from bare `p-6` to the
             v0.7.180 dashboard-page standard `px-6 py-10 sm:px-8`
@@ -31,6 +30,6 @@ export default function AdvancedPage() {
             <RebuildEmbeddings />
         </div>
       </SystemRouteFrame>
-    </AppShell>
+    </>
   )
 }

@@ -114,15 +114,16 @@ export function OsaurusDetectionBanner({ credentials }: OsaurusDetectionBannerPr
   if (!data || !data.running) return null
 
   return (
-    <Alert className="border-violet-500/50 bg-violet-50 dark:bg-violet-950/20">
-      <Sparkles className="h-4 w-4 text-violet-600 dark:text-violet-400" />
-      <AlertTitle className="text-violet-900 dark:text-violet-100">
+    // v0.8.130 — brand tint from theme tokens, not violet (UI audit Phase 1)
+    <Alert className="border-primary/30 bg-primary/10 [&>svg]:text-primary">
+      <Sparkles className="h-4 w-4" />
+      <AlertTitle>
         {t('apiKeys.osaurus.detectedTitle', {
           defaultValue: 'Osaurus detected on port {{port}}',
           port: data.port,
         })}
       </AlertTitle>
-      <AlertDescription className="text-violet-800 dark:text-violet-200 space-y-2">
+      <AlertDescription className="space-y-2">
         <p>
           {t('apiKeys.osaurus.detectedDescription', {
             defaultValue:

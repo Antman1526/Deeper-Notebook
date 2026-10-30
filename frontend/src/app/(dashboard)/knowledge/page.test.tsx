@@ -41,11 +41,33 @@ describe('KnowledgePage source visuals', () => {
     expect(screen.getByRole('region', { name: 'Knowledge explorer' })).toHaveTextContent('Vault authority')
     expect(mockRecentSources).toHaveBeenCalledOnce()
     expect(mockRecentSources).toHaveBeenCalledWith(4)
-    expect(screen.getByRole('region', { name: 'Recent visual sources' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'workspace.recentSourceStrip.ariaLabel' })).toBeInTheDocument()
     expect(document.querySelector('[data-dn-recent-source-slot="true"]')).toHaveClass(
       'min-h-[15rem]',
       'sm:min-h-[12rem]',
     )
+  })
+
+  // v0.8.130 — with no recent sources the reserved slot was a 12rem blank band above the page for good.
+  it('gives the reserved space back once it is known there are no recent sources', () => {
+    mockVisualSystemEnabled.mockReturnValue(true)
+    mockSourceVisualsEnabled.mockReturnValue(true)
+    mockRecentSources.mockReturnValue({ data: [], isSuccess: true })
+
+    render(<KnowledgePage />)
+
+    expect(document.querySelector('[data-dn-recent-source-slot="true"]')).toBeNull()
+    expect(screen.getByRole('region', { name: 'Knowledge explorer' })).toBeInTheDocument()
+  })
+
+  it('keeps the space reserved while recent sources are still loading', () => {
+    mockVisualSystemEnabled.mockReturnValue(true)
+    mockSourceVisualsEnabled.mockReturnValue(true)
+    mockRecentSources.mockReturnValue({ data: undefined, isSuccess: false })
+
+    render(<KnowledgePage />)
+
+    expect(document.querySelector('[data-dn-recent-source-slot="true"]')).toHaveClass('min-h-[15rem]')
   })
 
   it.each([
@@ -58,6 +80,6 @@ describe('KnowledgePage source visuals', () => {
     render(<KnowledgePage />)
 
     expect(screen.getByRole('region', { name: 'Knowledge explorer' })).toBeInTheDocument()
-    expect(screen.queryByRole('region', { name: 'Recent visual sources' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'workspace.recentSourceStrip.ariaLabel' })).not.toBeInTheDocument()
   })
 })

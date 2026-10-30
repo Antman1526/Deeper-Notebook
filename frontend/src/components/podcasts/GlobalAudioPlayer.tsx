@@ -5,6 +5,7 @@ import { Pause, Play, Square, Volume2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { resolvePodcastAssetUrl } from '@/lib/api/podcasts'
+import { useTranslation } from '@/lib/hooks/use-translation'
 import { useAudioPlayerStore } from '@/lib/stores/audio-player-store'
 import { SyncedTranscript } from './SyncedTranscript'
 
@@ -37,12 +38,14 @@ function formatTime(seconds: number): string {
 }
 
 export function GlobalAudioPlayer() {
+  const { t } = useTranslation()
   const audioRef = useRef<HTMLAudioElement>(null)
   const objectUrlRef = useRef<string | null>(null)
   const [duration, setDuration] = useState(0)
   const [currentTime, setCurrentTime] = useState(0)
   const [volume, setVolume] = useState(0.9)
   const [rate, setRate] = useState(1)
+  // Holds an i18n key, translated where it renders.
   const [error, setError] = useState<string | null>(null)
   const { episode, requestedPlayback, setPosition, requestPlayback, pause, clear } = useAudioPlayerStore()
   const episodeId = episode?.id
@@ -69,7 +72,7 @@ export function GlobalAudioPlayer() {
       })
       .catch((loadError: unknown) => {
         if (!cancelled && (loadError as Error).name !== 'AbortError') {
-          setError('Audio could not be loaded locally.')
+          setError('podcasts.globalAudioPlayer.loadError')
           pause()
         }
       })
@@ -106,7 +109,7 @@ export function GlobalAudioPlayer() {
   }
 
   return (
-    <aside aria-label="Audio overview player" className="border-t bg-card px-4 py-3 shadow-[0_-4px_14px_rgb(0_0_0_/_0.06)]">
+    <aside aria-label={t('podcasts.globalAudioPlayer.player')} className="border-t bg-card px-4 py-3 shadow-[0_-4px_14px_rgb(0_0_0_/_0.06)]">
       <audio
         ref={audioRef}
         onLoadedMetadata={(event) => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)}
@@ -123,19 +126,19 @@ export function GlobalAudioPlayer() {
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold">{episode.title}</p>
           <div className="mt-2 flex items-center gap-3">
-            <Button type="button" size="icon" variant="outline" aria-label={requestedPlayback ? 'Pause overview' : 'Play overview'} onClick={togglePlayback}>
+            <Button type="button" size="icon" variant="outline" aria-label={requestedPlayback ? t('podcasts.globalAudioPlayer.pause') : t('podcasts.globalAudioPlayer.play')} onClick={togglePlayback}>
               {requestedPlayback ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
             </Button>
             <span className="w-24 text-xs tabular-nums text-muted-foreground">{formatTime(currentTime)} / {formatTime(duration)}</span>
-            <input aria-label="Playback position" type="range" value={currentTime} max={Math.max(duration, 1)} step={0.1} onChange={(event) => seek(Number(event.target.value))} className="min-w-24 flex-1 accent-primary" />
+            <input aria-label={t('podcasts.globalAudioPlayer.position')} type="range" value={currentTime} max={Math.max(duration, 1)} step={0.1} onChange={(event) => seek(Number(event.target.value))} className="min-w-24 flex-1 accent-primary" />
             <Volume2 className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-            <input aria-label="Volume" type="range" value={volume} min={0} max={1} step={0.05} onChange={(event) => { const next = Number(event.target.value); setVolume(next); if (audioRef.current) audioRef.current.volume = next }} className="w-20 accent-primary" />
-            <select aria-label="Playback speed" value={rate} onChange={(event) => { const next = Number(event.target.value); setRate(next); if (audioRef.current) audioRef.current.playbackRate = next }} className="h-8 rounded-md border bg-background px-2 text-xs">
+            <input aria-label={t('podcasts.globalAudioPlayer.volume')} type="range" value={volume} min={0} max={1} step={0.05} onChange={(event) => { const next = Number(event.target.value); setVolume(next); if (audioRef.current) audioRef.current.volume = next }} className="w-20 accent-primary" />
+            <select aria-label={t('podcasts.globalAudioPlayer.speed')} value={rate} onChange={(event) => { const next = Number(event.target.value); setRate(next); if (audioRef.current) audioRef.current.playbackRate = next }} className="h-8 rounded-md border bg-background px-2 text-xs">
               {[0.75, 1, 1.25, 1.5, 2].map((value) => <option key={value} value={value}>{value}x</option>)}
             </select>
-            <Button type="button" size="icon" variant="ghost" aria-label="Stop overview" onClick={() => { audioRef.current?.pause(); clear() }}><Square className="h-4 w-4" /></Button>
+            <Button type="button" size="icon" variant="ghost" aria-label={t('podcasts.globalAudioPlayer.stop')} onClick={() => { audioRef.current?.pause(); clear() }}><Square className="h-4 w-4" /></Button>
           </div>
-          {error ? <p role="alert" className="mt-2 text-xs text-destructive">{error}</p> : null}
+          {error ? <p role="alert" className="mt-2 text-xs text-destructive">{t(error)}</p> : null}
         </div>
         <SyncedTranscript segments={episode.transcriptSegments} currentTime={currentTime} onSeek={seek} />
       </div>

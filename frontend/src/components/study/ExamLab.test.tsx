@@ -91,7 +91,7 @@ describe('ExamLab', () => {
     expect(screen.getByTestId('examlab-countdown')).toBeInTheDocument()
     expect(screen.getByText(/What is a mitochondrion/)).toBeInTheDocument()
     // The taking payload carries no answer key or explanations.
-    expect(screen.queryByText(/Correct:/)).not.toBeInTheDocument()
+    expect(screen.queryByText('study.examLab.correct')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByLabelText('The powerhouse of the cell'))
     fireEvent.click(screen.getByTestId('examlab-submit'))
@@ -137,10 +137,10 @@ describe('ExamLab', () => {
     }
     render(<ExamLabWithActiveAttempt />)
     expect(screen.getByTestId('examlab-results')).toBeInTheDocument()
-    expect(screen.getByText(/Biology midterm — 50%/)).toBeInTheDocument()
-    expect(screen.getByText('Not answered')).toBeInTheDocument()
+    expect(screen.getByText('study.examLab.resultTitle')).toBeInTheDocument()
+    expect(screen.getByText('study.examLab.notAnswered')).toBeInTheDocument()
     const seed = screen.getByTestId('examlab-seed-misses')
-    expect(seed).toHaveTextContent('Add 1 missed to review deck')
+    expect(seed).toHaveTextContent('study.examLab.addMissed')
     fireEvent.click(seed)
     expect(mocks.seedMutate).toHaveBeenCalledWith('study_exam_attempt:t1')
   })
@@ -171,7 +171,7 @@ describe('ExamLab', () => {
     render(<ExamLabWithActiveAttempt />)
     const seed = screen.getByTestId('examlab-seed-misses')
     expect(seed).toBeDisabled()
-    expect(seed).toHaveTextContent('Missed questions added to review deck')
+    expect(seed).toHaveTextContent('study.examLab.missedSeeded')
   })
 })
 

@@ -52,10 +52,11 @@ export function MessageCopyEditActions({
   return (
     <div className="flex items-center gap-1" data-testid="message-copy-edit">
       {showCopy && (
+        // v0.8.130 — 12px type floor (UI audit Phase 1)
         <Button
           variant="ghost"
           size="sm"
-          className="h-6 px-1.5 text-[10px] gap-1 text-muted-foreground hover:text-foreground"
+          className="h-6 px-1.5 text-xs gap-1 text-muted-foreground hover:text-foreground"
           onClick={handleCopy}
           data-testid="message-copy"
           aria-label={t('chat.message.copy', { defaultValue: 'Copy' })}
@@ -69,7 +70,7 @@ export function MessageCopyEditActions({
       <Button
         variant="ghost"
         size="sm"
-        className="h-6 px-1.5 text-[10px] gap-1 text-muted-foreground hover:text-foreground"
+        className="h-6 px-1.5 text-xs gap-1 text-muted-foreground hover:text-foreground"
         onClick={() => onEdit(content)}
         data-testid="message-edit"
         aria-label={t('chat.message.edit', { defaultValue: 'Edit' })}

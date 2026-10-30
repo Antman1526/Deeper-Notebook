@@ -10,13 +10,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, StickyNote, Bot, User, MoreVertical, Trash2, Download, ListChecks, ChevronDown } from 'lucide-react'
+import { Plus, StickyNote, Bot, User, MoreVertical, Trash2, Download, ListChecks, Podcast } from 'lucide-react'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { EmptyState } from '@/components/common/EmptyState'
 import { Badge } from '@/components/ui/badge'
 import { NoteEditorDialog } from './NoteEditorDialog'
 import { ExportNoteDialog } from './ExportNoteDialog'
-import { getDateLocale } from '@/lib/utils/date-locale'
+import { formatDateTime, getDateLocale } from '@/lib/utils/date-locale'
 import { formatDistanceToNow } from 'date-fns'
 import { ContextToggle } from '@/components/common/ContextToggle'
 import type { NoteContextMode } from '@/lib/types/notebook-context'
@@ -26,7 +26,6 @@ import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { CollapsibleColumn, createCollapseButton } from '@/components/notebooks/CollapsibleColumn'
 import { useNotebookColumnsStore } from '@/lib/stores/notebook-columns-store'
 import { useTranslation } from '@/lib/hooks/use-translation'
-import { TurnIntoPodcastAction } from '@/components/podcasts/TurnIntoPodcastAction'
 import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
 
 interface NotesColumnProps {
@@ -89,45 +88,55 @@ export function NotesColumn({
         collapsedIcon={StickyNote}
         collapsedLabel={notesLabel}
       >
-        <Card className="h-full flex flex-col flex-1 overflow-hidden">
-          <CardHeader className="pb-3 flex-shrink-0">
-            <div className="flex items-center justify-between gap-2">
-              <CardTitle className="text-lg">{notesLabel}</CardTitle>
-              <div className="flex items-center gap-2">
-                {onBulkContextModeChange && notes && notes.length > 0 && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm" title={t('sources.bulkContext')}>
-                        <ListChecks className="h-4 w-4" />
-                        <ChevronDown className="h-4 w-4 ml-1" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => onBulkContextModeChange('include')}>
-                        {t('sources.includeAllInContext')}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => onBulkContextModeChange('exclude')}>
-                        {t('sources.excludeAllFromContext')}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setEditingNote(null)
-                    setShowAddDialog(true)
-                  }}
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  {t('common.writeNote')}
-                </Button>
-                {collapseButton}
-              </div>
+        <Card data-dn-column="" className="h-full flex flex-col flex-1 overflow-hidden">
+          <CardHeader className="flex-shrink-0">
+            {/* v0.8.130 — Phase 2b: the header holds the title and collapse only; with the
+                actions beside it the title truncated to "N…" at 1280px. */}
+            <div className="flex items-center gap-1">
+              {/* v0.8.130 — Phase 4b: the column title is the h2 its cards sit under. */}
+              <CardTitle role="heading" aria-level={2} className="min-w-0 flex-1 truncate text-base font-medium">{notesLabel}</CardTitle>
+              {collapseButton}
             </div>
           </CardHeader>
 
-          <CardContent className="flex-1 overflow-y-auto min-h-0">
+          {/* v0.8.130 — Phase 2b: a full-width Write note row, bulk context beside it. */}
+          <div data-dn-column-actions="" className="@container flex flex-none items-center gap-2 px-4 pt-3">
+            <Button
+              variant="outline"
+              // v0.8.130 — tighter padding: in a narrow column "Add" truncated to "A…".
+              className="min-w-0 flex-1 gap-1.5 rounded-md px-3"
+              aria-label={t('common.addNote')}
+              onClick={() => {
+                setEditingNote(null)
+                setShowAddDialog(true)
+              }}
+            >
+              <Plus className="h-4 w-4" />
+              {/* v0.8.130 — visible "Add"; "Write Note" truncated at 1280px. In a narrow
+                  column the label goes and the plus remains (the button keeps its name). */}
+              <span className="hidden truncate @[9rem]:inline">{t('common.add')}</span>
+            </Button>
+            {onBulkContextModeChange && notes && notes.length > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="size-8" aria-label={t('sources.bulkContext')} title={t('sources.bulkContext')}>
+                    <ListChecks className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => onBulkContextModeChange('include')}>
+                    {t('sources.includeAllInContext')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onBulkContextModeChange('exclude')}>
+                    {t('sources.excludeAllFromContext')}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
+
+          {/* v0.8.130 — notebook layer: the Notes body is ruled paper with a margin rule. */}
+          <CardContent data-dn-ruled="" className="flex-1 overflow-y-auto min-h-0">
             {isLoading ? (
               <div className="flex items-center justify-center py-8">
                 <LoadingSpinner />
@@ -140,31 +149,44 @@ export function NotesColumn({
               />
             ) : (
               <div className="space-y-3">
-                {notes.map((note) => (
+                {notes.map((note) => {
+                  // v0.8.130 — same rule the inline action used: a note with no readable text has
+                  // nothing to narrate, so the menu item stays visible but disabled with its reason.
+                  const podcastDisabledReason = note.content?.trim() ? undefined : t('notes.noteCard.podcastNoContent')
+                  return (
+                  // v0.8.130 — the list sits on ruled paper: a translucent fill (no blur) lets the
+                  // ruling show through, and a 2px left index tab carries the hover. Its width never
+                  // changes, only its colour, so nothing shifts on hover.
                   <div
                     key={note.id}
-                    className="group relative cursor-pointer rounded-xl border border-border/50 bg-card/95 p-3.5 transition-all duration-200 ease-out ring-1 ring-border/30 hover:ring-primary/40 hover:border-border/80 hover:shadow-md active:scale-[0.99] shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)] dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.03)]"
+                    data-dn-note-card=""
+                    className="group relative cursor-pointer rounded-xl border border-l-2 border-l-primary/35 bg-card/90 p-3.5 transition-colors duration-200 ease-out hover:border-l-primary"
                     onClick={() => setEditingNote(note)}
                   >
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex items-center gap-2">
+                    {/* v0.8.130 — wraps in a narrow column instead of squeezing the date. */}
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+                      <div className="flex min-w-0 items-center gap-2">
                         {note.note_type === 'ai' ? (
                           <Bot className="h-4 w-4 text-primary" />
                         ) : (
                           <User className="h-4 w-4 text-muted-foreground" />
                         )}
-                        <Badge variant="secondary" className="text-[11px] rounded-full px-2 py-0.5">
+                        <Badge variant="secondary" className="text-xs rounded-full px-2 py-0.5">
                           {note.note_type === 'ai' ? t('common.aiGenerated') : t('common.human')}
                         </Badge>
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground">
-                          {formatDistanceToNow(new Date(note.updated), { 
+                      <div className="ml-auto flex items-center gap-2">
+                        <time
+                          dateTime={new Date(note.updated).toISOString()}
+                          title={formatDateTime(note.updated, language, { dateStyle: 'full', timeStyle: 'short' })}
+                          className="whitespace-nowrap text-xs text-muted-foreground"
+                        >
+                          {formatDistanceToNow(new Date(note.updated), {
                             addSuffix: true,
                             locale: getDateLocale(language)
                           })}
-                        </span>
+                        </time>
 
                         {/* Context toggle - only show if handler provided */}
                         {onContextModeChange && contextSelections?.[note.id] && (
@@ -177,19 +199,36 @@ export function NotesColumn({
                           </div>
                         )}
 
-                        {/* Ellipsis menu for delete action */}
+                        {/* v0.8.130 — the note's actions menu now also holds "Turn into podcast"; it needs a
+                            name and must show on keyboard focus, not only on hover. */}
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-7 w-7 p-0 rounded-full opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-all duration-150 hover:bg-muted/80"
+                              aria-label={t('notes.noteCard.noteActions')}
+                              title={t('notes.noteCard.noteActions')}
+                              className="h-7 w-7 p-0 rounded-md opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 [@media(hover:none)]:opacity-100 transition-[opacity,background-color] duration-150 hover:bg-muted/80"
                               onClick={(e) => e.stopPropagation()}
                             >
                               <MoreVertical className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="w-48">
+                            {/* v0.8.130 — moved here from a full-width row on every card (as SourceCard
+                                does it). Side-effect free: it only opens the podcast review. */}
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                openPodcastReview([{ kind: 'app_note', noteId: note.id }], 'quick')
+                              }}
+                              disabled={Boolean(podcastDisabledReason)}
+                            >
+                              <Podcast className="h-4 w-4 mr-2" />
+                              {podcastDisabledReason
+                                ? t('notes.noteCard.turnIntoPodcastDisabled', { reason: podcastDisabledReason })
+                                : t('notes.noteCard.turnIntoPodcast')}
+                            </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={(e) => {
                                 e.stopPropagation()
@@ -219,20 +258,13 @@ export function NotesColumn({
                     )}
 
                     {note.content && (
-                      <p className="text-sm text-muted-foreground line-clamp-3 break-words leading-relaxed">
+                      <p data-dn-reading="" className="text-sm text-muted-foreground line-clamp-3 break-words leading-relaxed">
                         {note.content}
                       </p>
                     )}
-                    <div className="mt-3" onClick={(event) => event.stopPropagation()}>
-                      <TurnIntoPodcastAction
-                        selection={{ kind: 'app_note', noteId: note.id }}
-                        destination="quick"
-                        disabledReason={note.content?.trim() ? undefined : 'No readable content is available'}
-                        onOpen={openPodcastReview}
-                      />
-                    </div>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </CardContent>

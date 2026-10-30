@@ -17,9 +17,9 @@ describe('PodcastModelPlan', () => {
     />)
 
     expect(screen.getByText('Verified local route.')).toBeVisible()
-    expect(screen.getByText('Blocked')).toBeVisible()
-    expect(screen.getByText('Approval required')).toBeVisible()
-    fireEvent.change(screen.getByLabelText('Override Outline model'), { target: { value: 'other-local' } })
+    expect(screen.getByText('podcasts.podcastModelPlan.outcomeBlocked')).toBeVisible()
+    expect(screen.getByText('podcasts.podcastModelPlan.outcomeApprovalRequired')).toBeVisible()
+    fireEvent.change(screen.getByLabelText('podcasts.podcastModelPlan.overrideModel'), { target: { value: 'other-local' } })
     expect(onOverride).toHaveBeenCalledWith('outline', 'other-local')
   })
 

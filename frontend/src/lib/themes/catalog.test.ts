@@ -59,11 +59,11 @@ describe('Research Core OS theme catalog', () => {
 
   it('exports the one approved theme group order', () => {
     expect(THEME_GROUPS).toEqual([
-      { id: 'featured', label: 'Featured' },
-      { id: 'light', label: 'Light' },
-      { id: 'dark', label: 'Dark' },
-      { id: 'accessibility', label: 'Accessibility' },
-      { id: 'classics', label: 'Classics' },
+      { id: 'featured', labelKey: 'workspace.catalog2.groupFeatured' },
+      { id: 'light', labelKey: 'workspace.catalog2.groupLight' },
+      { id: 'dark', labelKey: 'workspace.catalog2.groupDark' },
+      { id: 'accessibility', labelKey: 'workspace.catalog2.groupAccessibility' },
+      { id: 'classics', labelKey: 'workspace.catalog2.groupClassics' },
     ])
   })
 })

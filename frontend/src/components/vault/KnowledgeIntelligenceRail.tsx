@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 
+import { useTranslation } from '@/lib/hooks/use-translation'
 import type { KnowledgeNavigate } from './KnowledgePaneContent'
 import { KnowledgeLinksInspector } from './KnowledgeLinksInspector'
 
@@ -18,11 +19,11 @@ interface KnowledgeIntelligenceRailProps {
   onCloseDrawer?: () => void
 }
 
-const PANELS: Array<{ id: IntelligencePanel; label: string }> = [
-  { id: 'evidence', label: 'Evidence' },
-  { id: 'connections', label: 'Connections' },
-  { id: 'properties', label: 'Properties' },
-  { id: 'production', label: 'Production' },
+const PANELS: Array<{ id: IntelligencePanel; labelKey: string }> = [
+  { id: 'evidence', labelKey: 'knowledge.knowledgeIntelligenceRail.evidence' },
+  { id: 'connections', labelKey: 'knowledge.knowledgeIntelligenceRail.connections' },
+  { id: 'properties', labelKey: 'knowledge.properties' },
+  { id: 'production', labelKey: 'knowledge.knowledgeIntelligenceRail.production' },
 ]
 
 export function KnowledgeIntelligenceRail({
@@ -30,11 +31,12 @@ export function KnowledgeIntelligenceRail({
   onNavigate,
   initialPanel = 'evidence',
   drawerId,
-  drawerLabel = 'Research intelligence',
+  drawerLabel,
   drawerOpen = true,
   drawerCloseLabel,
   onCloseDrawer,
 }: KnowledgeIntelligenceRailProps) {
+  const { t } = useTranslation()
   const [panel, setPanel] = useState<IntelligencePanel>(initialPanel)
   const [collapsed, setCollapsed] = useState(false)
   const toggleRef = useRef<HTMLButtonElement>(null)
@@ -46,13 +48,13 @@ export function KnowledgeIntelligenceRail({
   return (
     <aside
       id={drawerId}
-      aria-label={drawerLabel}
+      aria-label={drawerLabel ?? t('knowledge.knowledgeIntelligenceRail.researchIntelligence')}
       aria-hidden={!drawerOpen}
       data-drawer-open={drawerOpen ? 'true' : 'false'}
       className="research-core-intelligence-drawer min-w-0 border-l"
     >
       <div className="flex items-center justify-between gap-2 border-b p-2">
-        <span className="text-sm font-medium">Intelligence</span>
+        <span className="text-sm font-medium">{t('knowledge.intelligenceDrawer')}</span>
         <div className="flex items-center gap-1">
           {onCloseDrawer && drawerCloseLabel ? (
             <button
@@ -68,17 +70,17 @@ export function KnowledgeIntelligenceRail({
             ref={toggleRef}
             type="button"
             aria-expanded={!collapsed}
-            aria-label={collapsed ? 'Expand intelligence rail' : 'Collapse intelligence rail'}
+            aria-label={collapsed ? t('knowledge.knowledgeIntelligenceRail.expandRail') : t('knowledge.knowledgeIntelligenceRail.collapseRail')}
             onClick={() => setCollapsed((value) => !value)}
             className="rounded px-2 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            {collapsed ? 'Expand' : 'Collapse'}
+            {collapsed ? t('knowledge.knowledgeIntelligenceRail.expand') : t('knowledge.knowledgeIntelligenceRail.collapse')}
           </button>
         </div>
       </div>
       {!collapsed ? (
         <div className="p-3" data-testid="knowledge-evidence-lens">
-          <nav aria-label="Intelligence panels" className="mb-3 flex flex-wrap gap-1">
+          <nav aria-label={t('knowledge.knowledgeIntelligenceRail.panels')} className="mb-3 flex flex-wrap gap-1">
             {PANELS.map((item) => (
               <button
                 key={item.id}
@@ -87,7 +89,7 @@ export function KnowledgeIntelligenceRail({
                 onClick={() => setPanel(item.id)}
                 className="rounded border px-2 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                {item.label}
+                {t(item.labelKey)}
               </button>
             ))}
           </nav>

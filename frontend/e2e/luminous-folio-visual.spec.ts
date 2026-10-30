@@ -2,6 +2,9 @@ import { expect, test } from '@playwright/test'
 
 import { installStrictKnowledgeFixture } from './fixtures/knowledge-editor-modes'
 import { installLuminousFolioFixture } from './fixtures/luminous-folio'
+import { settleForScreenshot, trackRequests } from './fixtures/settle'
+
+test.beforeEach(({ page }) => trackRequests(page))
 
 const captures = [
   { theme: 'research-core-dark', viewport: { width: 1440, height: 900 } },
@@ -20,10 +23,15 @@ for (const capture of captures) {
     await installLuminousFolioFixture(page, { theme: capture.theme })
     await page.setViewportSize(capture.viewport)
     await page.emulateMedia({ reducedMotion: 'reduce' })
+    // v0.8.130 — the card says "Updated 9 months ago" relative to now, so the
+    // picture changed every month ("10 months ago" by 2026-10-29). The clock is
+    // pinned to the day the baselines were taken; timers still run.
+    await page.clock.setFixedTime(new Date('2026-10-05T12:00:00Z'))
     await page.goto('/notebooks')
 
     await expect(page.getByRole('heading', { name: 'Notebooks', exact: true })).toBeVisible()
     await expect(page.locator('html')).toHaveAttribute('data-theme', capture.theme)
+    await settleForScreenshot(page)
     await expect(page).toHaveScreenshot(
       `notebooks-${capture.theme}-${capture.viewport.width}x${capture.viewport.height}.png`,
       { animations: 'disabled', caret: 'hide' },
@@ -38,8 +46,9 @@ test('Luminous intelligence horizon — research-core-dark 1440x900', async ({ p
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.goto('/')
 
-  await expect(page.getByText('Intelligence Horizon', { exact: true })).toBeVisible()
+  await expect(page.getByText('Intelligence horizon', { exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Deeper Notebook', exact: true })).toBeVisible()
+  await settleForScreenshot(page)
   await expect(page).toHaveScreenshot('horizon-research-core-dark-1440x900.png', {
     animations: 'disabled',
     caret: 'hide',
@@ -210,6 +219,7 @@ test('Luminous knowledge workspace — research-core-dark 1440x900', async ({ pa
 
   await expect(page.getByRole('heading', { name: 'Knowledge', exact: true })).toBeVisible()
   await expect(page.getByText('Saved locally', { exact: true })).toBeVisible()
+  await settleForScreenshot(page)
   await expect(page).toHaveScreenshot('knowledge-research-core-dark-1440x900.png', {
     animations: 'disabled',
     caret: 'hide',

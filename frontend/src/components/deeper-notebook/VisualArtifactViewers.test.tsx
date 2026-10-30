@@ -85,20 +85,20 @@ describe('SlideDeckViewer', () => {
   it('navigates a fixed slide stage with buttons and arrow keys', () => {
     render(<SlideDeckViewer document={slideDeck} />)
 
-    const workspace = screen.getByRole('region', { name: 'Slide deck' })
+    const workspace = screen.getByRole('region', { name: 'artifacts.visualArtifactViewers.slideDeck' })
     expect(screen.getByRole('heading', { name: 'Evidence Slides' })).toBeInTheDocument()
-    expect(screen.getByText('Prepared for Researchers')).toBeInTheDocument()
-    expect(screen.getByText(/Slide 1 of 3/)).toBeInTheDocument()
+    expect(screen.getByText('artifacts.visualArtifactViewers.preparedFor')).toBeInTheDocument()
+    expect(screen.getByText(/artifacts.visualArtifactViewers.slidePosition/)).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Grounded output' })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Private workflow' })).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Next slide' }))
+    fireEvent.click(screen.getByRole('button', { name: 'artifacts.visualArtifactViewers.nextSlide' }))
     expect(screen.getByRole('heading', { name: 'Grounded output' })).toBeInTheDocument()
-    expect(screen.getByText(/Slide 2 of 3/)).toBeInTheDocument()
+    expect(screen.getByText(/artifacts.visualArtifactViewers.slidePosition/)).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Next slide' }))
+    fireEvent.click(screen.getByRole('button', { name: 'artifacts.visualArtifactViewers.nextSlide' }))
     expect(screen.getByRole('heading', { name: 'Private workflow' })).toBeInTheDocument()
-    expect(screen.getByText(/Slide 3 of 3/)).toBeInTheDocument()
+    expect(screen.getByText(/artifacts.visualArtifactViewers.slidePosition/)).toBeInTheDocument()
 
     fireEvent.keyDown(workspace, { key: 'ArrowLeft' })
     expect(screen.getByRole('heading', { name: 'Grounded output' })).toBeInTheDocument()
@@ -107,10 +107,10 @@ describe('SlideDeckViewer', () => {
   it('reveals speaker notes, visual direction, and citations', () => {
     render(<SlideDeckViewer document={slideDeck} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Next slide' }))
+    fireEvent.click(screen.getByRole('button', { name: 'artifacts.visualArtifactViewers.nextSlide' }))
     expect(screen.getByText('[S1]')).toBeInTheDocument()
     expect(screen.queryByText('Explain the evidence trail.')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Show speaker notes' }))
+    fireEvent.click(screen.getByRole('button', { name: 'artifacts.visualArtifactViewers.showSpeakerNotes' }))
     expect(screen.getByText('Explain the evidence trail.')).toBeInTheDocument()
     expect(screen.getAllByText('Use a simple source flow.')).toHaveLength(2)
   })
@@ -122,9 +122,9 @@ describe('InfographicViewer', () => {
 
     const visual = screen.getByRole('figure', { name: 'Evidence at a glance' })
     expect(visual).toHaveAttribute('data-orientation', 'landscape')
-    expect(screen.getByText('metric')).toBeInTheDocument()
+    expect(screen.getByText('artifacts.visualArtifactViewers.panelKind.metric')).toBeInTheDocument()
     expect(screen.getByText('95%')).toBeInTheDocument()
-    expect(screen.getByText('process')).toBeInTheDocument()
+    expect(screen.getByText('artifacts.visualArtifactViewers.panelKind.process')).toBeInTheDocument()
     expect(screen.getByText('[S1]')).toBeInTheDocument()
     expect(screen.getByText('[S2]')).toBeInTheDocument()
   })
@@ -160,11 +160,13 @@ describe('InfographicViewer', () => {
     expect(tokenSource).toMatch(
       /@media \(forced-colors: active\)[\s\S]*--dn-artifact-canvas:\s*Canvas;/,
     )
+    // v0.8.130 — the high-contrast themes set the canonical status roles; the
+    // --dn-status-* names above are aliases of them in tokens.css.
     expect(globalStyleSource).toMatch(
-      /html\[data-theme="high-contrast-light"\][\s\S]*--dn-status-success:/,
+      /html\[data-theme="high-contrast-light"\] \{[^}]*--success:/,
     )
     expect(globalStyleSource).toMatch(
-      /html\[data-theme="high-contrast-dark"\][\s\S]*--dn-status-success:/,
+      /html\[data-theme="high-contrast-dark"\] \{[^}]*--success:/,
     )
   })
 })

@@ -5,13 +5,14 @@ import { useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft } from 'lucide-react'
 import { FolioRouteFrame } from '@/components/deeper-notebook/folio/FolioRouteFrame'
-import { AppShell } from '@/components/layout/AppShell'
 import { useSourceChat } from '@/lib/hooks/useSourceChat'
 import { ChatPanel } from '@/components/source/ChatPanel'
+import { useTranslation } from '@/lib/hooks/use-translation'
 import { useNavigation } from '@/lib/hooks/use-navigation'
 import { SourceDetailContent } from '@/components/source/SourceDetailContent'
 
 export default function SourceDetailPage() {
+  const { t } = useTranslation()
   const router = useRouter()
   const params = useParams()
   const sourceId = params?.id ? decodeURIComponent(params.id as string) : ''
@@ -27,8 +28,8 @@ export default function SourceDetailPage() {
   }, [navigation, router])
 
   return (
-    <AppShell>
-      <FolioRouteFrame section="Collect" title="Source record">
+    <>
+      <FolioRouteFrame section={t('navigation.collect')} title={t('sources.idPage.recordTitle')}>
         <div className="flex min-h-[32rem] flex-col">
       {/* v0.7.164 — Source detail layout polish.
           Before: back button had `pt-6 pb-4 px-6` PLUS its own
@@ -90,6 +91,6 @@ export default function SourceDetailPage() {
           </div>
         </div>
       </FolioRouteFrame>
-    </AppShell>
+    </>
   )
 }

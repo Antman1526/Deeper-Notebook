@@ -41,8 +41,8 @@ describe('KnowledgeBookmarksPanel', () => {
   it('shows external target authority while keeping bookmark metadata editable', () => {
     render(<KnowledgeBookmarksPanel bookmarks={[externalBookmark()]} folders={[]} onOpen={vi.fn()} onEdit={vi.fn()} onDelete={vi.fn()} />)
 
-    expect(screen.getByText('External read-only')).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Edit bookmark Research plan' })).toBeEnabled()
+    expect(screen.getByText('knowledge.navigation.externalReadOnly')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'knowledge.knowledgeBookmarksPanel.editBookmarkAria' })).toBeEnabled()
     expect(screen.queryByRole('button', { name: /edit source/i })).not.toBeInTheDocument()
   })
 
@@ -50,19 +50,19 @@ describe('KnowledgeBookmarksPanel', () => {
     const stale = { ...externalBookmark(), targetState: 'stale' as const }
     render(<KnowledgeBookmarksPanel bookmarks={[stale]} folders={[]} onOpen={vi.fn()} onEdit={vi.fn()} onDelete={vi.fn()} />)
 
-    expect(screen.queryByRole('button', { name: 'Open Research plan' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Edit Target Research plan' })).toBeVisible()
-    expect(screen.queryByRole('button', { name: 'Edit bookmark Research plan' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Delete bookmark Research plan' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'knowledge.knowledgeBookmarksPanel.open' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'knowledge.knowledgeBookmarksPanel.editTarget' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'knowledge.knowledgeBookmarksPanel.editBookmarkAria' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'knowledge.knowledgeBookmarksPanel.deleteBookmarkAria' })).toBeVisible()
   })
 
   it('submits a revision-checked metadata edit without touching the external source', async () => {
     const onUpdate = vi.fn(async () => undefined)
     render(<KnowledgeBookmarksPanel bookmarks={[externalBookmark()]} folders={[]} onOpen={vi.fn()} onEdit={vi.fn()} onUpdate={onUpdate} onDelete={vi.fn()} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Edit bookmark Research plan' }))
-    fireEvent.change(screen.getByLabelText('Bookmark label'), { target: { value: 'Reviewed plan' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save bookmark metadata' }))
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.knowledgeBookmarksPanel.editBookmarkAria' }))
+    fireEvent.change(screen.getByLabelText('knowledge.knowledgeBookmarksPanel.bookmarkLabel'), { target: { value: 'Reviewed plan' } })
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.knowledgeBookmarksPanel.saveMetadata' }))
 
     expect(onUpdate).toHaveBeenCalledWith(expect.objectContaining({ id: 'knowledge_bookmark:research' }), {
       displayLabel: 'Reviewed plan', tags: ['plans'],
@@ -77,17 +77,17 @@ describe('KnowledgeBookmarksPanel', () => {
     const stale = { ...externalBookmark(), targetState: 'stale' as const }
     render(<KnowledgeBookmarksPanel bookmarks={[stale]} folders={[]} onOpen={vi.fn()} onEdit={vi.fn()} onUpdate={onUpdate} onDelete={vi.fn()} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Edit Target Research plan' }))
-    fireEvent.change(screen.getByLabelText('Target document ID'), { target: { value: 'knowledge_engine_document:repaired' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save target repair' }))
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.knowledgeBookmarksPanel.editTarget' }))
+    fireEvent.change(screen.getByLabelText('knowledge.knowledgeBookmarksPanel.targetDocumentId'), { target: { value: 'knowledge_engine_document:repaired' } })
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.knowledgeBookmarksPanel.saveTargetRepair' }))
 
     await waitFor(() => expect(onUpdate).toHaveBeenCalledWith(stale, {
       target: { kind: 'document', documentId: 'knowledge_engine_document:repaired' },
     }))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Edit Target Research plan' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Save target repair' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('Bookmark update conflicted')
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.knowledgeBookmarksPanel.editTarget' }))
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.knowledgeBookmarksPanel.saveTargetRepair' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('knowledge.knowledgeBookmarksPanel.updateConflict')
   })
 
   it('passes the full bookmark to the typed open dispatcher', () => {
@@ -95,7 +95,7 @@ describe('KnowledgeBookmarksPanel', () => {
     const bookmark = externalBookmark()
     render(<KnowledgeBookmarksPanel bookmarks={[bookmark]} folders={[]} onOpen={onOpen} onEdit={vi.fn()} onDelete={vi.fn()} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open Research plan' }))
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.knowledgeBookmarksPanel.open' }))
     expect(onOpen).toHaveBeenCalledWith(bookmark)
   })
 
@@ -105,8 +105,8 @@ describe('KnowledgeBookmarksPanel', () => {
     const workspace = { ...externalBookmark(), id: 'knowledge_bookmark:workspace', targetKind: 'workspace' as const, target: { kind: 'workspace' as const, workspaceId: 'named_knowledge_workspace:desk' }, targetDocument: null }
     render(<KnowledgeBookmarksPanel bookmarks={[search, workspace]} folders={[]} onOpen={onOpen} onEdit={vi.fn()} onDelete={vi.fn()} />)
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Open Research plan' })[0])
-    fireEvent.click(screen.getAllByRole('button', { name: 'Open Research plan' })[1])
+    fireEvent.click(screen.getAllByRole('button', { name: 'knowledge.knowledgeBookmarksPanel.open' })[0])
+    fireEvent.click(screen.getAllByRole('button', { name: 'knowledge.knowledgeBookmarksPanel.open' })[1])
     expect(onOpen).toHaveBeenCalledWith(search)
     expect(onOpen).toHaveBeenCalledWith(workspace)
   })
@@ -120,20 +120,20 @@ describe('KnowledgeBookmarksPanel', () => {
     ]
     render(<KnowledgeBookmarksPanel bookmarks={variants} folders={[]} onOpen={vi.fn()} onEdit={vi.fn()} onDelete={vi.fn()} />)
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Edit Target Research plan' })[0])
-    expect(screen.getByLabelText('Target block ID')).toBeVisible()
-    expect(screen.getByLabelText('Source revision ID')).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-    fireEvent.click(screen.getAllByRole('button', { name: 'Edit Target Research plan' })[1])
-    expect(screen.getByLabelText('Search mode')).toBeVisible()
-    expect(screen.getByLabelText('Search space IDs')).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-    fireEvent.click(screen.getAllByRole('button', { name: 'Edit Target Research plan' })[2])
-    expect(screen.getByLabelText('Graph relation kinds')).toBeVisible()
-    expect(screen.getByLabelText('Graph viewport')).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-    fireEvent.click(screen.getAllByRole('button', { name: 'Edit Target Research plan' })[3])
-    expect(screen.getByLabelText('Workspace ID')).toBeVisible()
+    fireEvent.click(screen.getAllByRole('button', { name: 'knowledge.knowledgeBookmarksPanel.editTarget' })[0])
+    expect(screen.getByLabelText('knowledge.knowledgeBookmarksPanel.targetBlockId')).toBeVisible()
+    expect(screen.getByLabelText('knowledge.knowledgeBookmarksPanel.sourceRevisionId')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'common.cancel' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'knowledge.knowledgeBookmarksPanel.editTarget' })[1])
+    expect(screen.getByLabelText('knowledge.knowledgeBookmarksPanel.searchMode')).toBeVisible()
+    expect(screen.getByLabelText('knowledge.knowledgeBookmarksPanel.searchSpaceIds')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'common.cancel' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'knowledge.knowledgeBookmarksPanel.editTarget' })[2])
+    expect(screen.getByLabelText('knowledge.knowledgeBookmarksPanel.graphRelationKinds')).toBeVisible()
+    expect(screen.getByLabelText('knowledge.knowledgeBookmarksPanel.graphViewport')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'common.cancel' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'knowledge.knowledgeBookmarksPanel.editTarget' })[3])
+    expect(screen.getByLabelText('knowledge.knowledgeBookmarksPanel.workspaceId')).toBeVisible()
   })
 
   it('submits a full repaired search target rather than metadata', async () => {
@@ -141,13 +141,13 @@ describe('KnowledgeBookmarksPanel', () => {
     const search = { ...externalBookmark(), targetKind: 'search' as const, target: { kind: 'search' as const, query: 'plan', searchMode: 'text' as const, spaceIds: [], authorityKinds: [], tags: [] }, targetState: 'stale' as const, targetDocument: null }
     render(<KnowledgeBookmarksPanel bookmarks={[search]} folders={[]} onOpen={vi.fn()} onEdit={vi.fn()} onUpdate={onUpdate} onDelete={vi.fn()} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Edit Target Research plan' }))
-    fireEvent.change(screen.getByLabelText('Search query'), { target: { value: 'renewed plan' } })
-    fireEvent.change(screen.getByLabelText('Search mode'), { target: { value: 'semantic' } })
-    fireEvent.change(screen.getByLabelText('Search space IDs'), { target: { value: 'knowledge_engine_space:research' } })
-    fireEvent.change(screen.getByLabelText('Search authority filters'), { target: { value: 'external_read_only' } })
-    fireEvent.change(screen.getByLabelText('Search tags'), { target: { value: 'plans, repair' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save target repair' }))
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.knowledgeBookmarksPanel.editTarget' }))
+    fireEvent.change(screen.getByLabelText('knowledge.knowledgeBookmarksPanel.searchQuery'), { target: { value: 'renewed plan' } })
+    fireEvent.change(screen.getByLabelText('knowledge.knowledgeBookmarksPanel.searchMode'), { target: { value: 'semantic' } })
+    fireEvent.change(screen.getByLabelText('knowledge.knowledgeBookmarksPanel.searchSpaceIds'), { target: { value: 'knowledge_engine_space:research' } })
+    fireEvent.change(screen.getByLabelText('knowledge.knowledgeBookmarksPanel.searchAuthorityFilters'), { target: { value: 'external_read_only' } })
+    fireEvent.change(screen.getByLabelText('knowledge.knowledgeBookmarksPanel.searchTags'), { target: { value: 'plans, repair' } })
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.knowledgeBookmarksPanel.saveTargetRepair' }))
 
     await waitFor(() => expect(onUpdate).toHaveBeenCalledWith(search, { target: {
       kind: 'search', query: 'renewed plan', searchMode: 'semantic',
@@ -164,10 +164,10 @@ describe('KnowledgeBookmarksPanel', () => {
     }
     render(<KnowledgeBookmarksPanel bookmarks={[]} folders={[folder]} onOpen={vi.fn()} onEdit={vi.fn()} onDelete={vi.fn()} onDeleteFolder={onDeleteFolder} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete folder' }))
-    expect(screen.getByRole('region', { name: 'Confirm folder deletion' })).toHaveTextContent('contained bookmark metadata')
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.knowledgeBookmarksPanel.deleteFolder' }))
+    expect(screen.getByRole('region', { name: 'knowledge.knowledgeBookmarksPanel.confirmFolderDeletion' })).toHaveTextContent('knowledge.knowledgeBookmarksPanel.deleteFolderExplain')
     expect(onDeleteFolder).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'Move children' }))
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.knowledgeBookmarksPanel.moveChildren' }))
     expect(onDeleteFolder).toHaveBeenCalledWith(folder, 'move_children')
   })
 
@@ -180,7 +180,7 @@ describe('KnowledgeBookmarksPanel', () => {
     }
     render(<KnowledgeBookmarksPanel bookmarks={[]} folders={[folder]} onOpen={vi.fn()} onEdit={vi.fn()} onDelete={vi.fn()} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Turn folder into podcast' }))
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.knowledgeBookmarksPanel.turnFolderIntoPodcast' }))
 
     expect(usePodcastStudioStore.getState().selections).toEqual([{
       kind: 'knowledge_collection', collectionKind: 'folder', collectionId: folder.id,

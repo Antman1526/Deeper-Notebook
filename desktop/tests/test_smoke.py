@@ -26,9 +26,9 @@ def test_version_matches_changelog():
     changelog = (Path(__file__).resolve().parent.parent / "CHANGELOG.md").read_text(
         encoding="utf-8"
     )
-    m = re.search(r"^- \*\*v(\d+\.\d+\.\d+)\*\*", changelog, re.MULTILINE)
+    m = re.search(r"^(?:##\s+v|- \*\*v)(\d+\.\d+\.\d+)\b", changelog, re.MULTILINE)
     assert m is not None, (
-        "v0.7.210: could not find a `- **vX.Y.Z**` bullet in "
+        "v0.7.210: could not find a `## vX.Y.Z` header or `- **vX.Y.Z**` bullet in "
         "desktop/CHANGELOG.md. CHANGELOG format changed?"
     )
     changelog_version = m.group(1)

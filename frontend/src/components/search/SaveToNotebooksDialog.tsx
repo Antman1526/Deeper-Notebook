@@ -1,5 +1,6 @@
 'use client'
 
+import { isErrorReported } from '@/lib/api/client'
 import { useState } from 'react'
 import {
   Dialog,
@@ -63,7 +64,9 @@ export function SaveToNotebooksDialog({
       toast.success(t('searchPage.saveSuccess'))
       setSelectedNotebooks([])
       onOpenChange(false)
-    } catch {
+    } catch (error) {
+      // v0.8.130 — the mutation's own onError already told the user; don't toast twice.
+      if (isErrorReported(error)) return
       toast.error(t('searchPage.saveError'))
     }
   }

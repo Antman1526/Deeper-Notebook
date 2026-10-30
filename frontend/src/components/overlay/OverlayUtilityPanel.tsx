@@ -99,7 +99,7 @@ function OverlayNoteGroup({ heading, notes, onOpen }: {
 }) {
   return (
     <section aria-label={heading}>
-      <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{heading}</h3>
+      <h3 className="mb-1 text-xs font-medium text-muted-foreground">{heading}</h3>
       <ul className="space-y-1" role="list">
         {notes.map(note => (
           <li key={note.id}>

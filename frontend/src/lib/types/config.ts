@@ -9,6 +9,8 @@ export interface BackendConfigResponse {
   hasUpdate?: boolean
   dbStatus?: "online" | "offline"
   sourceUploadMaxBytes?: number | null
+  /** v0.8.130 — where this install keeps its data, home shown as `~`; null when unknown. */
+  dataPath?: string | null
 }
 
 /**
@@ -23,6 +25,8 @@ export interface AppConfig {
   hasUpdate?: boolean
   dbStatus?: "online" | "offline"
   sourceUploadMaxBytes?: number | null
+  /** v0.8.130 — where this install keeps its data, home shown as `~`; null when unknown. */
+  dataPath?: string | null
 }
 
 /**

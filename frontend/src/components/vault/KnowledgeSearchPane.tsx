@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { useKnowledgeIndexedSearch } from '@/lib/hooks/use-knowledge-command-data'
 import { ModelRoutePlanPanel } from '@/components/local-models/ModelRoutePlanPanel'
 import { useLocalModelSettings, useModelRoutePlan } from '@/lib/hooks/use-local-models'
+import { useTranslation } from '@/lib/hooks/use-translation'
 import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
 
 interface KnowledgeSearchPaneProps {
@@ -25,6 +26,7 @@ export function KnowledgeSearchPane({
   authorityKinds,
   onQueryChange,
 }: KnowledgeSearchPaneProps) {
+  const { t } = useTranslation()
   const [query, setQuery] = useState(initialQuery)
   const [submitted, setSubmitted] = useState(false)
   const openPodcastReview = usePodcastStudioStore((state) => state.open)
@@ -50,14 +52,14 @@ export function KnowledgeSearchPane({
   }
 
   return (
-    <section aria-label="Knowledge Search" className="space-y-4">
+    <section aria-label={t('knowledge.knowledgeSearchPane.region')} className="space-y-4">
       <div>
-        <h2 className="text-xl font-semibold">Search</h2>
-        <p className="text-sm text-muted-foreground">Search is available without a current document selection.</p>
+        <h2 className="text-xl font-semibold">{t('knowledge.commands.modeSearch')}</h2>
+        <p className="text-sm text-muted-foreground">{t('knowledge.knowledgeSearchPane.available')}</p>
       </div>
-      <ModelRoutePlanPanel title="Embedding route" plan={embeddingRoute.data} isError={settings.isError || embeddingRoute.isError} isLoading={settings.isLoading || embeddingRoute.isLoading} />
+      <ModelRoutePlanPanel routeId="embedding-route" title={t('knowledge.knowledgeSearchPane.embeddingRoute')} plan={embeddingRoute.data} isError={settings.isError || embeddingRoute.isError} isLoading={settings.isLoading || embeddingRoute.isLoading} />
       <Input
-        aria-label="Search knowledge"
+        aria-label={t('knowledge.knowledgeSearchPane.searchKnowledge')}
         value={query}
         onChange={(event) => {
           const nextQuery = event.target.value
@@ -70,7 +72,7 @@ export function KnowledgeSearchPane({
         }}
       />
       <Button type="button" onClick={submit} disabled={query.trim().length < 2}>
-        Search knowledge
+        {t('knowledge.knowledgeSearchPane.searchKnowledge')}
       </Button>
       <TurnIntoPodcastAction
         selection={{
@@ -82,14 +84,14 @@ export function KnowledgeSearchPane({
         }}
         destination="quick"
         disabledReason={searchMode === 'semantic'
-          ? 'Semantic podcast selection needs a verified unified embedding index.'
+          ? t('knowledge.knowledgeSearchPane.semanticPodcastDisabled')
           : query.trim().length < 2
-            ? 'Enter at least two characters to create a podcast from search results.'
+            ? t('knowledge.knowledgeSearchPane.podcastMinChars')
             : undefined}
         onOpen={openPodcastReview}
       />
       {results && (
-        <ul aria-label="Knowledge search results">
+        <ul aria-label={t('knowledge.knowledgeSearchPane.results')}>
           {results.map((result) => <li key={result.id}>{result.title}</li>)}
         </ul>
       )}

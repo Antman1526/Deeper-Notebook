@@ -1,8 +1,10 @@
 """Unit tests for /api/audio/dictate endpoint."""
 
-import pytest
 from unittest.mock import AsyncMock, patch
+
+import pytest
 from fastapi.testclient import TestClient
+
 from api.main import app
 
 client = TestClient(app)

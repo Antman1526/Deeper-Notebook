@@ -15,6 +15,8 @@ import { ChevronDown, Layers, Sparkles } from 'lucide-react'
 import { EvidencePeek } from '@/components/deeper-notebook/source-gallery/EvidencePeek'
 import { SourceCover } from '@/components/deeper-notebook/source-gallery/SourceCover'
 import { VirtualizedListAuto } from '@/components/ui/virtualized-list'
+import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatDecimal } from '@/lib/utils/format'
 import type { SourceListResponse } from '@/lib/types/api'
 import type { SearchResponse, SearchResult } from '@/lib/types/search'
 import type { ModalType } from '@/lib/hooks/use-modal-manager'
@@ -77,11 +79,13 @@ function renderSearchResultCard(
     openModal,
     onViewEvidence,
     t,
+    language,
   }: {
     visualGalleryEnabled: boolean
     openModal: (type: ModalType, id: string) => void
     onViewEvidence: (result: SearchResult) => void
-    t: (key: string, options?: { defaultValue?: string }) => string
+    t: (key: string, options?: Record<string, unknown>) => string
+    language: string
   }
 ): React.ReactNode {
   // A result's own record ID defines its route and kind.
@@ -96,10 +100,11 @@ function renderSearchResultCard(
   const sourceResult = visualGalleryEnabled && target.recordType === 'source'
 
   return (
+    // v0.8.130 — narrow transition, no press-scale (UI audit Phase 1)
     <Card
       key={result.id}
       data-testid={`search-result-card-${result.id}`}
-      className="group rounded-xl border border-border/60 bg-card/95 p-1 transition-all duration-200 hover:border-primary/40 hover:shadow-md active:scale-[0.99] ring-1 ring-border/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)] dark:shadow-[inset_0_1px_1px_rgba(255,255,255,0.03)]"
+      className="group rounded-xl border border-border/60 bg-card p-1 transition-[border-color,box-shadow] duration-200 hover:border-primary/40 hover:shadow-md"
     >
       <CardContent className="pt-3 pb-3 px-3.5">
         <div className={sourceResult ? 'grid min-w-0 gap-4 sm:grid-cols-[10rem_minmax(0,1fr)]' : ''}>
@@ -118,11 +123,11 @@ function renderSearchResultCard(
                   {result.title}
                 </button>
                 <Badge variant="secondary" className="ml-2 rounded-full text-xs font-mono">
-                  {result.final_score.toFixed(2)}
+                  {formatDecimal(result.final_score, language, 2)}
                 </Badge>
                 {result.rerank_score !== undefined && (
                   <Badge variant="outline" className="ml-2 rounded-full border-primary/30 text-primary text-xs font-mono bg-primary/[0.04]">
-                    Rerank: {result.rerank_score.toFixed(3)}
+                    {t('searchPage.searchResultsList.rerankScore', { score: formatDecimal(result.rerank_score, language, 3) })}
                   </Badge>
                 )}
                 {result.vault_provenance && (
@@ -143,7 +148,7 @@ function renderSearchResultCard(
                     type="button"
                     onClick={() => onViewEvidence(result)}
                     aria-label={label}
-                    className="gap-1.5 rounded-full text-xs text-muted-foreground hover:text-foreground transition-all duration-150"
+                    className="gap-1.5 rounded-full text-xs text-muted-foreground hover:text-foreground duration-150"
                   >
                     <Layers className="h-3.5 w-3.5" />
                     {label}
@@ -195,6 +200,8 @@ export function SearchResultsList({
   onCloseEvidence,
   t,
 }: SearchResultsListProps) {
+  // v0.8.130 — `t` arrives as a prop; the app language is read here so scores use its number format.
+  const { language } = useTranslation()
   if (!searchData) return null
 
   return (
@@ -207,14 +214,14 @@ export function SearchResultsList({
           {searchData.reranked && (
             <Badge variant="secondary" className="border-primary/30 text-primary gap-1">
               <Sparkles className="h-3 w-3" />
-              Cross-Encoder Reranked
+              {t('searchPage.searchResultsList.crossEncoderReranked')}
             </Badge>
           )}
           <Badge variant="outline">
             {searchData.search_type === 'text'
               ? t('searchPage.textSearch')
               : searchData.search_type === 'hybrid'
-                ? 'Hybrid Search'
+                ? t('searchPage.searchResultsList.hybridSearch')
                 : t('searchPage.vectorSearch')}
           </Badge>
         </div>
@@ -239,6 +246,7 @@ export function SearchResultsList({
                 openModal,
                 onViewEvidence,
                 t,
+                language,
               })}
             </div>
           )}
@@ -251,6 +259,7 @@ export function SearchResultsList({
               openModal,
               onViewEvidence,
               t,
+              language,
             })
           )}
         </div>

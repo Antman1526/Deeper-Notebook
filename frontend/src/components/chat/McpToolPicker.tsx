@@ -116,7 +116,8 @@ export function McpToolPicker({ disabled, onToggle }: McpToolPickerProps) {
             defaultValue: 'MCP tools for this turn',
           })}
         </div>
-        <p className="text-[10px] text-muted-foreground">
+        {/* v0.8.130 — 12px type floor (UI audit Phase 1) */}
+        <p className="text-xs text-muted-foreground">
           {t('chat.mcpPicker.helpText', {
             defaultValue:
               'Untick servers you do NOT want the model to call this turn. Reduces token cost when an unused tool would otherwise hang in context.',
@@ -196,7 +197,7 @@ export function McpToolPicker({ disabled, onToggle }: McpToolPickerProps) {
           // Surface that so a user whose local model silently can't tool-call
           // understands why web search isn't happening (it isn't a config bug).
           <p
-            className="text-[10px] text-muted-foreground border-t pt-2"
+            className="text-xs text-muted-foreground border-t pt-2"
             data-testid="mcp-pick-web-search-hint"
           >
             {t('chat.mcpPicker.webSearchHint', {

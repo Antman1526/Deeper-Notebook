@@ -442,12 +442,15 @@ source_chat_graph = source_chat_state.compile(checkpointer=memory)
 # for the full rationale on the lazy/threading-lock pattern (aiosqlite
 # captures the event loop at construct time, so we can't build at
 # module load).
+import asyncio
 import threading
 
 import aiosqlite
 
 _async_source_chat_graph: "object | None" = None
 _async_source_chat_graph_lock = threading.Lock()
+_async_source_chat_aio_lock: Optional[asyncio.Lock] = None
+_async_source_chat_loop: Optional[asyncio.AbstractEventLoop] = None
 # v0.7.211 — same connection-handle pattern as chat.py for clean
 # shutdown. See chat.py:close_async_graph for rationale.
 _async_source_chat_aio_conn: "object | None" = None
@@ -456,13 +459,23 @@ _async_source_chat_aio_conn: "object | None" = None
 async def get_async_source_chat_graph():
     """Return the AsyncSqliteSaver-backed twin of `source_chat_graph`,
     lazily constructed on first call."""
-    global _async_source_chat_graph, _async_source_chat_aio_conn
-    if _async_source_chat_graph is not None:
+    global _async_source_chat_graph, _async_source_chat_aio_conn, _async_source_chat_aio_lock, _async_source_chat_loop
+    loop = asyncio.get_running_loop()
+    if _async_source_chat_graph is not None and _async_source_chat_loop in (None, loop):
         return _async_source_chat_graph
     with _async_source_chat_graph_lock:
+        if _async_source_chat_aio_lock is None or _async_source_chat_loop is not loop:
+            _async_source_chat_aio_lock = asyncio.Lock()
+            if _async_source_chat_loop is not None and _async_source_chat_loop is not loop:
+                _async_source_chat_graph = None
+            _async_source_chat_loop = loop
+        aio_lock = _async_source_chat_aio_lock
+    async with aio_lock:
         if _async_source_chat_graph is not None:
             return _async_source_chat_graph
         aio_conn = await aiosqlite.connect(LANGGRAPH_CHECKPOINT_FILE)
+        await aio_conn.execute("PRAGMA journal_mode=WAL")
+        await aio_conn.execute("PRAGMA busy_timeout=5000")
         async_memory = AsyncSqliteSaver(aio_conn)
         _async_source_chat_graph = source_chat_state.compile(
             checkpointer=async_memory,
@@ -475,10 +488,12 @@ async def close_async_source_chat_graph() -> None:
     """v0.7.211 — Tear down the AsyncSqliteSaver connection on
     shutdown. Same idempotent + safe-on-never-built pattern as
     chat.py:close_async_graph."""
-    global _async_source_chat_graph, _async_source_chat_aio_conn
+    global _async_source_chat_graph, _async_source_chat_aio_conn, _async_source_chat_aio_lock, _async_source_chat_loop
     conn = _async_source_chat_aio_conn
     _async_source_chat_aio_conn = None
     _async_source_chat_graph = None
+    _async_source_chat_aio_lock = None
+    _async_source_chat_loop = None
     if conn is None:
         return
     try:

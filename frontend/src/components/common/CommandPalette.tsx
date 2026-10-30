@@ -60,13 +60,17 @@ import { usePodcastStudioStore } from '@/lib/stores/podcast-studio-store'
 import { useDisplayPreferencesStore } from '@/lib/stores/display-preferences-store'
 import { useTheme } from '@/lib/stores/theme-store'
 import { isStudyWorkbenchEnabled } from '@/lib/features'
+import { useStudyWorkbenchEnabled } from '@/lib/features-client'
 
-export const getNavigationItems = (t: TFunction) => [
+export const getNavigationItems = (
+  t: TFunction,
+  studyWorkbenchEnabled: boolean = isStudyWorkbenchEnabled(),
+) => [
   { name: t('navigation.sources'), href: '/sources', icon: FileText, keywords: ['files', 'documents', 'upload'] },
   { name: t('navigation.notebooks'), href: '/notebooks', icon: Book, keywords: ['notes', 'research', 'projects'] },
   { name: t('navigation.askAndSearch'), href: '/search', icon: Search, keywords: ['find', 'query'] },
   { name: t('navigation.podcasts'), href: '/podcasts', icon: Mic, keywords: ['audio', 'episodes', 'generate'] },
-  ...(isStudyWorkbenchEnabled()
+  ...(studyWorkbenchEnabled
     ? [{ name: t('navigation.study'), href: '/study', icon: GraduationCap, keywords: ['learning', 'courses', 'flashcards', 'review'] }]
     : []),
   { name: t('navigation.models'), href: '/settings/api-keys', icon: Bot, keywords: ['ai', 'llm', 'providers', 'openai', 'anthropic'] },
@@ -128,7 +132,8 @@ export function CommandPalette() {
   const [invoker, setInvoker] = useState<HTMLElement | null>(null)
   const [commandUnavailableVersion, setCommandUnavailableVersion] = useState(0)
   const restoreInvokerRef = useRef(true)
-  const navigationItems = useMemo(() => getNavigationItems(t), [t])
+  const studyWorkbenchEnabled = useStudyWorkbenchEnabled()
+  const navigationItems = useMemo(() => getNavigationItems(t, studyWorkbenchEnabled), [t, studyWorkbenchEnabled])
   const createItems = useMemo(() => getCreateItems(t), [t])
   const themeItems = useMemo(() => getThemeItems(t), [t])
   const openTabs = useMemo(
@@ -294,12 +299,12 @@ export function CommandPalette() {
       replaceWorkspace: page.context.replaceWorkspace ?? null,
       toggleMetrics: page.context.toggleMetrics ?? null,
       researchModeAvailability: page.context.researchModeAvailability ?? {
-        read: { available: false, reason: 'Research modes are unavailable' },
-        write: { available: false, reason: 'Research modes are unavailable' },
-        ask: { available: false, reason: 'Research modes are unavailable' },
-        search: { available: false, reason: 'Research modes are unavailable' },
-        graph: { available: false, reason: 'Research modes are unavailable' },
-        podcast: { available: false, reason: 'Research modes are unavailable' },
+        read: { available: false, reason: t('common.commandPalette.researchModesUnavailable') },
+        write: { available: false, reason: t('common.commandPalette.researchModesUnavailable') },
+        ask: { available: false, reason: t('common.commandPalette.researchModesUnavailable') },
+        search: { available: false, reason: t('common.commandPalette.researchModesUnavailable') },
+        graph: { available: false, reason: t('common.commandPalette.researchModesUnavailable') },
+        podcast: { available: false, reason: t('common.commandPalette.researchModesUnavailable') },
       },
       openResearchMode: page.context.openResearchMode ?? null,
       openPodcastFromSelection: activeTab?.knowledgeDocumentId
@@ -317,7 +322,7 @@ export function CommandPalette() {
         current.activateTab(currentPane.id, target.id)
       },
     }
-  }, [openPodcastReview, pageContext.generation])
+  }, [openPodcastReview, pageContext.generation, t])
 
   const knowledgeContext = buildKnowledgeContext()
   const knowledgeCommands = knowledgeContext
@@ -482,13 +487,13 @@ export function CommandPalette() {
                 </CommandItem>
               ))}
             </CommandGroup>
-            <CommandGroup heading="Workspace">
+            <CommandGroup heading={t('common.commandPalette.workspace')}>
               <CommandItem
                 value={`focus ${focusMode ? 'exit' : 'enter'} focus mode`}
                 onSelect={handleFocusMode}
               >
                 <Focus className="h-4 w-4" aria-hidden="true" />
-                <span>{focusMode ? 'Exit Focus mode' : 'Enter Focus mode'}</span>
+                <span>{focusMode ? t('common.commandPalette.exitFocusMode') : t('common.commandPalette.enterFocusMode')}</span>
               </CommandItem>
             </CommandGroup>
             {exactCandidates.length > 0 && (

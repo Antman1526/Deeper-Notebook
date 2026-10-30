@@ -20,7 +20,7 @@ const SOURCE_GALLERY_LOWER_CONTENT_SELECTOR_BY_ROUTE = {
 
 const ROLLBACK_LEGACY_LANDMARK_BY_ROUTE = {
   '/sources': '[data-dn-sources-table="true"]',
-  '/notebooks/[id]': 'role=button[name="Add Source"]',
+  '/notebooks/[id]': 'role=button[name="Add source"]',
   '/knowledge': 'role=button[name="Split pane right"]',
   '/search': 'main #search-query',
   '/capture': 'main input[aria-label="Capture folder path"]',
@@ -164,7 +164,7 @@ async function expectRollbackLegacyLandmark(
 ): Promise<void> {
   const selector = ROLLBACK_LEGACY_LANDMARK_BY_ROUTE[route]
   const landmark = route === '/notebooks/[id]'
-    ? page.getByRole('button', { name: 'Add Source', exact: true })
+    ? page.getByRole('button', { name: 'Add source', exact: true })
     : route === '/knowledge'
       ? page.getByRole('button', { name: 'Split pane right', exact: true })
       : page.locator(selector)
@@ -383,7 +383,8 @@ async function inspectSourceGalleryGeometry(page: import('@playwright/test').Pag
       }
       for (const action of Array.from(root.querySelectorAll('button')).filter(visible)) {
         const rect = action.getBoundingClientRect()
-        if (rect.width < 44 || rect.height < 44) {
+        // 0.01px tolerance: sub-pixel layout reports a 44px button as 43.99997px.
+        if (rect.width < 43.99 || rect.height < 43.99) {
           undersizedActions.push(`${describe(action)}:${rect.width}x${rect.height}`)
         }
       }

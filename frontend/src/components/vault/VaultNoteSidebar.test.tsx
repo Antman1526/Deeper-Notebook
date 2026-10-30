@@ -4,6 +4,17 @@ import { describe, expect, it, vi } from 'vitest'
 import type { VaultPage } from '@/lib/api/vault'
 import { buildMarkdownModel } from '@/lib/vault/markdown-model'
 
+// Heading buttons share one interpolated aria-label key; an identity `t` would make them
+// indistinguishable, so resolve just that key to its English.
+vi.mock('@/lib/hooks/use-translation', () => {
+  const en: Record<string, string> = {
+    'knowledge.headingLevel': 'Level {{level}} {{title}}',
+  }
+  const t = (key: string, options?: Record<string, unknown>) => (en[key] ?? key)
+    .replace(/\{\{(\w+)\}\}/g, (_match, name: string) => String(options?.[name] ?? ''))
+  return { useTranslation: () => ({ t, language: 'en-US', setLanguage: vi.fn() }) }
+})
+
 import { VaultNoteSidebar } from './VaultNoteSidebar'
 
 const pageFixture = {
@@ -40,9 +51,9 @@ describe('VaultNoteSidebar', () => {
     } satisfies VaultPage
     render(<VaultNoteSidebar model={buildMarkdownModel('')} page={page} onHeading={vi.fn()} />)
 
-    const properties = screen.getByRole('region', { name: 'Properties' })
+    const properties = screen.getByRole('region', { name: 'knowledge.properties' })
     expect(within(properties).getAllByRole('term').map((term) => term.textContent)).toEqual(['Alpha', 'alpha', 'zebra'])
-    const tags = screen.getByRole('region', { name: 'Tags' })
+    const tags = screen.getByRole('region', { name: 'knowledge.tags' })
     expect(within(tags).getAllByRole('listitem').map((tag) => tag.textContent)).toEqual(['#Beta', '#beta'])
   })
 

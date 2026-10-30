@@ -20,15 +20,23 @@ for (const viewport of viewports) {
     await page.goto('/notebooks')
     await expect(page.getByRole('heading', { name: 'Notebooks', exact: true })).toBeAttached()
 
-    const enter = page.getByRole('button', { name: 'Enter Focus mode' })
+    const enter = page.getByRole('button', { name: 'Enter focus mode' })
     await expect(enter).toBeVisible()
     await enter.click()
 
     await expect(page.locator('html')).toHaveAttribute('data-dn-focus-mode', 'true')
-    await expect(page.getByRole('button', { name: 'Exit Focus mode' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Exit focus mode' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Notebooks', exact: true })).toBeVisible()
 
-    const navigationLink = page.getByRole('link', { name: /Sources/ }).first()
+    // v0.8.130 — Phase 3b: below 1024px the rail is a sheet behind the Menu button, so
+    // the keyboard route path goes through it.
+    if (viewport.width < 1024) {
+      const menu = page.getByRole('button', { name: 'Menu' })
+      await menu.focus()
+      await page.keyboard.press('Enter')
+      await expect(menu).toHaveAttribute('aria-expanded', 'true')
+    }
+    const navigationLink = page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: /Sources/ }).first()
     await expect(navigationLink).toBeAttached()
     await navigationLink.focus()
     await expect(navigationLink).toBeFocused()

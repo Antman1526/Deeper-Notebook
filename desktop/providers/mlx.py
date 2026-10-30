@@ -140,6 +140,14 @@ class MlxProvider:
             stdout=subprocess.DEVNULL,
             stderr=stderr_target,
         )
+        # v0.8.130 — this server is started outside the supervisor, so the orphan
+        # guard would not otherwise know to stop it if the launcher dies.
+        try:
+            from desktop import orphan_guard
+
+            orphan_guard.register(getattr(self._proc, "pid", None))
+        except Exception:  # noqa: BLE001 — a safeguard, not a dependency
+            pass
         self._port = port
 
         # A configured local model can legitimately take minutes to load (or

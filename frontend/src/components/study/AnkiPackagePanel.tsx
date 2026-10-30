@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Checkbox } from '@/components/ui/checkbox'
 import { Progress } from '@/components/ui/progress'
 import { useStudyAnkiExport, useStudyAnkiImportPreview, useStudyAnkiPublish } from '@/lib/hooks/use-study-anki'
+import { useTranslation } from '@/lib/hooks/use-translation'
 import type { AnkiImportPreview } from '@/lib/types/study-anki'
 
 const IMPORTABLE_STATES = new Set(['approved', 'generating', 'active', 'completed'])
@@ -24,15 +25,17 @@ function requestId(): string {
   return `anki-import:${uuid}`.slice(0, 256)
 }
 
+/** Returns an i18n key; the caller translates it where it renders. */
 function safeMessage(error: unknown): string {
   const status = (error as { response?: { status?: number } })?.response?.status
-  if (status === 409) return 'This import changed elsewhere. Review the package again before retrying.'
-  if (status === 422) return 'The package could not be read safely. Nothing was imported.'
-  if (status === 503) return 'Anki portability is temporarily unavailable. Try again shortly.'
-  return 'The package could not be processed. Nothing was changed.'
+  if (status === 409) return 'study.ankiPackagePanel.errors.conflict'
+  if (status === 422) return 'study.ankiPackagePanel.errors.unreadable'
+  if (status === 503) return 'study.ankiPackagePanel.errors.unavailable'
+  return 'study.ankiPackagePanel.errors.failed'
 }
 
 export function AnkiPackagePanel({ planId, lifecycleState = 'approved', enabled = true }: AnkiPackagePanelProps) {
+  const { t } = useTranslation()
   const previewMutation = useStudyAnkiImportPreview()
   const publishMutation = useStudyAnkiPublish()
   const exportMutation = useStudyAnkiExport()
@@ -48,8 +51,8 @@ export function AnkiPackagePanel({ planId, lifecycleState = 'approved', enabled 
   if (!enabled || !IMPORTABLE_STATES.has(lifecycleState)) {
     return (
       <Card role="status" aria-live="polite">
-        <CardHeader><CardTitle>Anki package portability unavailable</CardTitle></CardHeader>
-        <CardContent><p className="text-sm text-muted-foreground">Approve the syllabus before importing or exporting a package.</p></CardContent>
+        <CardHeader><CardTitle>{t('study.ankiPackagePanel.unavailableTitle')}</CardTitle></CardHeader>
+        <CardContent><p className="text-sm text-muted-foreground">{t('study.ankiPackagePanel.unavailableDescription')}</p></CardContent>
       </Card>
     )
   }
@@ -110,36 +113,36 @@ export function AnkiPackagePanel({ planId, lifecycleState = 'approved', enabled 
   }
 
   return (
-    <Card className="min-w-0 overflow-hidden" aria-label="Anki package portability">
+    <Card className="min-w-0 overflow-hidden" aria-label={t('study.ankiPackagePanel.title')}>
       <CardHeader>
-        <CardTitle>Anki package portability</CardTitle>
-        <CardDescription>Preview a bounded package before any native Study cards are changed, or export this approved plan.</CardDescription>
+        <CardTitle>{t('study.ankiPackagePanel.title')}</CardTitle>
+        <CardDescription>{t('study.ankiPackagePanel.description')}</CardDescription>
       </CardHeader>
       <CardContent className="min-w-0 space-y-5">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
-          <label htmlFor="anki-package-input" className="sr-only">Anki package</label>
+          <label htmlFor="anki-package-input" className="sr-only">{t('study.ankiPackagePanel.packageLabel')}</label>
           <input id="anki-package-input" type="file" accept=".apkg,application/octet-stream" className="min-w-0 max-w-full text-sm" onChange={(event) => void onFile(event.target.files?.[0])} />
-          <Button type="button" variant="outline" onClick={() => void exportPackage()} disabled={exportMutation.isPending}>{exportMutation.isPending ? 'Preparing export…' : 'Export plan'}</Button>
+          <Button type="button" variant="outline" onClick={() => void exportPackage()} disabled={exportMutation.isPending}>{exportMutation.isPending ? t('study.ankiPackagePanel.preparingExport') : t('study.ankiPackagePanel.exportPlan')}</Button>
         </div>
-        {previewMutation.isPending ? <div className="space-y-2" role="status"><p className="text-sm">Uploading and inspecting package…</p><Progress value={uploadProgress} aria-label="Upload progress" /></div> : null}
-        {error ? <div role="alert" className="flex flex-wrap items-center gap-3 text-sm text-destructive"><span>{error}</span><Button type="button" variant="outline" size="sm" onClick={() => {
+        {previewMutation.isPending ? <div className="space-y-2" role="status"><p className="text-sm">{t('study.ankiPackagePanel.uploading')}</p><Progress value={uploadProgress} aria-label={t('study.ankiPackagePanel.uploadProgress')} /></div> : null}
+        {error ? <div role="alert" className="flex flex-wrap items-center gap-3 text-sm text-destructive"><span>{t(error)}</span><Button type="button" variant="outline" size="sm" onClick={() => {
           if (errorAction === 'preview') void onFile(lastFile.current ?? undefined)
           else if (errorAction === 'publish') void publish()
           else setError(null)
-        }}>{errorAction ? 'Retry' : 'Dismiss'}</Button></div> : null}
+        }}>{errorAction ? t('study.ankiPackagePanel.retry') : t('study.ankiPackagePanel.dismiss')}</Button></div> : null}
         {preview ? (
           <section aria-labelledby="anki-preview-heading" className="min-w-0 space-y-3 rounded-lg border p-4">
-            <h3 id="anki-preview-heading" className="font-medium">Import preview</h3>
-            <p>{preview.card_count} cards ready, {preview.transformed_count} transformed, {preview.rejected_count} rejected</p>
-            <p className="break-words text-xs text-muted-foreground">Package {preview.package_sha256.slice(0, 12)}… · {preview.collection_member}</p>
-            {published ? <p role="status" className="text-sm text-primary">Cards imported into the native Study deck.</p> : (
+            <h3 id="anki-preview-heading" className="font-medium">{t('study.ankiPackagePanel.previewHeading')}</h3>
+            <p>{t('study.ankiPackagePanel.previewCounts', { cards: preview.card_count, transformed: preview.transformed_count, rejected: preview.rejected_count })}</p>
+            <p className="break-words text-xs text-muted-foreground">{t('study.ankiPackagePanel.packageLine', { sha: preview.package_sha256.slice(0, 12), member: preview.collection_member })}</p>
+            {published ? <p role="status" className="text-sm text-primary">{t('study.ankiPackagePanel.imported')}</p> : (
               <div className="space-y-3">
-                <label className="flex min-h-11 items-center gap-3 text-sm"><Checkbox checked={confirmed} onCheckedChange={(value) => setConfirmed(value === true)} /> Confirm explicit import into this Study Plan</label>
-                <Button type="button" onClick={() => void publish()} disabled={!confirmed || publishMutation.isPending}>{publishMutation.isPending ? 'Importing…' : 'Import cards'}</Button>
+                <label className="flex min-h-11 items-center gap-3 text-sm"><Checkbox checked={confirmed} onCheckedChange={(value) => setConfirmed(value === true)} /> {t('study.ankiPackagePanel.confirmImport')}</label>
+                <Button type="button" onClick={() => void publish()} disabled={!confirmed || publishMutation.isPending}>{publishMutation.isPending ? t('study.ankiPackagePanel.importing') : t('study.ankiPackagePanel.importCards')}</Button>
               </div>
             )}
           </section>
-        ) : <p className="text-sm text-muted-foreground">Choose an .apkg file to see transformed and rejected items before publishing.</p>}
+        ) : <p className="text-sm text-muted-foreground">{t('study.ankiPackagePanel.chooseFile')}</p>}
       </CardContent>
     </Card>
   )

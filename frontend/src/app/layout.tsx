@@ -8,7 +8,9 @@ import "@/components/deeper-notebook/tokens.css";
 import "@/components/deeper-notebook/folio/folio.css";
 import "@/components/deeper-notebook/shell/shell.css";
 import "@/components/deeper-notebook/workspace/workspace.css";
+import "@/components/deeper-notebook/stationery/stationery.css";
 import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryProvider } from "@/components/providers/QueryProvider";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
@@ -22,6 +24,8 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-dn-sans" });
 const newsreader = Newsreader({ subsets: ["latin"], variable: "--font-dn-editorial" });
 
 export const metadata: Metadata = {
+  // v0.8.130 — the route names its tab on the client, in the UI language
+  // (components/providers/DocumentTitle.tsx); the server renders the brand.
   title: "Deeper Notebook",
   description: "Local-first research and knowledge workspace",
 };
@@ -41,11 +45,14 @@ export default function RootLayout({
           <ThemeProvider>
             <QueryProvider>
               <I18nProvider>
-                <ConnectionGuard>
-                  {children}
-                  <IntroReveal />
-                  <Toaster />
-                </ConnectionGuard>
+                {/* v0.8.130 — Phase 4c: one tooltip provider for the app. */}
+                <TooltipProvider>
+                  <ConnectionGuard>
+                    {children}
+                    <IntroReveal />
+                    <Toaster />
+                  </ConnectionGuard>
+                </TooltipProvider>
               </I18nProvider>
             </QueryProvider>
           </ThemeProvider>

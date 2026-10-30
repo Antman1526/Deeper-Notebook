@@ -837,6 +837,55 @@ def test_replace_rejects_target_substitution_after_hash_check(
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX atomic exchange primitive")
+def test_replace_rejects_substitution_even_when_the_inode_is_reused(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # v0.8.130 — Linux (ext4, overlayfs) hands a deleted file's inode number to
+    # the next file created, so a delete-and-recreate keeps the same (device,
+    # inode) identity; macOS does not, which hid this on the desktop. Simulate
+    # the reuse by making a regular file's inode number carry no information
+    # (directories keep theirs, as they are not recreated here).
+    storage = _storage(tmp_path)
+    first = storage.create("Notes/one.md", "first\n", operation_id="one")
+    original_snapshot = storage.snapshot
+    target = storage.layout.unique_root / "one.md"
+    monkeypatch.setattr(
+        OverlayStorage,
+        "_identity",
+        staticmethod(
+            lambda file_status: (
+                file_status.st_dev,
+                0 if stat.S_ISREG(file_status.st_mode) else file_status.st_ino,
+            )
+        ),
+    )
+
+    def snapshot_then_substitute(
+        note_id: str,
+        revision: int,
+        content,
+    ) -> OverlaySnapshot:
+        result = original_snapshot(note_id, revision, content)
+        target.unlink()
+        target.write_bytes(b"substitute\n")
+        return result
+
+    monkeypatch.setattr(storage, "snapshot", snapshot_then_substitute)
+
+    with pytest.raises(OverlayStorageError, match="overlay_file_changed"):
+        storage.replace(
+            "Notes/one.md",
+            "second\n",
+            expected_hash=first.content_hash,
+            revision=2,
+            operation_id="two",
+        )
+
+    assert target.read_bytes() == b"substitute\n"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX atomic exchange primitive")
 def test_exchange_failure_never_unlinks_a_substituted_temp_path(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

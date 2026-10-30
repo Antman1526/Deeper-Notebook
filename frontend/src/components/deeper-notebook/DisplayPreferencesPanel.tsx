@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { useTranslation } from '@/lib/hooks/use-translation'
 import {
   isMotionPreference,
   isTransparencyPreference,
@@ -20,21 +21,21 @@ type DisplayPreferenceValues = Pick<
   'wallpaper' | 'motion' | 'transparency' | 'density'
 >
 
-const WALLPAPER_OPTIONS: readonly { value: WallpaperPreference; label: string }[] = [
-  { value: 'aurora', label: 'Aurora' },
-  { value: 'static', label: 'Static' },
-  { value: 'off', label: 'Off' },
+const WALLPAPER_OPTIONS: readonly { value: WallpaperPreference; labelKey: string }[] = [
+  { value: 'aurora', labelKey: 'workspace.displayPreferencesPanel.wallpaperAurora' },
+  { value: 'static', labelKey: 'workspace.displayPreferencesPanel.wallpaperStatic' },
+  { value: 'off', labelKey: 'workspace.displayPreferencesPanel.wallpaperOff' },
 ]
 
-const MOTION_OPTIONS: readonly { value: MotionPreference; label: string }[] = [
-  { value: 'system', label: 'Follow system' },
-  { value: 'full', label: 'Full motion' },
-  { value: 'reduced', label: 'Reduced motion' },
+const MOTION_OPTIONS: readonly { value: MotionPreference; labelKey: string }[] = [
+  { value: 'system', labelKey: 'workspace.displayPreferencesPanel.motionSystem' },
+  { value: 'full', labelKey: 'workspace.displayPreferencesPanel.motionFull' },
+  { value: 'reduced', labelKey: 'workspace.displayPreferencesPanel.motionReduced' },
 ]
 
-const TRANSPARENCY_OPTIONS: readonly { value: TransparencyPreference; label: string }[] = [
-  { value: 'frosted', label: 'Frosted' },
-  { value: 'solid', label: 'Solid' },
+const TRANSPARENCY_OPTIONS: readonly { value: TransparencyPreference; labelKey: string }[] = [
+  { value: 'frosted', labelKey: 'workspace.displayPreferencesPanel.transparencyFrosted' },
+  { value: 'solid', labelKey: 'workspace.displayPreferencesPanel.transparencySolid' },
 ]
 
 function resolveMotionPreference(value: MotionPreference): 'system' | 'full' | 'reduced' {
@@ -55,8 +56,8 @@ function resolveMotionPreference(value: MotionPreference): 'system' | 'full' | '
  * function only mirrors its allowlisted values into DOM attributes.
  */
 const DENSITY_OPTIONS = [
-  { value: 'comfortable', label: 'Comfortable' },
-  { value: 'compact', label: 'Compact' },
+  { value: 'comfortable', labelKey: 'workspace.displayPreferencesPanel.densityComfortable' },
+  { value: 'compact', labelKey: 'workspace.displayPreferencesPanel.densityCompact' },
 ] as const
 
 export function applyDisplayPreferencesToDocument(values: DisplayPreferenceValues) {
@@ -70,6 +71,7 @@ export function applyDisplayPreferencesToDocument(values: DisplayPreferenceValue
 }
 
 export function DisplayPreferencesPanel() {
+  const { t } = useTranslation()
   const wallpaper = useDisplayPreferencesStore((state) => state.wallpaper)
   const motion = useDisplayPreferencesStore((state) => state.motion)
   const transparency = useDisplayPreferencesStore((state) => state.transparency)
@@ -122,16 +124,16 @@ export function DisplayPreferencesPanel() {
     <section aria-labelledby="display-preferences-heading" className="space-y-4 rounded-lg border bg-card/50 p-4">
       <div>
         <h2 id="display-preferences-heading" className="text-lg font-semibold">
-          Display preferences
+          {t('workspace.displayPreferencesPanel.heading')}
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Adjust the ambient folio presentation without changing your selected theme.
+          {t('workspace.displayPreferencesPanel.description')}
         </p>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <label className="space-y-2 text-sm font-medium" htmlFor="display-wallpaper">
-          <span>Wallpaper</span>
+          <span>{t('workspace.displayPreferencesPanel.wallpaper')}</span>
           <select
             id="display-wallpaper"
             value={wallpaper}
@@ -140,14 +142,14 @@ export function DisplayPreferencesPanel() {
           >
             {WALLPAPER_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
-                {option.label}
+                {t(option.labelKey)}
               </option>
             ))}
           </select>
         </label>
 
         <label className="space-y-2 text-sm font-medium" htmlFor="display-motion">
-          <span>Motion</span>
+          <span>{t('workspace.displayPreferencesPanel.motion')}</span>
           <select
             id="display-motion"
             value={motion}
@@ -156,14 +158,14 @@ export function DisplayPreferencesPanel() {
           >
             {MOTION_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
-                {option.label}
+                {t(option.labelKey)}
               </option>
             ))}
           </select>
         </label>
 
         <label className="space-y-2 text-sm font-medium" htmlFor="display-transparency">
-          <span>Transparency</span>
+          <span>{t('workspace.displayPreferencesPanel.transparency')}</span>
           <select
             id="display-transparency"
             value={transparency}
@@ -172,14 +174,14 @@ export function DisplayPreferencesPanel() {
           >
             {TRANSPARENCY_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
-                {option.label}
+                {t(option.labelKey)}
               </option>
             ))}
           </select>
         </label>
 
         <label className="space-y-2 text-sm font-medium" htmlFor="display-density">
-          <span>Density</span>
+          <span>{t('workspace.displayPreferencesPanel.density')}</span>
           <select
             id="display-density"
             value={density}
@@ -188,7 +190,7 @@ export function DisplayPreferencesPanel() {
           >
             {DENSITY_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
-                {option.label}
+                {t(option.labelKey)}
               </option>
             ))}
           </select>
@@ -197,20 +199,20 @@ export function DisplayPreferencesPanel() {
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border/70 bg-background/50 p-3">
         <div>
-          <p className="text-sm font-medium">Focus mode</p>
+          <p className="text-sm font-medium">{t('workspace.displayPreferencesPanel.focusMode')}</p>
           <p className="text-sm text-muted-foreground">
-            Quiet the shell chrome while keeping the editorial canvas mounted. Shortcut: Ctrl+Shift+F / ⌘⇧F.
+            {t('workspace.displayPreferencesPanel.focusModeDescription')}
           </p>
         </div>
         <Button
           type="button"
           variant={focusMode ? 'secondary' : 'outline'}
           aria-pressed={focusMode}
-          aria-label={focusMode ? 'Exit Focus mode' : 'Enter Focus mode'}
+          aria-label={focusMode ? t('workspace.displayPreferencesPanel.exitFocusMode') : t('workspace.displayPreferencesPanel.enterFocusMode')}
           className="motion-reduce:transition-none"
           onClick={() => setFocusMode(!focusMode)}
         >
-          {focusMode ? 'Exit Focus mode' : 'Enter Focus mode'}
+          {focusMode ? t('workspace.displayPreferencesPanel.exitFocusMode') : t('workspace.displayPreferencesPanel.enterFocusMode')}
         </Button>
       </div>
     </section>

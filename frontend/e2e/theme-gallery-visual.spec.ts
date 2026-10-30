@@ -1,6 +1,9 @@
 import { expect, test } from '@playwright/test'
 
 import { installThemeVisualFixture } from './fixtures/theme-visuals'
+import { settleForScreenshot, trackRequests } from './fixtures/settle'
+
+test.beforeEach(({ page }) => trackRequests(page))
 
 const captures = [
   { theme: 'research-core-dark', viewport: { width: 1440, height: 900 } },
@@ -74,9 +77,14 @@ for (const capture of captures) {
     await page.goto('/settings')
     await expect(page.getByRole('heading', { name: 'Choose your research environment' })).toBeVisible()
     await expect(page.locator('html')).toHaveAttribute('data-theme', capture.theme)
+    // Since the 2026-08-20 curation (e76ece66) the catalog groups sit behind "Show more
+    // themes" unless the current theme lives in them; open it so every group is captured.
+    const moreThemes = page.getByRole('button', { name: /more themes/ })
+    if ((await moreThemes.getAttribute('aria-expanded')) === 'false') await moreThemes.click()
     await unclipSettingsViewport(page)
     await expect(page.getByRole('heading', { name: 'Classics', level: 3 })).toBeVisible()
     await expect(page.getByRole('article', { name: 'Midnight Aurora theme' })).toBeVisible()
+    await settleForScreenshot(page)
     await expect(page).toHaveScreenshot(`${capture.theme}-${capture.viewport.width}x${capture.viewport.height}.png`, {
       animations: 'disabled',
       caret: 'hide',
@@ -109,6 +117,8 @@ for (const capture of captures.filter(capture => capture.theme.startsWith('high-
     await expect(card).toContainText('Current')
     await page.getByRole('button', { name: `Preview ${label}` }).click()
     await expect(card).toContainText('Previewing')
+
+    await settleForScreenshot(page)
 
     const selectedCard = await card.screenshot({
       animations: 'disabled',

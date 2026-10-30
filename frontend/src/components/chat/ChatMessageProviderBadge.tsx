@@ -80,9 +80,10 @@ export function ChatMessageProviderBadge({
         defaultValue: 'local model',
       })
     return (
+      // v0.8.130 — status colours from theme tokens (UI audit Phase 1)
       <Badge
-        variant="outline"
-        className="text-xs gap-1 font-normal border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+        variant="warning"
+        className="text-xs gap-1 font-normal"
         data-testid="provider-badge-offline-fallback"
       >
         <WifiOff className="h-3 w-3" />

@@ -9,6 +9,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { useTranslation } from '@/lib/hooks/use-translation'
 
 export type SourceCoverActionsProps = {
   title: string
@@ -27,6 +28,7 @@ export function SourceCoverActions({
   onRemove,
   onDelete,
 }: SourceCoverActionsProps) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const activationRef = useRef<'pointer' | 'keyboard' | null>(null)
 
@@ -38,7 +40,7 @@ export function SourceCoverActions({
         <button
           type="button"
           className="dn-source-cover__actions-trigger"
-          aria-label={`Actions for ${title}`}
+          aria-label={t('workspace.sourceCoverActions.actionsLabel', { title })}
           onPointerDown={() => {
             activationRef.current = 'pointer'
           }}
@@ -60,13 +62,13 @@ export function SourceCoverActions({
         {onRefresh && !visualsDisabled ? (
           <DropdownMenuItem disabled={pending} onSelect={onRefresh}>
             <RefreshCw aria-hidden="true" className="h-4 w-4" />
-            Refresh visual
+            {t('workspace.sourceCoverActions.refreshVisual')}
           </DropdownMenuItem>
         ) : null}
         {onRemove && !visualsDisabled ? (
           <DropdownMenuItem disabled={pending} onSelect={onRemove}>
             <ImageOff aria-hidden="true" className="h-4 w-4" />
-            Remove visual
+            {t('workspace.sourceCoverActions.removeVisual')}
           </DropdownMenuItem>
         ) : null}
         {onDelete ? (
@@ -75,7 +77,7 @@ export function SourceCoverActions({
             className="text-destructive focus:text-destructive"
           >
             <Trash2 aria-hidden="true" className="h-4 w-4" />
-            Delete source
+            {t('workspace.sourceCoverActions.deleteSource')}
           </DropdownMenuItem>
         ) : null}
       </DropdownMenuContent>

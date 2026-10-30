@@ -10,7 +10,7 @@ export default function LoginPage() {
 
   return (
     <ErrorBoundary>
-      <Presentation><LoginForm headingLevel={visualSystemV2Enabled ? 2 : 1} /></Presentation>
+      <Presentation><LoginForm embedded={visualSystemV2Enabled} /></Presentation>
     </ErrorBoundary>
   )
 }

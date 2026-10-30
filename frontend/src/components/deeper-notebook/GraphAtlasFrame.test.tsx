@@ -14,10 +14,10 @@ describe('GraphAtlasFrame', () => {
       />,
     )
 
-    expect(screen.getByRole('region', { name: 'Connection atlas' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Connection atlas' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Graph legend')).toHaveTextContent('Markdown source')
-    expect(screen.getByLabelText('Graph inspector')).toHaveTextContent('Open a connected note')
+    expect(screen.getByRole('region', { name: 'workspace.graphAtlasFrame.title' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'workspace.graphAtlasFrame.title' })).toBeInTheDocument()
+    expect(screen.getByLabelText('workspace.graphAtlasFrame.legend')).toHaveTextContent('Markdown source')
+    expect(screen.getByLabelText('workspace.graphAtlasFrame.inspector')).toHaveTextContent('Open a connected note')
     expect(screen.getByRole('button', { name: 'Turn graph into podcast' })).toBeInTheDocument()
   })
 })

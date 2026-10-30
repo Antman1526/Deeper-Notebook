@@ -14,7 +14,8 @@ export function CitationCoverageBadge({ citationCount }: { citationCount: number
     <Badge
       variant="outline"
       className={cn(
-        'text-[0.68rem]',
+        // v0.8.130 — 12px type floor (UI audit Phase 1)
+        'text-xs',
         hasCitations
           ? 'border-[var(--dn-evidence)] text-[var(--dn-evidence)]'
           : 'border-[var(--dn-warning)] text-[var(--dn-warning)]',

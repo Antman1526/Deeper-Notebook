@@ -164,7 +164,7 @@ describe('SourceDetailContent', () => {
 
     // Callout banner and jump button
     await waitFor(() => {
-      expect(screen.getByText('Jump to in-text passage')).toBeInTheDocument()
+      expect(screen.getByText('sources.sourceDetailContent.jumpToPassage')).toBeInTheDocument()
       expect(screen.getByTestId('inline-cited-passage')).toHaveTextContent('Key research finding')
     })
   })

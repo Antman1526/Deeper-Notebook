@@ -16,6 +16,27 @@ import { getApiUrl } from '@/lib/config'
 //
 // Deduped so a flapping connection doesn't spam toasts: each unique
 // (status, url) pair is rate-limited to once per 5 seconds.
+//
+// v0.8.130 — the generic toast is a fallback, not a second message. Most writes
+// report their own failure (a mutation's onError, a caller's catch), which made
+// every failed save show two toasts. The interceptor now waits one task before
+// toasting; React Query's onError handlers and callers' catch blocks run as
+// microtasks before that, so whoever reports the error claims it first with
+// markErrorReported(error) (query-client.ts does it for mutations with an onError).
+
+const REPORTED = Symbol.for('deeper-notebook.error-reported')
+
+/** Claim a failed request's error: the interceptor's generic toast is then skipped. */
+export function markErrorReported(error: unknown): void {
+  if (error && typeof error === 'object') {
+    (error as Record<symbol, boolean>)[REPORTED] = true
+  }
+}
+
+/** Whether someone already told the user about this error (a mutation's onError). */
+export function isErrorReported(error: unknown): boolean {
+  return Boolean(error && typeof error === 'object' && (error as Record<symbol, boolean>)[REPORTED])
+}
 
 interface ServerErrorKey {
   status: number
@@ -127,15 +148,17 @@ apiClient.interceptors.response.use(
       // by (status, url) within a 5s window so a flapping API
       // doesn't spam 50 toasts.
       const url = config?.url ?? '<unknown>'
-      if (_shouldShowServerErrorToast({ status, url })) {
-        const message =
-          status === 503
-            ? 'Service unavailable. The API or one of its dependencies is down.'
-            : status === 502
-              ? 'Bad gateway. The local model or downstream service is unreachable.'
-              : 'Server error. Check the API log (~/.deeper-notebook/logs/api.log) for details.'
-        toast.error(message)
-      }
+      const message =
+        status === 503
+          ? 'Service unavailable. The API or one of its dependencies is down.'
+          : status === 502
+            ? 'Bad gateway. The local model or downstream service is unreachable.'
+            : 'Server error. Check the API log (~/.deeper-notebook/logs/api.log) for details.'
+      setTimeout(() => {
+        if (!isErrorReported(error) && _shouldShowServerErrorToast({ status, url })) {
+          toast.error(message)
+        }
+      }, 0)
     }
     return Promise.reject(error)
   }

@@ -191,7 +191,7 @@ describe('KnowledgeQuickSwitcher', () => {
     act(() => requestCommandSurface('quick-switcher', 'evidence'))
     const dialog = await screen.findByRole('dialog', { name: 'knowledge.quickSwitcher' })
 
-    fireEvent.click(within(dialog).getByRole('option', { name: 'Bookmark search for evidence' }))
+    fireEvent.click(within(dialog).getByRole('option', { name: 'knowledge.knowledgeQuickSwitcher.bookmarkSearchFor' }))
 
     expect(onBookmarkSearch).toHaveBeenCalledWith('evidence', 'text')
     expect(useKnowledgeWorkspaceStore.getState().panes['pane-1'].tabs).toHaveLength(0)
@@ -203,7 +203,7 @@ describe('KnowledgeQuickSwitcher', () => {
     act(() => requestCommandSurface('quick-switcher', 'evidence'))
     const dialog = await screen.findByRole('dialog', { name: 'knowledge.quickSwitcher' })
 
-    fireEvent.click(within(dialog).getByRole('option', { name: 'Bookmark search for evidence' }))
+    fireEvent.click(within(dialog).getByRole('option', { name: 'knowledge.knowledgeQuickSwitcher.bookmarkSearchFor' }))
 
     expect(onBookmarkSearch).toHaveBeenCalledWith('evidence', 'semantic')
   })

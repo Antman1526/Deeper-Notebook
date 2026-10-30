@@ -25,6 +25,9 @@ router = APIRouter()
 # Kept in lockstep with desktop/window.py:_THEMES — adding a theme requires
 # updating both. The UI shouldn't accept an arbitrary string.
 _VALID_THEMES = {
+    # v0.8.130 — the indigo brand pair (they were missing, so saving them failed).
+    "gemini-forward-light",
+    "gemini-forward-dark",
     "research-core-dark",
     "research-core-light",
     "deep-ocean",
@@ -98,7 +101,9 @@ async def get_theme() -> ThemeResponse:
         # Config file unreadable / first-run before disk write — return
         # the default rather than 500'ing the UI.
         return ThemeResponse(
-            theme="research-core-dark", available=sorted(_VALID_THEMES)
+            # v0.8.130 — mirrors desktop.config.DEFAULT_THEME (not imported here:
+            # desktop.config is only importable when bundled).
+            theme="gemini-forward-light", available=sorted(_VALID_THEMES)
         )
     return ThemeResponse(theme=cfg.theme, available=sorted(_VALID_THEMES))
 

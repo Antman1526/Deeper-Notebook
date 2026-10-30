@@ -1,5 +1,6 @@
 'use client'
 
+import { markErrorReported } from '@/lib/api/client'
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -121,6 +122,7 @@ export function useNotebookChat({
   // Fetch current session with messages
   const {
     data: currentSession,
+    isSuccess: currentSessionLoaded,
     refetch: refetchCurrentSession
   } = useQuery({
     queryKey: QUERY_KEYS.notebookChatSession(currentSessionId!),
@@ -382,6 +384,7 @@ export function useNotebookChat({
           queryKey: QUERY_KEYS.notebookChatSessions(notebookId)
         })
       } catch (err: unknown) {
+        markErrorReported(err) // v0.8.130 — this caller reports the failure itself
         const error = err as { response?: { data?: { detail?: string } }, message?: string };
         toast.error(getApiErrorMessage(error.response?.data?.detail || error.message, (key) => t(key), 'apiErrors.failedToCreateSession'))
         return
@@ -455,19 +458,24 @@ export function useNotebookChat({
       // re-rendered (and re-laid-out) the whole message list 50–100×/sec,
       // visibly janky in WKWebView. rAF coalesces to ≤1 render per paint frame.
       let tokenBuffer = ''
+      let thinkingDirty = false
       let rafId: number | null = null
       const flushTokens = () => {
         rafId = null
-        if (!tokenBuffer || !mountedRef.current) {
+        if ((!tokenBuffer && !thinkingDirty) || !mountedRef.current) {
           tokenBuffer = ''
+          thinkingDirty = false
           return
         }
         const chunk = tokenBuffer
         tokenBuffer = ''
+        thinkingDirty = false
         setMessages(prev =>
-          prev.map(m =>
-            m.id === streamingAiId ? { ...m, content: m.content + chunk } : m,
-          ),
+          chunk
+            ? prev.map(m =>
+                m.id === streamingAiId ? { ...m, content: m.content + chunk } : m,
+              )
+            : [...prev],
         )
       }
       const scheduleFlush = () => {
@@ -500,6 +508,13 @@ export function useNotebookChat({
           // v0.8.70 — buffer + rAF-flush rather than setMessages per token.
           tokenBuffer += event.content
           scheduleFlush()
+        } else if (event.type === 'thinking') {
+          queryClient.setQueryData(
+            ['chat', 'thinking', streamingAiId],
+            { thinking: event.content, isThinkingActive: event.active },
+          )
+          thinkingDirty = true
+          scheduleFlush()
         } else if (event.type === 'mcp_tool_calls') {
           // v0.8.1 Item 3 — stash MCP call payloads until we know the
           // canonical AI message ID (arrives in the 'done' event next).
@@ -518,6 +533,18 @@ export function useNotebookChat({
             // stash any pending MCP call payloads keyed by the last
             // AI message's ID so CitationPill can look them up.
             const lastAiMsg = [...event.messages].reverse().find(m => m.type === 'ai')
+            if (lastAiMsg) {
+              const streamedThinking = queryClient.getQueryData<{
+                thinking: string
+                isThinkingActive: boolean
+              }>(['chat', 'thinking', streamingAiId])
+              if (streamedThinking?.thinking) {
+                queryClient.setQueryData(
+                  ['chat', 'thinking', lastAiMsg.id],
+                  { thinking: streamedThinking.thinking, isThinkingActive: false },
+                )
+              }
+            }
             if (pendingMcpCalls && pendingMcpCalls.length > 0 && lastAiMsg) {
               queryClient.setQueryData(
                 ['mcp', 'tool-calls', lastAiMsg.id],
@@ -549,6 +576,7 @@ export function useNotebookChat({
                 {
                   selected_provider: event.selected_provider,
                   selected_model_id: event.selected_model_id,
+                  routing_note: event.routing_note ?? null,
                   // v0.8.58/v0.8.60 — privacy-gate decision + agent-FSM state,
                   // read by ChatMessagePrivacyBadge from the same cache entry.
                   privacy_gated: event.privacy_gated ?? null,
@@ -608,6 +636,7 @@ export function useNotebookChat({
         })
       }
     } catch (err: unknown) {
+      markErrorReported(err) // v0.8.130 — this caller reports the failure itself
       // v0.7.50 — AbortError = user navigated away mid-stream or a
       // second send aborted us. Silent: don't toast (no real failure).
       // Clean up only THIS send's IDs so the new send's optimistic
@@ -815,6 +844,9 @@ export function useNotebookChat({
     messages,
     isSending,
     loadingSessions,
+    // v0.8.130 — true once we know what the chat history is: the session list has
+    // loaded and there is either no session or the current one has been fetched.
+    historyLoaded: !loadingSessions && (sessions.length === 0 || currentSessionLoaded),
     tokenCount,
     charCount,
     pendingModelOverride,

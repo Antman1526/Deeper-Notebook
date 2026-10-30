@@ -19,7 +19,7 @@ describe('EvidenceReview', () => {
 
     render(<EvidenceReview notebookId="notebook:one" messageId="message:one" />)
 
-    expect(screen.getByText('No evidence review yet')).toBeInTheDocument()
+    expect(screen.getByText('evaluation.evidenceReview.none')).toBeInTheDocument()
   })
 
   it('shows loading, failed, and completed states without inventing support', () => {
@@ -27,11 +27,11 @@ describe('EvidenceReview', () => {
     const { rerender } = render(
       <EvidenceReview notebookId="notebook:one" messageId="message:one" />,
     )
-    expect(screen.getByRole('status')).toHaveTextContent(/checking evidence/i)
+    expect(screen.getByRole('status')).toHaveTextContent('evaluation.evidenceReview.checking')
 
     useLatestEvaluation.mockReturnValue({ data: undefined, isLoading: false, isError: true })
     rerender(<EvidenceReview notebookId="notebook:one" messageId="message:one" />)
-    expect(screen.getByText('Evidence review unavailable')).toBeInTheDocument()
+    expect(screen.getByText('evaluation.evidenceReview.unavailable')).toBeInTheDocument()
 
     useLatestEvaluation.mockReturnValue({
       data: {
@@ -82,8 +82,8 @@ describe('EvidenceReview', () => {
     const badge = screen.getByRole('button', { name: /evidence supported/i })
     badge.focus()
     fireEvent.keyDown(badge, { key: 'Enter' })
-    expect(screen.getByRole('dialog', { name: 'Evidence review' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'evaluation.claimReviewDrawer.title' })).toBeInTheDocument()
     fireEvent.keyDown(document, { key: 'Escape' })
-    expect(screen.queryByRole('dialog', { name: 'Evidence review' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'evaluation.claimReviewDrawer.title' })).not.toBeInTheDocument()
   })
 })

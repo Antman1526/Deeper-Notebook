@@ -31,7 +31,7 @@ describe('WorkspaceRestoreDialog', () => {
     const onOpenAvailable = vi.fn()
     render(<WorkspaceRestoreDialog plan={stalePlan()} onOpenAvailable={onOpenAvailable} onCancel={vi.fn()} />)
 
-    expect(screen.getByRole('dialog', { name: 'Open workspace with unavailable targets' })).toBeVisible()
+    expect(screen.getByRole('dialog', { name: 'knowledge.workspaceRestoreDialog.title' })).toBeVisible()
     expect(onOpenAvailable).not.toHaveBeenCalled()
   })
 
@@ -41,10 +41,10 @@ describe('WorkspaceRestoreDialog', () => {
     render(<WorkspaceRestoreDialog plan={stalePlan()} onOpenAvailable={onOpenAvailable} onCancel={onCancel} />)
 
     expect(screen.getByText('Research note')).toBeVisible()
-    expect(screen.getByText('stale')).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: 'Open available' }))
+    expect(screen.getByText('knowledge.targetStates.stale')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.navigation.openAvailable' }))
     expect(onOpenAvailable).toHaveBeenCalledOnce()
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    fireEvent.click(screen.getByRole('button', { name: 'common.cancel' }))
     expect(onCancel).toHaveBeenCalledOnce()
   })
 })

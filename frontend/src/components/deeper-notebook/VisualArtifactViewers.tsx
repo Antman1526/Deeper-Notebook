@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, StickyNote } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { useTranslation } from '@/lib/hooks/use-translation'
 import { cn } from '@/lib/utils'
 
 interface VisualSlide {
@@ -106,6 +107,7 @@ export function isInfographicDocument(value: unknown): value is InfographicVisua
 }
 
 export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocument }) {
+  const { t } = useTranslation()
   const [index, setIndex] = useState(0)
   const [showNotes, setShowNotes] = useState(false)
   const totalSlides = document.slides.length + 1
@@ -124,7 +126,7 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
   return (
     <section
       role="region"
-      aria-label="Slide deck"
+      aria-label={t('artifacts.visualArtifactViewers.slideDeck')}
       tabIndex={0}
       className="grid min-w-0 gap-3 outline-none focus-visible:ring-2 focus-visible:ring-ring lg:grid-cols-[10rem_minmax(0,1fr)]"
       onKeyDown={(event) => {
@@ -135,7 +137,7 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
       <div className="flex gap-2 overflow-x-auto pb-1 lg:max-h-[32rem] lg:flex-col lg:overflow-y-auto lg:pr-1">
         <button
           type="button"
-          aria-label={`Open slide 1: ${document.title}`}
+          aria-label={t('artifacts.visualArtifactViewers.openFirstSlide', { title: document.title })}
           aria-current={index === 0 ? 'true' : undefined}
           className={cn(
             'w-36 shrink-0 border-l-2 bg-muted/30 px-2 py-2 text-left transition-colors lg:w-full',
@@ -148,7 +150,8 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
             setShowNotes(false)
           }}
         >
-          <span className="block text-[0.68rem] font-semibold uppercase tracking-normal">01</span>
+          {/* v0.8.130 — 12px type floor (UI audit Phase 1) */}
+          <span className="block text-xs font-semibold tracking-normal">01</span>
           <span className="mt-1 block line-clamp-2 text-xs font-medium leading-4">
             {document.title}
           </span>
@@ -157,7 +160,7 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
           <button
             key={`${slideIndex}-${item.title}`}
             type="button"
-            aria-label={`Open slide ${slideIndex + 2}: ${item.title}`}
+            aria-label={t('artifacts.visualArtifactViewers.openSlide', { number: slideIndex + 2, title: item.title })}
             aria-current={slideIndex + 1 === index ? 'true' : undefined}
             className={cn(
               'w-36 shrink-0 border-l-2 bg-muted/30 px-2 py-2 text-left transition-colors lg:w-full',
@@ -170,7 +173,7 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
               setShowNotes(false)
             }}
           >
-            <span className="block text-[0.68rem] font-semibold uppercase tracking-normal">
+            <span className="block text-xs font-semibold tracking-normal">
               {String(slideIndex + 2).padStart(2, '0')}
             </span>
             <span className="mt-1 block line-clamp-2 text-xs font-medium leading-4">
@@ -185,7 +188,7 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
           <div>
             <div className="text-sm font-semibold">{document.title}</div>
             <div className="text-xs text-muted-foreground">
-              Slide {index + 1} of {totalSlides}
+              {t('artifacts.visualArtifactViewers.slidePosition', { current: index + 1, total: totalSlides })}
               {document.audience ? ` · ${document.audience}` : ''}
             </div>
           </div>
@@ -195,8 +198,8 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
               variant="outline"
               size="icon"
               className="h-8 w-8"
-              aria-label="Previous slide"
-              title="Previous slide"
+              aria-label={t('artifacts.visualArtifactViewers.previousSlide')}
+              title={t('artifacts.visualArtifactViewers.previousSlide')}
               disabled={index === 0}
               onClick={() => move(-1)}
             >
@@ -207,8 +210,8 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
               variant="outline"
               size="icon"
               className="h-8 w-8"
-              aria-label="Next slide"
-              title="Next slide"
+              aria-label={t('artifacts.visualArtifactViewers.nextSlide')}
+              title={t('artifacts.visualArtifactViewers.nextSlide')}
               disabled={index === totalSlides - 1}
               onClick={() => move(1)}
             >
@@ -227,10 +230,10 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
                 </h3>
                 {document.audience && (
                   <div className="mt-[clamp(1rem,5cqi,3rem)] text-[clamp(0.75rem,2.2cqi,1.2rem)] text-[var(--dn-artifact-muted)]">
-                    Prepared for {document.audience}
+                    {t('artifacts.visualArtifactViewers.preparedFor', { audience: document.audience })}
                   </div>
                 )}
-                <div className="mt-auto text-[clamp(0.55rem,1.4cqi,0.75rem)] font-semibold uppercase tracking-normal text-[var(--dn-artifact-muted)]">
+                <div className="mt-auto text-[clamp(0.55rem,1.4cqi,0.75rem)] font-semibold tracking-normal text-[var(--dn-artifact-muted)]">
                   Deeper Notebook / Evidence Studio
                 </div>
               </div>
@@ -254,8 +257,8 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
                 </ul>
                 {slide.visual_direction && (
                   <div className="hidden min-h-0 overflow-y-auto border-l border-[var(--dn-artifact-line)] pl-4 md:block">
-                    <div className="text-[0.62rem] font-semibold uppercase tracking-normal text-[var(--dn-status-info)]">
-                      Visual direction
+                    <div className="text-xs font-semibold tracking-normal text-[var(--dn-status-info)]">
+                      {t('artifacts.visualArtifactViewers.visualDirection')}
                     </div>
                     <div className="mt-2 text-[clamp(0.68rem,1.8cqi,0.92rem)] leading-relaxed text-[var(--dn-artifact-muted)]">
                       {slide.visual_direction}
@@ -263,7 +266,7 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
                   </div>
                 )}
               </div>
-              <div className="flex min-h-5 items-end justify-between gap-3 text-[0.68rem] text-[var(--dn-artifact-muted)]">
+              <div className="flex min-h-5 items-end justify-between gap-3 text-xs text-[var(--dn-artifact-muted)]">
                 <div className="flex flex-wrap gap-1">
                   {slide.citations.map((citation) => (
                     <span key={citation}>{citation}</span>
@@ -282,23 +285,23 @@ export function SlideDeckViewer({ document }: { document: SlideDeckVisualDocumen
               variant="ghost"
               size="sm"
               className="h-7 px-1 text-xs"
-              aria-label={showNotes ? 'Hide speaker notes' : 'Show speaker notes'}
+              aria-label={showNotes ? t('artifacts.visualArtifactViewers.hideSpeakerNotes') : t('artifacts.visualArtifactViewers.showSpeakerNotes')}
               onClick={() => setShowNotes((current) => !current)}
             >
               <StickyNote className="h-3.5 w-3.5" aria-hidden="true" />
-              {showNotes ? 'Hide notes' : 'Speaker notes'}
+              {showNotes ? t('artifacts.visualArtifactViewers.hideNotes') : t('artifacts.visualArtifactViewers.speakerNotes')}
             </Button>
             {showNotes && (
               <div className="mt-2 grid gap-3 text-sm leading-6 text-muted-foreground md:grid-cols-2">
                 {slide.speaker_notes && (
                   <div>
-                    <div className="text-xs font-semibold text-foreground">Notes</div>
+                    <div className="text-xs font-semibold text-foreground">{t('artifacts.visualArtifactViewers.notes')}</div>
                     <div className="mt-1">{slide.speaker_notes}</div>
                   </div>
                 )}
                 {slide.visual_direction && (
                   <div>
-                    <div className="text-xs font-semibold text-foreground">Visual direction</div>
+                    <div className="text-xs font-semibold text-foreground">{t('artifacts.visualArtifactViewers.visualDirection')}</div>
                     <div className="mt-1">{slide.visual_direction}</div>
                   </div>
                 )}
@@ -320,7 +323,23 @@ const PANEL_STYLES: Record<InfographicPanelKind, string> = {
   chart: 'border-t-[var(--dn-status-success)]',
 }
 
+const PANEL_KIND_KEYS: Record<InfographicPanelKind, string> = {
+  text: 'artifacts.visualArtifactViewers.panelKind.text',
+  metric: 'artifacts.visualArtifactViewers.panelKind.metric',
+  timeline: 'artifacts.visualArtifactViewers.panelKind.timeline',
+  comparison: 'artifacts.visualArtifactViewers.panelKind.comparison',
+  process: 'artifacts.visualArtifactViewers.panelKind.process',
+  chart: 'artifacts.visualArtifactViewers.panelKind.chart',
+}
+
+const ORIENTATION_KEYS: Record<InfographicVisualDocument['orientation'], string> = {
+  portrait: 'artifacts.visualArtifactViewers.orientation.portrait',
+  landscape: 'artifacts.visualArtifactViewers.orientation.landscape',
+  square: 'artifacts.visualArtifactViewers.orientation.square',
+}
+
 export function InfographicViewer({ document }: { document: InfographicVisualDocument }) {
+  const { t } = useTranslation()
   return (
     <figure
       aria-label={document.title}
@@ -334,8 +353,8 @@ export function InfographicViewer({ document }: { document: InfographicVisualDoc
     >
       <div className="border-t-4 border-t-[var(--dn-status-info)] pt-4">
         <h3 className="text-xl font-semibold leading-tight sm:text-2xl">{document.title}</h3>
-        <div className="mt-2 text-[0.68rem] font-semibold uppercase tracking-normal text-[var(--dn-artifact-muted)]">
-          Evidence Studio · Source-grounded visual
+        <div className="mt-2 text-xs font-semibold tracking-normal text-[var(--dn-artifact-muted)]">
+          {t('artifacts.visualArtifactViewers.infographicCaption')}
         </div>
       </div>
       <div
@@ -350,10 +369,10 @@ export function InfographicViewer({ document }: { document: InfographicVisualDoc
             className={cn('min-h-40 border border-[var(--dn-artifact-line)] border-t-4 bg-[var(--dn-artifact-panel)] p-4', PANEL_STYLES[panel.kind])}
           >
             <div className="flex items-start justify-between gap-2">
-              <Badge variant="outline" className="rounded-sm text-[0.62rem] capitalize">
-                {panel.kind}
+              <Badge variant="outline" className="rounded-sm text-xs capitalize">
+                {t(PANEL_KIND_KEYS[panel.kind])}
               </Badge>
-              <span className="text-[0.68rem] font-semibold text-[var(--dn-artifact-muted)]">
+              <span className="text-xs font-semibold text-[var(--dn-artifact-muted)]">
                 {String(index + 1).padStart(2, '0')}
               </span>
             </div>
@@ -367,7 +386,7 @@ export function InfographicViewer({ document }: { document: InfographicVisualDoc
               <div className="mt-3 text-sm leading-6 text-[var(--dn-artifact-muted)]">{panel.body}</div>
             )}
             {panel.citations.length > 0 && (
-              <div className="mt-4 flex flex-wrap gap-1 text-[0.68rem] text-[var(--dn-artifact-muted)]">
+              <div className="mt-4 flex flex-wrap gap-1 text-xs text-[var(--dn-artifact-muted)]">
                 {panel.citations.map((citation) => (
                   <span key={citation}>{citation}</span>
                 ))}
@@ -376,8 +395,10 @@ export function InfographicViewer({ document }: { document: InfographicVisualDoc
           </section>
         ))}
       </div>
-      <figcaption className="mt-4 text-[0.68rem] text-[var(--dn-artifact-muted)]">
-        {document.panels.length} {document.panels.length === 1 ? 'panel' : 'panels'} · {document.orientation}
+      <figcaption className="mt-4 text-xs text-[var(--dn-artifact-muted)]">
+        {document.panels.length === 1
+          ? t('artifacts.visualArtifactViewers.panelCountOne', { count: document.panels.length, orientation: t(ORIENTATION_KEYS[document.orientation]) })
+          : t('artifacts.visualArtifactViewers.panelCountOther', { count: document.panels.length, orientation: t(ORIENTATION_KEYS[document.orientation]) })}
       </figcaption>
     </figure>
   )

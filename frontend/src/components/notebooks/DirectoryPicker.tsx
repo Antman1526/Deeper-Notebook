@@ -9,6 +9,7 @@
 // caller chooses what to do with it.
 'use client'
 
+import { markErrorReported } from '@/lib/api/client'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Dialog,
@@ -126,6 +127,7 @@ export function DirectoryPicker({
       setNewFolderName('')
       navigate(result.path)
     } catch (error: unknown) {
+      markErrorReported(error) // v0.8.130 — this caller reports the failure itself
       toast({
         title: t('filesystem.cannotCreateFolder'),
         description: t(getApiErrorKey(error, t('common.error'))),
@@ -230,7 +232,8 @@ export function DirectoryPicker({
                 ) : (
                   <div className="p-1">
                     {listQuery.data.truncated && (
-                      <p className="text-xs text-amber-700 dark:text-amber-400 px-2 py-1 mb-1">
+                      // v0.8.130 — status colours from theme tokens (UI audit Phase 1)
+                      <p className="text-xs text-warning-ink px-2 py-1 mb-1">
                         {t('filesystem.truncated').replace(
                           '{count}',
                           String(listQuery.data.entries.length)

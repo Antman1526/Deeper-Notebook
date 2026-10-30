@@ -19,6 +19,7 @@ import {
 import { embeddingApi } from '@/lib/api/embedding'
 import type { RebuildEmbeddingsRequest, RebuildStatusResponse } from '@/lib/api/embedding'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatDecimal } from '@/lib/utils/format'
 import { formatDateTime } from '@/lib/utils/date-locale'  // v0.7.189 — locale-aware date format
 
 export function RebuildEmbeddings() {
@@ -179,7 +180,7 @@ export function RebuildEmbeddings() {
             <div className="space-y-3" role="group" aria-labelledby="include-label">
               <span id="include-label" className="text-sm font-medium leading-none">{t('advanced.rebuild.include')}</span>
               <div className="space-y-3">
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center gap-2">
                   <Checkbox
                     id="sources"
                     checked={includeSources}
@@ -189,7 +190,7 @@ export function RebuildEmbeddings() {
                     {t('navigation.sources')}
                   </Label>
                 </div>
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center gap-2">
                   <Checkbox
                     id="notes"
                     checked={includeNotes}
@@ -199,7 +200,7 @@ export function RebuildEmbeddings() {
                     {t('common.notes')}
                   </Label>
                 </div>
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center gap-2">
                   <Checkbox
                     id="insights"
                     checked={includeInsights}
@@ -251,15 +252,14 @@ export function RebuildEmbeddings() {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                {status.status === 'queued' && <Clock className="h-5 w-5 text-yellow-500" />}
-                {status.status === 'running' && <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />}
-                {status.status === 'completed' && <CheckCircle2 className="h-5 w-5 text-green-500" />}
-                {/* v0.7.180 — Only the failed-status icon swaps to the
-                    theme token (text-red-500 → text-destructive). The
-                    queued/running/completed icons keep their semantic
-                    palette per user constraint "no theme color changes" —
-                    only the destructive case has a canonical theme token
-                    that lights up correctly in dark + alt themes. */}
+                {/* v0.8.130 — status roles (UI audit Phase 1): queued and running = info,
+                    completed = success, failed = destructive. These are fixed hues that
+                    no theme can change, which is what the v0.7.180 "no theme color
+                    changes" constraint asked for: back then success/warning/info were
+                    re-coloured by every theme, so only destructive was safe to use. */}
+                {status.status === 'queued' && <Clock className="h-5 w-5 text-info-ink" />}
+                {status.status === 'running' && <Loader2 className="h-5 w-5 text-info-ink animate-spin" />}
+                {status.status === 'completed' && <CheckCircle2 className="h-5 w-5 text-success-ink" />}
                 {status.status === 'failed' && <XCircle className="h-5 w-5 text-destructive" />}
                 <div className="flex flex-col">
                   <span className="font-medium">
@@ -290,7 +290,7 @@ export function RebuildEmbeddings() {
                     {t('advanced.rebuild.itemsProcessed')
                       .replace('{processed}', processedItems.toString())
                       .replace('{total}', totalItems.toString())
-                      .replace('{percent}', progressPercent.toFixed(1))}
+                      .replace('{percent}', formatDecimal(progressPercent, language, 1))}
                   </span>
                 </div>
                 <Progress value={progressPercent} className="h-2" />
@@ -300,7 +300,7 @@ export function RebuildEmbeddings() {
                   // The previous emoji was the only icon-via-Unicode in
                   // an otherwise lucide-driven UI; jarring next to the
                   // sibling AlertCircle just below at line 323.
-                  <p className="text-sm text-yellow-600 inline-flex items-center gap-1.5">
+                  <p className="text-sm text-warning-ink inline-flex items-center gap-1.5">
                     <AlertTriangle className="h-4 w-4" />
                     {t('advanced.rebuild.failedItems').replace('{count}', failedItems.toString())}
                   </p>
@@ -333,7 +333,7 @@ export function RebuildEmbeddings() {
                 <div className="space-y-1">
                   <p className="text-sm text-muted-foreground">{t('advanced.rebuild.time')}</p>
                   <p className="text-xl font-semibold">
-                    {processingTimeSeconds !== undefined ? `${processingTimeSeconds.toFixed(1)}s` : '—'}
+                    {processingTimeSeconds !== undefined ? `${formatDecimal(processingTimeSeconds, language, 1)}s` : '—'}
                   </p>
                 </div>
               </div>

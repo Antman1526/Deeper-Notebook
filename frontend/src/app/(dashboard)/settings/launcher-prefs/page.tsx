@@ -20,11 +20,11 @@
 
 import { useState, useEffect } from 'react'
 import { AlertTriangle, Cpu, Sparkles, Zap } from 'lucide-react'
-import { AppShell } from '@/components/layout/AppShell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { formatNumber } from '@/lib/utils/format'
 import {
   useLauncherPrefs,
   useUpdateLauncherPrefs,
@@ -63,7 +63,7 @@ const readPref = (
 ): string => prefs[key] ?? ''
 
 export default function LauncherPrefsPage() {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const { data, isLoading } = useLauncherPrefs()
   const { data: hardware } = useHardwareProfile()
   const update = useUpdateLauncherPrefs()
@@ -148,14 +148,15 @@ export default function LauncherPrefsPage() {
   const isDirty = Object.keys(buildDiff()).length > 0
 
   return (
-    <AppShell>
+    <>
       <SystemRouteFrame route="/settings/launcher-prefs" title={t('settings.launcherPrefs.title')} description={t('settings.launcherPrefs.description')}>
           <div className="mx-auto max-w-3xl space-y-10 rounded-lg bg-[var(--dn-folio-paper)] p-4 sm:p-6">
 
             {/* Restart-required banner — shown after a successful save */}
             {showRestartBanner && (
+              // v0.8.130 — status colours from theme tokens (UI audit Phase 1)
               <div
-                className="flex items-start gap-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200"
+                className="flex items-start gap-3 rounded-md border border-warning/40 bg-warning-soft px-4 py-3 text-sm text-warning-ink"
                 role="alert"
                 data-testid="restart-banner"
               >
@@ -178,16 +179,16 @@ export default function LauncherPrefsPage() {
                     <div>
                       <div className="flex items-center gap-2">
                         <h3 className="text-base font-semibold text-foreground">
-                          {hardware.chip_name || 'System Hardware'}
+                          {hardware.chip_name || t('settings.launcherPrefsPage.systemHardware')}
                         </h3>
                         {hardware.is_apple_silicon && (
                           <Badge variant="secondary" className="text-xs bg-primary/15 text-primary border-0 font-medium">
-                            Apple Silicon Unified Memory
+                            {t('settings.launcherPrefsPage.appleSiliconUnifiedMemory')}
                           </Badge>
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        {hardware.tier_name} • {hardware.total_ram_gb} GB RAM
+                        {hardware.tier_name} • {t('settings.launcherPrefsPage.ramGb', { ram: hardware.total_ram_gb })}
                       </p>
                     </div>
                   </div>
@@ -200,27 +201,27 @@ export default function LauncherPrefsPage() {
                     data-testid="apply-hardware-recommendations"
                   >
                     <Sparkles className="h-3.5 w-3.5 text-primary" />
-                    Apply Recommended Settings
+                    {t('settings.launcherPrefsPage.applyRecommended')}
                   </Button>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                   <div className="rounded-lg bg-muted/40 p-2.5 space-y-1">
-                    <span className="text-muted-foreground font-medium">Context Window</span>
+                    <span className="text-muted-foreground font-medium">{t('settings.launcherPrefsPage.contextWindow')}</span>
                     <p className="text-sm font-semibold text-foreground">
-                      {hardware.recommended_context.toLocaleString()} tokens
+                      {t('settings.launcherPrefsPage.tokensCount', { value: formatNumber(hardware.recommended_context, language) })}
                     </p>
                   </div>
                   <div className="rounded-lg bg-muted/40 p-2.5 space-y-1">
-                    <span className="text-muted-foreground font-medium">Recommended Model</span>
+                    <span className="text-muted-foreground font-medium">{t('settings.launcherPrefsPage.recommendedModel')}</span>
                     <p className="text-sm font-semibold text-foreground">
                       {hardware.recommended_quant}
                     </p>
                   </div>
                   <div className="rounded-lg bg-muted/40 p-2.5 space-y-1">
-                    <span className="text-muted-foreground font-medium">Engine Acceleration</span>
+                    <span className="text-muted-foreground font-medium">{t('settings.launcherPrefsPage.engineAcceleration')}</span>
                     <p className="text-sm font-semibold text-foreground">
-                      {hardware.recommended_flash_attn ? 'Metal FlashAttn + ' + hardware.recommended_kv_quant : 'Standard CPU/GPU'}
+                      {hardware.recommended_flash_attn ? t('settings.launcherPrefsPage.metalFlashAttnWithKv', { kvQuant: hardware.recommended_kv_quant }) : t('settings.launcherPrefsPage.standardCpuGpu')}
                     </p>
                   </div>
                 </div>
@@ -378,7 +379,7 @@ export default function LauncherPrefsPage() {
                   <div className="flex items-center gap-2">
                     <Zap className="h-5 w-5 text-primary" />
                     <h2 className="text-lg font-medium">
-                      Engine Hardware Optimizations
+                      {t('settings.launcherPrefsPage.engineHardwareOptimizations')}
                     </h2>
                   </div>
 
@@ -388,7 +389,7 @@ export default function LauncherPrefsPage() {
                       htmlFor="flash-attn"
                       className="text-sm font-medium"
                     >
-                      Metal FlashAttention
+                      {t('settings.launcherPrefsPage.metalFlashAttention')}
                     </label>
                     <select
                       id="flash-attn"
@@ -397,12 +398,12 @@ export default function LauncherPrefsPage() {
                       onChange={(e) => setFlashAttn(e.target.value)}
                       className="flex h-9 w-52 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     >
-                      <option value="">Auto-Detect (Default on Metal)</option>
-                      <option value="true">Force Enabled</option>
-                      <option value="false">Force Disabled</option>
+                      <option value="">{t('settings.launcherPrefsPage.flashAttnAuto')}</option>
+                      <option value="true">{t('settings.launcherPrefsPage.forceEnabled')}</option>
+                      <option value="false">{t('settings.launcherPrefsPage.forceDisabled')}</option>
                     </select>
                     <p className="text-xs text-muted-foreground">
-                      Significantly accelerates attention computation on Apple Silicon and modern GPUs with lower memory bandwidth overhead.
+                      {t('settings.launcherPrefsPage.flashAttnDescription')}
                     </p>
                   </div>
 
@@ -412,7 +413,7 @@ export default function LauncherPrefsPage() {
                       htmlFor="kv-quant"
                       className="text-sm font-medium"
                     >
-                      Key-Value Cache Quantization
+                      {t('settings.launcherPrefsPage.kvCacheQuantization')}
                     </label>
                     <select
                       id="kv-quant"
@@ -421,13 +422,13 @@ export default function LauncherPrefsPage() {
                       onChange={(e) => setKvQuant(e.target.value)}
                       className="flex h-9 w-52 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     >
-                      <option value="">Auto-Detect (q8_0 on Apple Silicon)</option>
-                      <option value="q8_0">q8_0 (8-bit — 50% RAM savings, high precision)</option>
-                      <option value="q4_0">q4_0 (4-bit — 75% RAM savings, massive context)</option>
-                      <option value="f16">f16 (Full Precision — maximum memory usage)</option>
+                      <option value="">{t('settings.launcherPrefsPage.kvQuantAuto')}</option>
+                      <option value="q8_0">{t('settings.launcherPrefsPage.kvQuantQ8')}</option>
+                      <option value="q4_0">{t('settings.launcherPrefsPage.kvQuantQ4')}</option>
+                      <option value="f16">{t('settings.launcherPrefsPage.kvQuantF16')}</option>
                     </select>
                     <p className="text-xs text-muted-foreground">
-                      Quantizing the KV cache allows long contexts (32k/64k) to fit easily into unified RAM without degrading generation quality.
+                      {t('settings.launcherPrefsPage.kvCacheDescription')}
                     </p>
                   </div>
                 </section>
@@ -448,6 +449,6 @@ export default function LauncherPrefsPage() {
             )}
           </div>
       </SystemRouteFrame>
-    </AppShell>
+    </>
   )
 }

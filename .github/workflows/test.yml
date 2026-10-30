@@ -44,8 +44,22 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
+      # v0.8.130 — two tests need the runner set up like a desktop: the Study
+      # Workbench verifier generates its media fixture with ffmpeg, and the vault Git
+      # tests commit (macOS git derives an identity from the host; a Linux runner
+      # refuses without one, see the env on Run tests). Both failed on main.
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+
       - name: Run tests
         run: uv run pytest tests/ -v --ignore=tests/integration
+        # tests/conftest.py points HOME at a temp dir, which hides any global git
+        # config; git reads these variables regardless.
+        env:
+          GIT_AUTHOR_NAME: Deeper Notebook CI
+          GIT_AUTHOR_EMAIL: ci@deeper-notebook.invalid
+          GIT_COMMITTER_NAME: Deeper Notebook CI
+          GIT_COMMITTER_EMAIL: ci@deeper-notebook.invalid
 
   # v0.8.108 — the security scan was a MANUAL make target and ran in no
   # workflow. That is not theoretical: Bandit's B608 count was burned down to 0
@@ -182,6 +196,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # v0.8.130 — the shell, folio and workspace layout tests measure real layout in
+      # headless Chromium; without the browser they failed on main.
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
       - name: Run tests
         run: npm test
 
@@ -210,3 +229,53 @@ jobs:
 
       - name: Run mocked browser baseline
         run: npm run test:e2e:mocked
+        # v0.8.130 — both default on in the build; the source-gallery spec only runs its
+        # enabled-build contract (39 tests) when they are set explicitly, so it never ran.
+        env:
+          NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2: '1'
+          NEXT_PUBLIC_DN_SOURCE_VISUALS: '1'
+
+  # v0.8.130 — the Luminous (pre-V2) snapshot suites. V2 is a build-time flag and the
+  # default since 2026-08-14, so the mocked-browser job above cannot render these; this
+  # job builds with it off. It runs in the Playwright image the Linux baselines were
+  # generated in (same browser and fonts), so pixels match. Regenerate them with the same
+  # image: see playwright.config.ts (rollback-visuals project).
+  rollback-visuals:
+    name: Rollback Visual Snapshots (V2 off)
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.61.1-noble
+    env:
+      NEXT_PUBLIC_DN_VISUAL_SYSTEM_V2: '0'
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build with V2 off
+        run: npm run build
+
+      - name: Run rollback visual snapshots
+        run: npm run test:e2e:rollback-visuals
+        env:
+          PLAYWRIGHT_PREBUILT: '1'
+
+      - name: Upload snapshot diffs
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: rollback-visuals-results
+          path: frontend/test-results
+          retention-days: 7

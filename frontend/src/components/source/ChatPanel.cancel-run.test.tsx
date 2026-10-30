@@ -89,7 +89,7 @@ describe('ChatPanel run controls', () => {
       />,
     )
 
-    const stop = screen.getByRole('button', { name: /stop generating/i })
+    const stop = screen.getByRole('button', { name: 'sources.chatPanel.stopGenerating' })
     expect(stop).toBeInTheDocument()
 
     fireEvent.click(stop)
@@ -105,6 +105,6 @@ describe('ChatPanel run controls', () => {
       />,
     )
 
-    expect(screen.queryByRole('button', { name: /stop generating/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'sources.chatPanel.stopGenerating' })).not.toBeInTheDocument()
   })
 })

@@ -1,12 +1,12 @@
 'use client'
 
+import { markErrorReported } from '@/lib/api/client'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { sourcesApi } from '@/lib/api/sources'
 import { SourceListResponse } from '@/lib/types/api'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { EmptyState } from '@/components/common/EmptyState'
-import { AppShell } from '@/components/layout/AppShell'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { FileText, Link as LinkIcon, Upload, AlignLeft, Trash2, ArrowUpDown, Plus, Share2 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
@@ -86,6 +86,7 @@ export default function SourcesPage() {
       hasMoreRef.current = hasMoreData
       offsetRef.current += data.length
     } catch (err) {
+      markErrorReported(err) // v0.8.130 — this caller reports the failure itself
       console.error('Failed to fetch sources:', err)
       setError(failedToLoadMessage)
       toast.error(failedToLoadMessage)
@@ -123,7 +124,7 @@ export default function SourcesPage() {
     // The legacy table and enabled gallery use different selectable elements,
     // but keyboard navigation keeps their shared source-index ordering.
     const selectedElement = visualGalleryEnabled
-      ? scrollContainer.querySelectorAll('[data-dn-source-gallery] [role="listitem"]')[index] as HTMLElement
+      ? scrollContainer.querySelectorAll('[data-dn-source-gallery] .dn-source-gallery__card')[index] as HTMLElement
       : scrollContainer.querySelectorAll('tbody tr')[index] as HTMLElement
     if (!selectedElement) return
 
@@ -259,8 +260,8 @@ export default function SourcesPage() {
   }
 
   const getSourceType = (source: SourceListResponse) => {
-    if (source.source_type === 'web_import') return 'Web import'
-    if (source.source_type === 'deep_research_report') return 'Deep research'
+    if (source.source_type === 'web_import') return t('sources.sourcesPage.webImport')
+    if (source.source_type === 'deep_research_report') return t('sources.sourcesPage.deepResearch')
     if (source.asset?.url) return t('sources.type.link')
     if (source.asset?.file_path) return t('sources.type.file')
     return t('sources.type.text')
@@ -334,6 +335,7 @@ export default function SourcesPage() {
       setSources(prev => prev.filter(s => s.id !== deleteDialog.source?.id))
       setDeleteDialog({ open: false, source: null })
     } catch (err: unknown) {
+      markErrorReported(err) // v0.8.130 — this caller reports the failure itself
       const error = err as { response?: { data?: { detail?: string } }, message?: string };
       console.error('Failed to delete source:', error)
       toast.error(t(getApiErrorKey(error.response?.data?.detail || error.message)))
@@ -349,7 +351,7 @@ export default function SourcesPage() {
 
   if (loading) {
     return (
-      <AppShell>
+      <>
         <KnowledgeRouteFrame
           route="/sources"
           description={t('sources.allSourcesDesc')}
@@ -359,32 +361,32 @@ export default function SourcesPage() {
             <LoadingSpinner />
           </div>
         </KnowledgeRouteFrame>
-      </AppShell>
+      </>
     )
   }
 
   if (error) {
     return (
-      <AppShell>
+      <>
         <KnowledgeRouteFrame
           route="/sources"
           description={t('sources.allSourcesDesc')}
           actions={sourceAction()}
         >
           <div className="flex h-full items-center justify-center">
-            {/* v0.7.180 — text-red-500 → text-destructive so the error
+            {/* v0.7.180 — raw red text → text-destructive so the error
                 line absorbs the active theme's destructive hue (same as the
                 v0.7.165 ErrorBoundary fix). */}
             <p className="text-destructive">{error}</p>
           </div>
         </KnowledgeRouteFrame>
-      </AppShell>
+      </>
     )
   }
 
   if (sources.length === 0) {
     return (
-      <AppShell>
+      <>
         <KnowledgeRouteFrame
           route="/sources"
           description={t('sources.allSourcesDesc')}
@@ -396,12 +398,12 @@ export default function SourcesPage() {
             description={t('sources.allSourcesDescShort')}
           />
         </KnowledgeRouteFrame>
-      </AppShell>
+      </>
     )
   }
 
   return (
-    <AppShell>
+    <>
       <KnowledgeRouteFrame
         route="/sources"
         description={t('sources.allSourcesDesc')}
@@ -536,20 +538,21 @@ export default function SourcesPage() {
                       )}
                       <div className="mt-1 flex flex-wrap items-center gap-1.5">
                         {(source.is_shared || (source.notebook_count ?? 0) > 1) && (
-                          <Badge variant="outline" className="gap-1 text-[11px]">
+                          // v0.8.130 — 12px type floor (UI audit Phase 1)
+                          <Badge variant="outline" className="gap-1 text-xs">
                             <Share2 className="h-3 w-3" />
                             {(source.notebook_count ?? 0) > 1
-                              ? `Shared with ${source.notebook_count}`
-                              : 'Shared'}
+                              ? t('sources.sourcesPage.sharedWithCount', { count: source.notebook_count })
+                              : t('sources.sourcesPage.shared')}
                           </Badge>
                         )}
                         {getProvenanceLabel(source) && (
-                          <Badge variant="outline" className="max-w-[180px] truncate text-[11px]">
+                          <Badge variant="outline" className="max-w-[180px] truncate text-xs">
                             {getProvenanceLabel(source)}
                           </Badge>
                         )}
                         {source.topics?.slice(0, 2).map((topic) => (
-                          <Badge key={topic} variant="outline" className="text-[11px]">
+                          <Badge key={topic} variant="outline" className="text-xs">
                             {topic}
                           </Badge>
                         ))}
@@ -617,6 +620,6 @@ export default function SourcesPage() {
           />
         </div>
       </KnowledgeRouteFrame>
-    </AppShell>
+    </>
   )
 }

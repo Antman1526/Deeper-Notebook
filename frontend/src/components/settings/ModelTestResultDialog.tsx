@@ -33,7 +33,8 @@ export function ModelTestResultDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {result.success ? (
-              <Check className="h-5 w-5 text-emerald-500" />
+              // v0.8.130 — status colours from theme tokens (UI audit Phase 1)
+              <Check className="h-5 w-5 text-success-ink" />
             ) : (
               <X className="h-5 w-5 text-destructive" />
             )}

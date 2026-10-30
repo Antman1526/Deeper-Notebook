@@ -4,6 +4,13 @@ import { fireEvent, render, screen } from '@testing-library/react'
 
 import { RoleBenchmarkPanel } from './RoleBenchmarkPanel'
 
+// Echo interpolation values so each role's benchmark button stays addressable by its own label.
+vi.mock('@/lib/hooks/use-translation', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown>) => (options ? `${key} ${JSON.stringify(options)}` : key),
+  }),
+}))
+
 describe('RoleBenchmarkPanel', () => {
   it('labels a legacy speed-only result as not quality measured', () => {
     render(
@@ -19,15 +26,15 @@ describe('RoleBenchmarkPanel', () => {
       />,
     )
 
-    expect(screen.getByText(/speed-only legacy result/i)).toBeInTheDocument()
-    expect(screen.getByText('Not measured')).toBeInTheDocument()
+    expect(screen.getByText('settings.roleBenchmarkPanel.speedOnlyLegacy')).toBeInTheDocument()
+    expect(screen.getByText('settings.roleBenchmarkPanel.notMeasured')).toBeInTheDocument()
   })
 
   it('starts an individual role benchmark', () => {
     const onBenchmarkRole = vi.fn()
     render(<RoleBenchmarkPanel onBenchmarkAll={vi.fn()} onBenchmarkRole={onBenchmarkRole} />)
 
-    fireEvent.click(screen.getByRole('button', { name: /benchmark default chat/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'settings.roleBenchmarkPanel.benchmarkRoleAria {"label":"settings.roleBenchmarkPanel.roleChat"}' }))
     expect(onBenchmarkRole).toHaveBeenCalledWith('chat')
   })
 })

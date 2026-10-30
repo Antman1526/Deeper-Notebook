@@ -9,7 +9,9 @@ import { motion } from 'framer-motion'
 import { cn } from '@/lib/utils'
 import { readDesktopVersion } from '@/lib/desktop-version'
 import { isStudyWorkbenchEnabled } from '@/lib/features'
+import { useStudyWorkbenchEnabled } from '@/lib/features-client'
 import { Button } from '@/components/ui/button'
+import { Kbd } from '@/components/ui/kbd'
 import { useAuth } from '@/lib/hooks/use-auth'
 import { useIsDesktop } from '@/lib/hooks/use-media-query'
 import { useSidebarStore } from '@/lib/stores/sidebar-store'
@@ -59,12 +61,15 @@ import {
   Sliders,  // v0.8.6 Item D — Launch preferences nav icon
 } from 'lucide-react'
 
-export const getNavigation = (t: TFunction) => [
+export const getNavigation = (
+  t: TFunction,
+  studyWorkbenchEnabled: boolean = isStudyWorkbenchEnabled(),
+) => [
   {
     title: t('navigation.collect'),
     items: [
       { name: t('navigation.sources'), href: '/sources', icon: FileText },
-      { name: 'Capture', href: '/capture', icon: Inbox },
+      { name: t('navigation.appSidebar.capture'), href: '/capture', icon: Inbox },
     ],
   },
   {
@@ -81,9 +86,9 @@ export const getNavigation = (t: TFunction) => [
       // ONP v0.7.0 — Studio: one-shot upload + mode → output. Lives in
       // the Create group because that's its conceptual home (it produces
       // a new notebook or podcast from uploaded docs).
-      { name: 'Studio', href: '/studio', icon: Sparkles },
+      { name: t('navigation.appSidebar.studio'), href: '/studio', icon: Sparkles },
       { name: t('navigation.podcasts'), href: '/podcasts', icon: Mic },
-      ...(isStudyWorkbenchEnabled()
+      ...(studyWorkbenchEnabled
         ? [{ name: t('navigation.study'), href: '/study', icon: GraduationCap }]
         : []),
     ],
@@ -108,7 +113,8 @@ export type CreateTarget = (typeof CREATE_TARGETS)[number]
 
 export function AppSidebar() {
   const { t } = useTranslation()
-  const navigation = getNavigation(t)
+  const studyWorkbenchEnabled = useStudyWorkbenchEnabled()
+  const navigation = getNavigation(t, studyWorkbenchEnabled)
   const pathname = usePathname()
   const { logout } = useAuth()
   const { isCollapsed: storeCollapsed, toggleCollapse } = useSidebarStore()
@@ -148,9 +154,11 @@ export function AppSidebar() {
 
   return (
     <TooltipProvider delayDuration={0}>
+      {/* v0.8.130 — named transitions, no hover/press scale, no teal glows, 12px type floor (UI audit Phase 1) */}
       <div
         className={cn(
-          'app-sidebar flex h-full flex-col bg-sidebar border-sidebar-border border-r transition-all duration-300',
+          // v0.8.130 — everything the Focus-mode rail reveal changes (shell.css), not only width.
+          'app-sidebar flex h-full flex-col bg-sidebar border-sidebar-border border-r transition-[width,min-width,flex-basis,opacity,box-shadow] duration-300',
           isCollapsed ? 'w-16' : 'w-64'
         )}
       >
@@ -229,10 +237,10 @@ export function AppSidebar() {
                         onClick={() => setCreateMenuOpen(true)}
                         variant="default"
                         size="sm"
-                        className="w-full justify-center px-2 h-10 rounded-xl group relative overflow-hidden bg-primary hover:bg-primary/90 text-primary-foreground border-0 shadow-[0_2px_10px_rgba(20,184,166,0.25),inset_0_1px_0_rgba(255,255,255,0.2)] active:scale-95 transition-all duration-150"
+                        className="w-full justify-center px-2 h-10 rounded-xl group relative overflow-hidden bg-primary hover:bg-primary/90 text-primary-foreground border-0 duration-150"
                         aria-label={t('common.create')}
                       >
-                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-black/10 dark:bg-white/10 group-hover:scale-110 transition-all duration-150">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-black/10 dark:bg-white/10">
                           <Plus className="h-4 w-4" />
                         </span>
                       </Button>
@@ -246,9 +254,9 @@ export function AppSidebar() {
                     onClick={() => setCreateMenuOpen(true)}
                     variant="default"
                     size="sm"
-                    className="w-full justify-start h-10 px-3 rounded-xl group relative overflow-hidden bg-primary hover:bg-primary/90 text-primary-foreground border-0 shadow-[0_2px_10px_rgba(20,184,166,0.25),inset_0_1px_0_rgba(255,255,255,0.2)] active:scale-[0.98] transition-all duration-150"
+                    className="w-full justify-start h-10 px-3 rounded-xl group relative overflow-hidden bg-primary hover:bg-primary/90 text-primary-foreground border-0 duration-150"
                    >
-                    <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-black/10 dark:bg-white/10 mr-2 group-hover:scale-110 group-hover:bg-black/15 transition-all duration-150">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-black/10 dark:bg-white/10 mr-2 group-hover:bg-black/15 transition-colors duration-150">
                       <Plus className="h-3.5 w-3.5" />
                     </span>
                     <span className="font-medium">{t('common.create')}</span>
@@ -300,14 +308,14 @@ export function AppSidebar() {
             // visible `<Separator />` lines to plain vertical rhythm.
             // 4 sections × 1 separator each = 4 horizontal lines in the
             // sidebar — visually noisy on what should be a quiet rail.
-            // The uppercase section labels (COLLECT, PROCESS, CREATE,
-            // MANAGE) already provide enough delineation; just give
+            // The section labels (Collect, Process, Create, Manage;
+            // sentence case since v0.8.130) already provide enough delineation; just give
             // them breathing room via `mt-6` and the labels do the
             // work. Saves ~3px of visual chrome per gap.
             <div key={section.title} className={index > 0 ? "mt-6" : ""}>
               <div className="space-y-1">
                 {!isCollapsed && (
-                  <h3 className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/60">
+                  <h3 className="mb-2 px-3 text-xs font-semibold text-sidebar-foreground/60">
                     {section.title}
                   </h3>
                 )}
@@ -334,15 +342,15 @@ export function AppSidebar() {
                         // No scale (the v0.7.25 overflow lesson) and the pill's
                         // position uses top offset instead of a transform so it
                         // can't conflict with Framer's layout transform.
-                        'relative w-full gap-3 text-sidebar-foreground sidebar-menu-item rounded-xl transition-all duration-150',
-                        isActive && 'bg-sidebar-accent/90 text-sidebar-accent-foreground font-medium shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_0_12px_rgba(45,212,191,0.04)] border border-primary/20',
+                        'relative w-full gap-3 text-sidebar-foreground sidebar-menu-item rounded-md transition-[color,background-color,border-color,box-shadow] duration-150',
+                        isActive && 'bg-sidebar-accent/90 text-sidebar-accent-foreground font-medium border border-primary/20',
                         isCollapsed ? 'justify-center px-2' : 'justify-start'
                       )}
                     >
                       {isActive && (
                         <motion.span
                           layoutId="onp-sidebar-active"
-                          className="absolute left-0 h-6 w-[3px] rounded-r bg-primary shadow-[0_0_8px_rgba(45,212,191,0.4)]"
+                          className="absolute left-0 h-6 w-[3px] rounded-r bg-primary"
                           style={{ top: 'calc(50% - 0.75rem)' }}
                           transition={{ type: 'spring', stiffness: 520, damping: 40 }}
                         />
@@ -393,13 +401,10 @@ export function AppSidebar() {
                 {/* v0.7.28 — only render after platform detection
                     completes (isMac !== null). Avoids a flash of the
                     wrong key on SSR/hydration. */}
-                {isMac !== null && (
-                  <kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
-                    {isMac ? <span className="text-xs">⌘</span> : <span>Ctrl+</span>}K
-                  </kbd>
-                )}
+                {/* v0.8.130 — the shared key chip (this one was 10px). */}
+                {isMac !== null && <Kbd>{isMac ? '⌘K' : 'Ctrl+K'}</Kbd>}
               </div>
-               <p className="mt-1 text-[10px] text-sidebar-foreground/40">
+               <p className="mt-1 text-xs text-sidebar-foreground/40">
                 {t('common.quickActionsDesc')}
               </p>
             </div>
@@ -436,7 +441,7 @@ export function AppSidebar() {
                       <GmailSidebarButton iconOnly />
                     </div>
                   </TooltipTrigger>
-                  <TooltipContent side="right">Email Digests</TooltipContent>
+                  <TooltipContent side="right">{t('navigation.appSidebar.emailDigests')}</TooltipContent>
                 </Tooltip>
               </>
             ) : (
@@ -495,7 +500,7 @@ export function AppSidebar() {
               the SSR fallback. */}
           {!isCollapsed && (
             <div
-              className="mt-1 text-center text-[10px] text-sidebar-foreground/40 font-mono"
+              className="mt-1 text-center text-xs text-sidebar-foreground/40 font-mono"
               suppressHydrationWarning
             >
               v{

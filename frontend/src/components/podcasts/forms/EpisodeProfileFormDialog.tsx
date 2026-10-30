@@ -153,7 +153,8 @@ export function EpisodeProfileFormDialog({
         </DialogHeader>
 
         {speakerProfiles.length === 0 ? (
-          <Alert className="bg-amber-50 text-amber-900 border-amber-200">
+          // v0.8.130 — status colours from theme tokens (UI audit Phase 1)
+          <Alert variant="warning">
             <AlertTitle>{t('podcasts.noSpeakerProfilesAvailable')}</AlertTitle>
             <AlertDescription>
               {t('podcasts.noSpeakerProfilesDesc')}
@@ -200,7 +201,7 @@ export function EpisodeProfileFormDialog({
 
           <div className="space-y-4">
             <div>
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              <h3 className="text-sm font-semibold text-muted-foreground">
                 {t('podcasts.speakerConfig')}
               </h3>
               <Separator className="mt-2" />
@@ -235,7 +236,7 @@ export function EpisodeProfileFormDialog({
 
           <div className="space-y-4">
             <div>
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              <h3 className="text-sm font-semibold text-muted-foreground">
                 {t('podcasts.outlineGeneration')}
               </h3>
               <Separator className="mt-2" />
@@ -264,7 +265,7 @@ export function EpisodeProfileFormDialog({
 
           <div className="space-y-4">
             <div>
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              <h3 className="text-sm font-semibold text-muted-foreground">
                 {t('podcasts.transcriptGeneration')}
               </h3>
               <Separator className="mt-2" />
@@ -293,7 +294,7 @@ export function EpisodeProfileFormDialog({
 
           <div className="space-y-4">
             <div>
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              <h3 className="text-sm font-semibold text-muted-foreground">
                 {t('podcasts.podcastLanguage')}
               </h3>
               <Separator className="mt-2" />

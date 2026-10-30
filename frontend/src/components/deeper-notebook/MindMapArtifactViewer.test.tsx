@@ -27,13 +27,13 @@ describe('MindMapArtifactViewer', () => {
 
   it('supports node details, keyboard traversal, and branch collapse', () => {
     render(<MindMapArtifactViewer nodes={nodes} />)
-    const canvas = screen.getByLabelText(/Mind map canvas/i)
+    const canvas = screen.getByLabelText('artifacts.mindMapArtifactViewer.canvasLabel')
     expect(screen.getAllByText('Root').length).toBeGreaterThan(0)
 
     fireEvent.keyDown(canvas, { key: 'ArrowDown' })
     expect(screen.getAllByText('Child').length).toBeGreaterThan(0)
     fireEvent.keyDown(canvas, { key: 'Enter' })
     expect(screen.queryByText('Detail')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /expand branch/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'artifacts.mindMapArtifactViewer.expandBranch' })).toBeInTheDocument()
   })
 })

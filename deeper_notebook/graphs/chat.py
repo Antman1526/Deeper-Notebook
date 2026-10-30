@@ -33,7 +33,7 @@ from deeper_notebook.config import LANGGRAPH_CHECKPOINT_FILE
 from deeper_notebook.domain.notebook import Notebook
 from deeper_notebook.environment import resolve_env
 from deeper_notebook.exceptions import DeeperNotebookError
-from deeper_notebook.utils import clean_thinking_content
+from deeper_notebook.utils import clean_thinking_content, parse_thinking_content
 from deeper_notebook.utils.error_classifier import classify_error
 from deeper_notebook.utils.memory_recall import (
     recall_memory,
@@ -144,6 +144,7 @@ class ThreadState(TypedDict):
     # it stays None and the response field is omitted/None.
     selected_provider: Optional[str]
     selected_model_id: Optional[str]
+    routing_note: Optional[str]
     # v0.8.58 — privacy-gate decision plumbed back to /chat/execute so the
     # response (and the planned 5.2c review UI) can show that a turn was kept
     # on-device for privacy. `privacy_gated` True when the gate rerouted
@@ -729,82 +730,70 @@ async def bind_mcp_and_run_tool_loop(
         )
         mcp_tools = []
 
-    # 2. Native env-keyed web_search tool — INDEPENDENT of MCP/DB (v0.8.64).
-    # Bound only when a provider is configured (SERPER_API_KEY / TAVILY_API_KEY
-    # / SEARXNG_BASE_URL) AND the user hasn't disabled "web_search" via the
-    # per-request MCP picker (same case-insensitive exclude convention). Opt-in:
-    # no key => tool absent => zero behaviour change. Shared by both chat
-    # surfaces since source_chat reuses this helper (v0.8.16).
-    try:
+    # 2. Declarative native tool-binding registry — INDEPENDENT of MCP/DB
+    # (v0.8.64 web_search, v0.8.82 scholarly_search, v0.8.67r opencode +
+    # add_web_source_to_notebook). Normalized exclude set is computed once;
+    # each tool loader runs in its own try/except so a failure in one never
+    # blocks the others.
+    _excluded_names = {
+        (n or "").strip().lower() for n in (exclude_server_names or []) if n
+    }
+
+    def _load_web_search():
         from deeper_notebook.tools.web_search import (
             WEB_SEARCH_TOOL_NAME,
             build_web_search_tool,
             web_search_enabled,
         )
 
-        _excluded_names = {
-            (n or "").strip().lower() for n in (exclude_server_names or []) if n
-        }
         if web_search_enabled() and WEB_SEARCH_TOOL_NAME not in _excluded_names:
-            mcp_tools = list(mcp_tools) + [build_web_search_tool(mcp_captures)]
-    except Exception as ws_exc:
-        _logger.debug("web_search tool build failed (skipping): {}", ws_exc)
+            return build_web_search_tool(mcp_captures)
+        return None
 
-    # 2a2. Native scholarly_search tool — keyless OpenAlex/arXiv literature
-    # search (v0.8.82). Separate from web_search on purpose: web_search's
-    # keyless tail is Wikipedia, which ends that chain before a research
-    # provider would ever run. A distinct tool lets the model pick the right
-    # one for the question. Keyless, so no configuration gates it.
-    try:
+    def _load_scholarly_search():
         from deeper_notebook.tools.scholarly_search import (
             SCHOLARLY_SEARCH_TOOL_NAME,
             build_scholarly_search_tool,
             scholarly_search_enabled,
         )
 
-        _excluded_names = {
-            (n or "").strip().lower() for n in (exclude_server_names or []) if n
-        }
         if (
             scholarly_search_enabled()
             and SCHOLARLY_SEARCH_TOOL_NAME not in _excluded_names
         ):
-            mcp_tools = list(mcp_tools) + [build_scholarly_search_tool(mcp_captures)]
-    except Exception as sch_exc:
-        _logger.debug("scholarly_search tool build failed (skipping): {}", sch_exc)
+            return build_scholarly_search_tool(mcp_captures)
+        return None
 
-    # 2b. Native opencode_run tool — local code computer execution.
-    try:
+    def _load_opencode():
         from deeper_notebook.tools.opencode import (
             OPENCODE_TOOL_NAME,
             build_opencode_tool,
             opencode_enabled,
         )
 
-        _excluded_names = {
-            (n or "").strip().lower() for n in (exclude_server_names or []) if n
-        }
         if opencode_enabled() and OPENCODE_TOOL_NAME not in _excluded_names:
-            mcp_tools = list(mcp_tools) + [build_opencode_tool(mcp_captures)]
-    except Exception as oe_exc:
-        _logger.debug("opencode tool build failed (skipping): {}", oe_exc)
+            return build_opencode_tool(mcp_captures)
+        return None
 
-    # 2c. Native add_web_source_to_notebook tool — autonomous URL ingestion.
-    if notebook_id:
+    def _load_add_web_source():
+        if not notebook_id or "add_web_source_to_notebook" in _excluded_names:
+            return None
+        from deeper_notebook.tools.add_web_source import build_add_web_source_tool
+
+        return build_add_web_source_tool(notebook_id, mcp_captures)
+
+    for _tool_label, _loader in (
+        ("web_search", _load_web_search),
+        ("scholarly_search", _load_scholarly_search),
+        ("opencode", _load_opencode),
+        ("add_web_source", _load_add_web_source),
+    ):
         try:
-            from deeper_notebook.tools.add_web_source import (
-                build_add_web_source_tool,
-            )
-
-            _excluded_names = {
-                (n or "").strip().lower() for n in (exclude_server_names or []) if n
-            }
-            if "add_web_source_to_notebook" not in _excluded_names:
-                mcp_tools = list(mcp_tools) + [
-                    build_add_web_source_tool(notebook_id, mcp_captures)
-                ]
-        except Exception as aws_exc:
-            _logger.debug("add_web_source tool build failed (skipping): {}", aws_exc)
+            _built = _loader()
+            if _built is not None:
+                mcp_tools = list(mcp_tools) + [_built]
+        except Exception as _tool_exc:
+            _logger.debug("{} tool build failed (skipping): {}", _tool_label, _tool_exc)
 
     # 3. Bind tools to the model — fail-soft for local providers that don't
     # implement tool calling (v0.8.0 / v0.8.35f). If bind fails the model can't
@@ -1153,8 +1142,14 @@ async def call_model_with_messages(state: ThreadState, config: RunnableConfig) -
 
         # Clean thinking content from AI response (e.g., <think>...</think> tags)
         content = extract_text_content(ai_message.content)
+        thinking_content, _ = parse_thinking_content(content)
         cleaned_content = clean_thinking_content(content)
-        cleaned_message = ai_message.model_copy(update={"content": cleaned_content})
+        update_fields: dict = {"content": cleaned_content}
+        if thinking_content and cleaned_content != thinking_content.strip():
+            existing_kwargs = dict(getattr(ai_message, "additional_kwargs", None) or {})
+            existing_kwargs["thinking"] = thinking_content
+            update_fields["additional_kwargs"] = existing_kwargs
+        cleaned_message = ai_message.model_copy(update=update_fields)
 
         # Keep the model response on the critical path and evaluate it only
         # afterwards. A failed verifier must never erase a completed turn.
@@ -1176,6 +1171,7 @@ async def call_model_with_messages(state: ThreadState, config: RunnableConfig) -
             "messages": cleaned_message,
             "selected_provider": selection_out.get("selected_provider"),
             "selected_model_id": selection_out.get("selected_model_id"),
+            "routing_note": selection_out.get("routing_note"),
             # v0.8.68 — offline-fallback info (None when no substitution).
             "offline_fallback": offline_fallback_out or None,
             # v0.8.58 — privacy-gate decision (None when the gate didn't act).
@@ -1243,6 +1239,8 @@ import aiosqlite
 
 _async_graph: "object | None" = None
 _async_graph_lock = threading.Lock()
+_async_graph_aio_lock: Optional[asyncio.Lock] = None
+_async_graph_loop: Optional[asyncio.AbstractEventLoop] = None
 # v0.7.211 — keep a handle to the aiosqlite connection so
 # `close_async_graph()` can close it on shutdown. Previously the
 # connection was held only inside the AsyncSqliteSaver wrapper
@@ -1262,13 +1260,23 @@ async def get_async_graph():
     one are visible to reads through the other, courtesy of SQLite
     WAL mode (configured in deeper_notebook.utils.sqlite_checkpoint).
     """
-    global _async_graph, _async_aio_conn
-    if _async_graph is not None:
+    global _async_graph, _async_aio_conn, _async_graph_aio_lock, _async_graph_loop
+    loop = asyncio.get_running_loop()
+    if _async_graph is not None and _async_graph_loop in (None, loop):
         return _async_graph
     with _async_graph_lock:
+        if _async_graph_aio_lock is None or _async_graph_loop is not loop:
+            _async_graph_aio_lock = asyncio.Lock()
+            if _async_graph_loop is not None and _async_graph_loop is not loop:
+                _async_graph = None
+            _async_graph_loop = loop
+        aio_lock = _async_graph_aio_lock
+    async with aio_lock:
         if _async_graph is not None:
             return _async_graph
         aio_conn = await aiosqlite.connect(LANGGRAPH_CHECKPOINT_FILE)
+        await aio_conn.execute("PRAGMA journal_mode=WAL")
+        await aio_conn.execute("PRAGMA busy_timeout=5000")
         async_memory = AsyncSqliteSaver(aio_conn)
         _async_graph = agent_state.compile(checkpointer=async_memory)
         _async_aio_conn = aio_conn
@@ -1287,10 +1295,12 @@ async def close_async_graph() -> None:
     Safe to call multiple times (idempotent) and on a never-
     constructed graph (no-op).
     """
-    global _async_graph, _async_aio_conn
+    global _async_graph, _async_aio_conn, _async_graph_aio_lock, _async_graph_loop
     conn = _async_aio_conn
     _async_aio_conn = None
     _async_graph = None
+    _async_graph_aio_lock = None
+    _async_graph_loop = None
     if conn is None:
         return
     try:

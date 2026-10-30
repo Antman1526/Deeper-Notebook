@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { applyRuntimeFeatures, resetRuntimeFeatures } from '@/lib/features'
@@ -69,13 +69,19 @@ vi.mock('@/lib/hooks/use-video-overviews', () => ({
 // assertions below meaningful.
 vi.mock('@/lib/hooks/use-translation', async () => {
   const { enUS } = await import('@/lib/locales/en-US')
-  const resolve = (key: string): string => {
+  const resolve = (key: string, options?: Record<string, unknown>): string => {
     let node: unknown = enUS
     for (const part of key.split('.')) {
       if (typeof node !== 'object' || node === null || !(part in (node as Record<string, unknown>))) return key
       node = (node as Record<string, unknown>)[part]
     }
-    return typeof node === 'string' ? node : key
+    if (typeof node !== 'string') return key
+    // Mirror i18next's {{name}} interpolation so interpolated strings render in English.
+    return options
+      ? node.replace(/\{\{\s*(\w+)\s*\}\}/g, (match, name: string) => (
+        name in options ? String(options[name]) : match
+      ))
+      : node
   }
   return { useTranslation: () => ({ t: resolve }) }
 })
@@ -295,7 +301,7 @@ describe('ArtifactRail', () => {
       />,
     )
 
-    expect(screen.getByText('App Mode templates')).toBeInTheDocument()
+    expect(screen.getByText('App mode templates')).toBeInTheDocument()
     expect(screen.getByText(/Source readiness/)).toBeInTheDocument()
     expect(screen.getByText(/Artifact generation/)).toBeInTheDocument()
     expect(screen.getByText(/Evidence export/)).toBeInTheDocument()
@@ -896,7 +902,7 @@ describe('ArtifactRail', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Course Pack' }))
     fireEvent.click(screen.getByRole('button', { name: 'Flashcards' }))
     fireEvent.click(screen.getByRole('button', { name: 'Quiz' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Data Table' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Data table' }))
     fireEvent.click(screen.getByRole('button', { name: 'Mind map' }))
     fireEvent.click(screen.getByRole('button', { name: 'Slide deck' }))
     fireEvent.click(screen.getByRole('button', { name: 'Infographic' }))
@@ -942,7 +948,7 @@ describe('ArtifactRail', () => {
       expect(createArtifact).toHaveBeenCalledWith({
         notebook_id: 'notebook:alpha',
         artifact_type: 'data_table',
-        title: 'Data Table',
+        title: 'Data table',
         source_ids: [],
       })
       expect(createArtifact).toHaveBeenCalledWith({
@@ -1379,7 +1385,9 @@ describe('ArtifactRail', () => {
     render(<ArtifactRail notebookId="notebook:alpha" />)
     fireEvent.click(screen.getByRole('button', { name: 'Open Data Table' }))
 
-    expect(screen.getByText('Data table')).toBeInTheDocument()
+    // The quick-action tile is also "Data table" now, so scope the heading to the viewer's table block.
+    const tableViewer = screen.getByRole('table').closest('div.space-y-3') as HTMLElement
+    expect(within(tableViewer).getByText('Data table')).toBeInTheDocument()
     expect(screen.getByText('1 row extracted from source-grounded output.')).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Topic' })).toBeInTheDocument()
     expect(screen.getAllByText('Evidence Studio').length).toBeGreaterThanOrEqual(1)
@@ -1830,7 +1838,11 @@ describe('ArtifactRail', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open Old Quiz' }))
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
 
-    expect(window.confirm).toHaveBeenCalledWith('Delete "Old Quiz"?')
+    // v0.8.130 — Phase 4c: confirmed in the app's dialog, not window.confirm.
+    const dialog = await screen.findByRole('alertdialog', { name: 'Delete "Old Quiz"?' })
+    expect(deleteArtifact).not.toHaveBeenCalled()
+    // Scoped to the dialog: the viewer behind it has its own Delete button.
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
     await waitFor(() => {
       expect(deleteArtifact).toHaveBeenCalledWith('studio_artifact:delete-me')
     })
@@ -1866,6 +1878,66 @@ describe('ArtifactRail', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Target Notes' })).toBeInTheDocument()
+    })
+  })
+
+  // v0.8.130 — Phase 2b: the band became the Studio column's body. Generators are a
+  // two-column tile grid, saved outputs a vertical list, and the App Mode explainer a
+  // closed disclosure (it used to take a permanent box above the generators).
+  describe('Studio column layout', () => {
+    const oneSource = [{
+      id: 'source:one', title: 'Source One', asset: null, embedded: true, embedded_chunks: 3,
+      insights_count: 0, status: 'completed', created: '2026-06-23T00:00:00Z', updated: '2026-06-23T00:00:00Z',
+    }]
+
+    it('lays the generators out as a two-column tile grid', () => {
+      isEvidenceStudioEnabled.mockReturnValue(true)
+      useStudioArtifacts.mockReturnValue({ data: [], isLoading: false })
+      render(<ArtifactRail notebookId="notebook:alpha" sources={oneSource as never} />)
+
+      const generate = screen.getByRole('group', { name: 'Generate' })
+      expect(generate).toHaveClass('grid', 'grid-cols-2')
+      expect(within(generate).getByRole('button', { name: 'Report' })).toBeInTheDocument()
+      expect(within(generate).getByRole('button', { name: 'Flashcards' })).toBeInTheDocument()
+    })
+
+    it('lists saved outputs vertically', () => {
+      isEvidenceStudioEnabled.mockReturnValue(true)
+      useStudioArtifacts.mockReturnValue({
+        data: [{
+          id: 'studio_artifact:one', notebook_id: 'notebook:alpha', artifact_type: 'report', title: 'Report',
+          status: 'completed', source_ids: [], output_payload: {}, citations: [], export_paths: {},
+        }],
+        isLoading: false,
+      })
+      render(<ArtifactRail notebookId="notebook:alpha" />)
+
+      const saved = screen.getByRole('list', { name: 'Saved outputs' })
+      expect(within(saved).getByRole('button', { name: 'Open Report' })).toBeInTheDocument()
+    })
+
+    // v0.8.130 — the reason the tiles are disabled sits above them, not under a column of greyed tiles.
+    it('explains blocked generation before the generator grid', () => {
+      isEvidenceStudioEnabled.mockReturnValue(true)
+      useStudioArtifacts.mockReturnValue({ data: [], isLoading: false })
+      render(<ArtifactRail notebookId="notebook:alpha" sources={[]} />)
+
+      const warning = screen.getByText('Add at least one ready source before generating artifacts.')
+      const generate = screen.getByRole('group', { name: 'Generate' })
+      expect(warning.compareDocumentPosition(generate) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    })
+
+    it('keeps the App Mode explainer in a closed disclosure', () => {
+      isEvidenceStudioEnabled.mockReturnValue(true)
+      useStudioArtifacts.mockReturnValue({ data: [], isLoading: false })
+      render(<ArtifactRail notebookId="notebook:alpha" sources={oneSource as never} />)
+
+      const toggle = screen.getByRole('button', { name: 'How generation works' })
+      expect(toggle).toHaveAttribute('aria-expanded', 'false')
+      expect(screen.getByText('App mode templates').closest('#artifact-rail-explainer')).toHaveAttribute('hidden')
+      fireEvent.click(toggle)
+      expect(toggle).toHaveAttribute('aria-expanded', 'true')
+      expect(screen.getByText('App mode templates')).toBeVisible()
     })
   })
 })

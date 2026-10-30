@@ -4,6 +4,8 @@ import { useMemo, useRef, useState } from 'react'
 
 import { SourceCoverActions } from './SourceCoverActions'
 import { sourceVisualOriginLabel } from './SourceVisualProvenance'
+import { SOURCE_KIND_KEYS, enumLabel } from '@/lib/enum-labels'
+import { useTranslation } from '@/lib/hooks/use-translation'
 import type { SourceListResponse } from '@/lib/types/api'
 import type { SourceVisualReceipt } from '@/lib/types/source-visuals'
 
@@ -17,26 +19,28 @@ export type SourceCoverProps = {
   onDelete?: (sourceId: string) => void
 }
 
-function sourceTypeLabel(sourceType: SourceListResponse['source_type']): string {
-  if (!sourceType) return 'Source'
-  return sourceType.replaceAll('_', ' ').replace(/^./, character => character.toUpperCase())
+type TranslateFn = ReturnType<typeof useTranslation>['t']
+
+function sourceTypeLabel(sourceType: SourceListResponse['source_type'], t: TranslateFn): string {
+  if (!sourceType) return t('workspace.sourceCover.typeFallback')
+  return enumLabel(t, SOURCE_KIND_KEYS, sourceType, sourceType.replaceAll('_', ' ').replace(/^./, character => character.toUpperCase()))
 }
 
-function statusCopy(source: SourceListResponse): string {
+function statusCopy(source: SourceListResponse, t: TranslateFn): string {
   switch (source.visual_status?.state) {
     case 'queued':
-      return 'Visual cover queued'
+      return t('workspace.sourceCover.statusQueued')
     case 'processing':
-      return 'Preparing visual cover'
+      return t('workspace.sourceCover.statusProcessing')
     case 'failed':
     case 'unavailable':
-      return 'Visual cover unavailable'
+      return t('workspace.sourceCover.statusUnavailable')
     case 'disabled':
       // v0.8.86 — the backend reports the feature is off; say so instead of
       // implying a cover might appear.
-      return 'Visual covers are turned off'
+      return t('workspace.sourceCover.statusDisabled')
     default:
-      return 'Visual cover unavailable'
+      return t('workspace.sourceCover.statusUnavailable')
   }
 }
 
@@ -92,10 +96,11 @@ export function SourceCover({
   onRemove,
   onDelete,
 }: SourceCoverProps) {
+  const { t } = useTranslation()
   const [failedAssetIdentity, setFailedAssetIdentity] = useState<string | null>(null)
   const [pendingIdentity, setPendingIdentity] = useState<string | null>(null)
   const pendingIdentityRef = useRef<string | null>(null)
-  const title = source.title?.trim() || 'Untitled source'
+  const title = source.title?.trim() || t('sources.untitledSource')
   const validVisual = isReceiptForSource(source.visual, source.id) ? source.visual : null
   const assetIdentity = validVisual ? `${source.id}|${validVisual.asset_sha256}` : null
   const visual = validVisual && failedAssetIdentity !== assetIdentity ? validVisual : null
@@ -144,23 +149,27 @@ export function SourceCover({
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={visual.asset_url}
-            alt={`${title} — ${sourceVisualOriginLabel(visual.origin)}: ${visual.alt_text}`}
+            alt={t('workspace.sourceCover.imageAlt', {
+              title,
+              origin: sourceVisualOriginLabel(visual.origin, t),
+              description: visual.alt_text,
+            })}
             width={visual.width}
             height={visual.height}
             loading={priority ? 'eager' : 'lazy'}
             decoding="async"
             onError={() => setFailedAssetIdentity(assetIdentity)}
           />
-          <span className="dn-source-gallery__provenance" aria-label="Image origin">
-            {sourceVisualOriginLabel(visual.origin)}
+          <span className="dn-source-gallery__provenance" aria-label={t('artifacts.sourceVisualProvenance.imageOrigin')}>
+            {sourceVisualOriginLabel(visual.origin, t)}
           </span>
         </>
       ) : (
         <span className="dn-source-cover__fallback">
           <span className="dn-source-cover__shape" aria-hidden="true" />
           <span className="dn-source-cover__title">{title}</span>
-          <span className="dn-source-cover__type">{sourceTypeLabel(source.source_type)}</span>
-          <span className="dn-source-cover__status" role="status">{statusCopy(source)}</span>
+          <span className="dn-source-cover__type">{sourceTypeLabel(source.source_type, t)}</span>
+          <span className="dn-source-cover__status" role="status">{statusCopy(source, t)}</span>
         </span>
       )}
     </span>
@@ -178,7 +187,7 @@ export function SourceCover({
         <button
           type="button"
           className="dn-source-cover__open"
-          aria-label={`Open ${title}`}
+          aria-label={t('workspace.sourceCover.openLabel', { title })}
           onClick={() => onOpen(source.id)}
         >
           {visualRegion}

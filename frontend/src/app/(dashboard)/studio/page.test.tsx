@@ -33,9 +33,9 @@ describe('Evidence Studio folio integration', () => {
   it('keeps source, brief, and explicit generation controls in the folio without requesting on mount', () => {
     render(<StudioPage />)
 
-    expect(screen.getByRole('main', { name: 'Evidence Studio folio' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Source desk')).toHaveTextContent('studio.step1Title')
-    expect(screen.getByLabelText('Editorial brief')).toHaveTextContent('studio.step2Title')
+    expect(screen.getByRole('main', { name: 'workspace.evidenceStudioFolio.ariaLabel' })).toBeInTheDocument()
+    expect(screen.getByLabelText('workspace.evidenceStudioFolio.sourceDesk')).toHaveTextContent('studio.step1Title')
+    expect(screen.getByLabelText('workspace.evidenceStudioFolio.editorialBrief')).toHaveTextContent('studio.step2Title')
     expect(screen.getByRole('button', { name: 'studio.generateNotebook' })).toBeDisabled()
     expect(state.generate).not.toHaveBeenCalled()
     expect(state.coursePack).not.toHaveBeenCalled()

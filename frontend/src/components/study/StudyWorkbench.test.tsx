@@ -41,12 +41,12 @@ describe('StudyWorkbench', () => {
     expect(screen.getByTestId('study-dashboard')).toBeInTheDocument()
     expect(screen.getByTestId('study-session')).toBeInTheDocument()
     expect(screen.getByTestId('exam-lab')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'ExamLab' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Active study plans' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'study.studyWorkbench.examLabHeading' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'study.studyWorkbench.activePlansHeading' })).toBeInTheDocument()
     expect(screen.getByText('Understand mechanics')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Import study plan' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'study.studyWorkbench.importPlan' })).toBeDisabled()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Create study plan' }))
+    fireEvent.click(screen.getByRole('button', { name: 'study.studyWorkbench.createPlan' }))
     expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 

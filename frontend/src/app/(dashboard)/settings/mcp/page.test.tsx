@@ -5,7 +5,7 @@
 //   - next/navigation stubbed (useRouter / usePathname).
 //   - All four hook exports stubbed via vi.mock.
 //   - useTranslation returns the key as-is (established project pattern).
-//   - window.confirm stubbed per test where deletion is exercised.
+//   - deletion is confirmed through the app's ConfirmDialog (v0.8.130).
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
@@ -298,7 +298,8 @@ describe('MCPServersPage', () => {
     expect(screen.getByText('common.loading')).toBeInTheDocument()
   })
 
-  it('delete: window.confirm=true triggers delete mutation with server id', async () => {
+  // v0.8.130 — Phase 4c: deletion is confirmed in the app's dialog, not window.confirm.
+  it('delete: confirming the dialog triggers delete mutation with server id', async () => {
     const delMutate = vi.fn()
     mockHooks({
       servers: [
@@ -307,17 +308,19 @@ describe('MCPServersPage', () => {
       delMutate,
     })
 
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     render(<MCPServersPage />)
 
     fireEvent.click(screen.getByText('settings.mcp.deleteButton'))
+    expect(await screen.findByRole('alertdialog', { name: 'settings.mcp.deleteConfirm' })).toBeInTheDocument()
+    expect(delMutate).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'common.delete' }))
 
     await waitFor(() => {
       expect(delMutate).toHaveBeenCalledWith('srv:3')
     })
   })
 
-  it('delete: window.confirm=false does NOT call delete mutation', async () => {
+  it('delete: cancelling the dialog does NOT call delete mutation', async () => {
     const delMutate = vi.fn()
     mockHooks({
       servers: [
@@ -326,14 +329,16 @@ describe('MCPServersPage', () => {
       delMutate,
     })
 
-    vi.spyOn(window, 'confirm').mockReturnValue(false)
     render(<MCPServersPage />)
 
     fireEvent.click(screen.getByText('settings.mcp.deleteButton'))
+    await screen.findByRole('alertdialog')
+    fireEvent.click(screen.getByRole('button', { name: 'common.cancel' }))
 
     await waitFor(() => {
-      expect(delMutate).not.toHaveBeenCalled()
+      expect(screen.queryByRole('alertdialog')).toBeNull()
     })
+    expect(delMutate).not.toHaveBeenCalled()
   })
 
   // v0.8.1 Item 5 — priority reorder buttons

@@ -182,7 +182,8 @@ export function NotebookAssociations({
                           {notebook.name}
                         </h4>
                         {isCurrentlyLinked && !hasChanges && (
-                          <Check className="h-4 w-4 text-green-600" />
+                          // v0.8.130 — status colours from theme tokens (UI audit Phase 1)
+                          <Check className="h-4 w-4 text-success-ink" />
                         )}
                       </div>
                       {notebook.description && (

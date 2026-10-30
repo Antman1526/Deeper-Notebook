@@ -269,7 +269,9 @@ export function KnowledgeWorkspaceLayout({
   }
 
   return (
-    <main
+    // v0.8.130 — Phase 4b: a named region; the Knowledge page is the main landmark, so
+    // its header, mode toolbar and drawers are inside one.
+    <section
       aria-label={t('knowledge.knowledgeWorkspace')}
       className="research-core-editorial-workspace h-full min-h-0 min-w-0 max-w-full overflow-hidden"
     >
@@ -287,6 +289,6 @@ export function KnowledgeWorkspaceLayout({
         setSplitSize={setSplitSize}
         registerPane={registerPane}
       />
-    </main>
+    </section>
   )
 }

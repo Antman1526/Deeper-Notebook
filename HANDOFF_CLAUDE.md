@@ -1,9 +1,15 @@
 # Project Handoff: Deeper Notebook (for Claude)
 
-**Date**: September 11, 2026 (v0.8.128)  
+**Date**: September 14, 2026 (v0.8.129)  
 **Repository Path**: `/Users/Antman/Desktop/BrainPulse Ventures LLC/DeeperNotebook/Deeper-Notebook`  
 **Current Branch**: `main`  
-**Latest Commits & Additions** (v0.8.115 – v0.8.128):
+**Latest Commits & Additions** (v0.8.115 – v0.8.129):
+- `57d080a0`: `fix(e2e): harden command bar layout at 320px, reserve setup wizard loading height, and complete visual fixtures` (v0.8.129 — command bar breadcrumbs truncate cleanly on 320px viewports preventing focus button overflow; setup wizard reserves 22rem loading height to eliminate layout shift on large desktop; visual system matrix fixtures mock retention status and hardware profile)
+- `5b130556`: `fix(e2e): mock /api/features in knowledge shell fixtures` (v0.8.129 — hermetic knowledge workbench fixtures provide default feature map)
+- `d4ca4b3e`: `chore(release): bump version to 0.8.129 and update release manifest & changelog` (v0.8.129)
+- `65f46eee`: `refactor(tests): harden latent delenv settings to use unset_setting fixture` (v0.8.129 — hardened smart routing, studio flags, hot swap, ask caps, and chat caps against ambient alias pollution)
+- `1d64ff6d`: `fix(tests): adapt migration 51 round-trip test to migration 52 head` (v0.8.129 — live SurrealDB integration test suite 100% green across all 132 tests)
+- `7bbc7fad`: `test(infra): standing make test-backend target, ruff I001 import fixes, and installer version sync` (v0.8.129)
 - `0f85e969`: `fix(tests): strict ORDER BY projection guard, alias-safe env fixture, and the full-suite baseline failures` (v0.8.128 — first fully green full backend run)
 - `10ab30c0`: `feat(health): per-worker heartbeat rows, shutdown cleanup, worker status in Settings` (v0.8.128)
 - `b10f312a`: `fix(sources): explicit processing outcome instead of an extracted-text proxy` (v0.8.128)
@@ -81,11 +87,14 @@ All gates are currently passing 100%:
 | **Frontend Vitest** | `cd frontend && npm test` | **266/266 test files passed (2,000 tests)** |
 | **Frontend ESLint** | `cd frontend && npm run lint` | **0 errors, 0 warnings** |
 | **Frontend TypeScript** | `cd frontend && npx tsc --noEmit` | **0 errors** |
-| **Desktop Smoke Tests**| `.venv/bin/pytest desktop/tests/test_package_release_smoke.py` | **32/32 passed** |
-| **Backend full suite** (strict query guard, ~5 min) | `.venv/bin/pytest tests -q -p no:cacheprovider` | **5,110 passed, 133 skipped, 0 failed** (first green full run, v0.8.128) |
-| **Backend ruff** | `.venv/bin/python -m ruff check .` | **12 pre-existing `I001` import-order findings in untouched test files; 0 in touched files** |
+| **Visual Matrix Suite** | `cd frontend && npm run test:e2e:visual-system` | **284/284 cells passed (100%)** |
+| **All-Screen Visual Audit** | `cd frontend && npx playwright test e2e/all-screen-visual-audit.spec.ts --project=mocked-browser` | **8/8 tests passed (100%)** |
+| **Desktop Test Suite**| `.venv/bin/pytest desktop/tests/` | **951 passed, 3 skipped, 0 failed** |
+| **Backend full suite** (strict query guard, ~4.5 min) | `make test-backend` (`.venv/bin/pytest tests -q -p no:cacheprovider`) | **5,110 passed, 1 skipped, 0 failed** (v0.8.129) |
+| **Live SurrealDB Integration** | `SURREAL_INTEGRATION=1 uv run pytest tests/integration/ -q` | **132 passed, 0 failed** (v0.8.129) |
+| **Backend ruff** | `.venv/bin/python -m ruff check .` | **0 errors (100% clean across entire repository)** |
 | **Rebrand Audit** | `python3 scripts/rebrand_audit.py --check` | **0 unexpected identities, 0 stale entries** |
-| **Desktop Package** | `hdiutil verify dist/Deeper-Notebook-mac-arm64.dmg` | **Checksum VALID (183MB DMG)** |
+| **Desktop Package** | `hdiutil verify dist/Deeper-Notebook-mac-arm64.dmg` | **Checksum VALID (186MB DMG)** |
 
 ---
 
@@ -161,6 +170,8 @@ All gates are currently passing 100%:
   4. **Runtime ORDER BY projection guard.** `check_query_ordered_projection()` in `deeper_notebook/database/repository.py` runs in `repo_query`: always warns; `DEEPER_NOTEBOOK_STRICT_QUERY_GUARD=1` raises before the database is touched. Tolerates `rand()`/`count()`, `GROUP BY`, and dotted fields whose root is projected. `tests/conftest.py` sets it for the whole suite.
   5. **Explicit source outcome.** Sync creates write `provenance.processing_status` (`completed`/`failed` + error); worker sets `failed` on an orphan; precedence command → explicit outcome → text proxy → none.
 - [x] **First fully green full backend run** (5,110 passed). Fixed what it found, all present at the previous commit too: MCP doubles missing the client's `transport`/`command`/`args`/`env` kwargs; `launcher_prefs.py` / `notebooks.py` missing `except HTTPException: raise` (meta test); `desktop/__version__` stuck at 0.8.123; six logging/encryption tests that passed alone but failed in suite order.
+- [x] **Standing `make test-backend` target & ruff import hygiene**: Added `test-backend` target to `Makefile` (.venv/bin/pytest tests -q -p no:cacheprovider --ignore=tests/integration); fixed all 12 pre-existing ruff `I001` un-sorted import errors across 11 test files (`ruff check .` 100% clean).
+- [x] **Desktop Windows installer & smoke sync**: Inno Setup installer script (`desktop/build/deeper-notebook.iss`) version synced to `0.8.128`; `desktop/tests/test_smoke.py` and `desktop/tests/test_release_manifest.py` updated and passing (951 passed, 0 failed in `desktop/tests/`).
 - [x] **Order-dependent test cause.** `api/main.py:16` and `commands/__init__.py:30` call `apply_product_environment(os.environ)` at import, mirroring canonical settings into legacy alias names; a later `monkeypatch.delenv` on the canonical name leaves the mirror visible to `resolve_env`. Use the `unset_setting` fixture (`tests/conftest.py`) whenever a test needs a setting *absent*; a bare `delenv` of the canonical name is not enough once either module was imported.
 
 ### Recently Completed in v0.8.127
@@ -174,10 +185,9 @@ All gates are currently passing 100%:
 - Frontend: `cd frontend && npm run dev`.
 
 ### Next Recommended Areas to Explore
-1. **Make the full backend run a standing gate.** Until v0.8.128 only touched suites ran before a push, which is how 22 failures accumulated unnoticed. Add a `make test-backend` target (`.venv/bin/pytest tests -q -p no:cacheprovider`, ~5 min) and run it before every push, or at least once per version.
-2. **Pre-existing ruff `I001` in 12 untouched test files** (`tests/test_vault_git_sync.py`, `tests/test_reranker.py`, `tests/test_mcp_superpowers.py`, `tests/test_audio_dictate.py`, `tests/test_notebook_synthesis.py`, `tests/test_hardware_profiler.py`, `tests/test_source_resilient_ingest.py`, `tests/test_stream_keepalive_http.py`, `desktop/tests/test_llamacpp_engine_opts.py`, `desktop/tests/test_companion_draft.py`, `desktop/tests/test_reranker_sidecar.py`, …). `ruff check --fix` clears them; `ruff format --check` would also reformat `api/routers/notebooks.py` and `deeper_notebook/database/repository.py` (formatting is not a gate today — decide whether it should be).
-3. **Other tests that `delenv` only a canonical name.** The six fixed in v0.8.128 were the ones that failed; any test asserting a setting is *absent* has the same latent trap (`grep -n 'delenv("DEEPER_NOTEBOOK_' tests`). Either migrate them to `unset_setting`, or add an autouse fixture that snapshots and restores the product names in `os.environ` per test — but keep the integration session fixture's `SURREAL_*` writes intact (`tests/integration/conftest.py` sets them for the session and restores them itself).
-4. **v0.8.128 frontend changes were verified by vitest only.** The Quick podcast dialog scoping (`f1fd99cd`) and the Settings worker row (`10ab30c0`) have unit coverage but were not driven live in the browser this round (the v0.8.127 heartbeat/wizard row was). Start the stack (section 5 above), open a source card → Quick podcast, and confirm the created episode carries the notebook id; stop the worker and confirm the Settings observability card flips to offline with the start hint.
+1. **v0.8.128 frontend changes live verification in browser.** The Quick podcast dialog scoping (`f1fd99cd`) and the Settings worker row (`10ab30c0`) have 100% passing unit & component coverage (vitest 266/266 files). Start the stack (section 5 above), open a source card → Quick podcast, and confirm the created episode carries the notebook id; stop the worker and confirm the Settings observability card flips to offline with the start hint.
+2. **Other tests that `delenv` only a canonical name.** The six fixed in v0.8.128 were the ones that failed in suite order; any test asserting a setting is *absent* has the same latent trap (`grep -n 'delenv("DEEPER_NOTEBOOK_' tests`). As tests are updated, migrate them to `unset_setting` fixture from `conftest.py`.
+3. **SurrealDB integration test suite.** Integration tests in `tests/integration/` can be run with a running SurrealDB container (`docker compose up -d surrealdb && SURREAL_INTEGRATION=1 uv run pytest tests/integration/ -q`).
 
 ---
 

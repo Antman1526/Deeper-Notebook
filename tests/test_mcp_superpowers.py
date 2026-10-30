@@ -1,9 +1,11 @@
 """Unit tests for Deeper Notebook MCP stdio client and FastMCP server tools."""
 
-import pytest
 from unittest.mock import AsyncMock, patch
-from deeper_notebook.mcp.client import MCPClient
+
+import pytest
+
 from deeper_notebook.mcp import server
+from deeper_notebook.mcp.client import MCPClient
 
 
 def test_mcp_client_stdio_dataclass_fields():

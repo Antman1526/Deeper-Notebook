@@ -1,3 +1,5 @@
+import { useTranslation } from '@/lib/hooks/use-translation'
+
 type SelectionSummary = {
   version?: number
   total_count?: number
@@ -29,6 +31,7 @@ export function EpisodeResearchReceipt({
   editorialBrief?: EditorialBrief | null
   modelPlanReceipts?: ModelPlanReceipt[]
 }) {
+  const { t } = useTranslation()
   const included = selectionSummary?.included_count ?? 0
   const total = selectionSummary?.total_count ?? 0
   const externalReadOnly = selectionSummary?.authority_counts?.external_read_only ?? 0
@@ -43,19 +46,20 @@ export function EpisodeResearchReceipt({
   }
 
   return (
-    <section aria-label="Research receipt" className="space-y-3 rounded-md border bg-muted/20 p-3">
+    <section aria-label={t('podcasts.episodeResearchReceipt.title')} className="space-y-3 rounded-md border bg-muted/20 p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h4 className="text-sm font-semibold text-foreground">Research receipt</h4>
-        <span className="text-xs text-muted-foreground">Phase 2 provenance</span>
+        <h4 className="text-sm font-semibold text-foreground">{t('podcasts.episodeResearchReceipt.title')}</h4>
+        {/* v0.8.130 — was "Phase 2 provenance": an internal roadmap label is not user-facing copy. */}
+        <span className="text-xs text-muted-foreground">{t('podcasts.episodeResearchReceipt.provenance')}</span>
       </div>
       {selectionSummary ? (
         <div className="space-y-1 text-xs text-muted-foreground">
-          <p>{included} of {total} sources included</p>
-          <p>{externalReadOnly} external read-only{appOwned > 0 ? ` · ${appOwned} app-owned` : ''}</p>
+          <p>{t('podcasts.episodeResearchReceipt.sourcesIncluded', { included, total })}</p>
+          <p>{appOwned > 0 ? t('podcasts.episodeResearchReceipt.externalReadOnlyWithAppOwned', { external: externalReadOnly, appOwned }) : t('podcasts.episodeResearchReceipt.externalReadOnly', { external: externalReadOnly })}</p>
         </div>
       ) : null}
-      {fingerprint ? <p className="font-mono text-xs text-muted-foreground">Selection {fingerprint}</p> : null}
-      {routeCount > 0 ? <p className="text-xs text-muted-foreground">{routeCount} local route{routeCount === 1 ? '' : 's'} recorded</p> : null}
+      {fingerprint ? <p className="font-mono text-xs text-muted-foreground">{t('podcasts.episodeResearchReceipt.selection', { fingerprint })}</p> : null}
+      {routeCount > 0 ? <p className="text-xs text-muted-foreground">{routeCount === 1 ? t('podcasts.episodeResearchReceipt.routesRecordedOne', { count: routeCount }) : t('podcasts.episodeResearchReceipt.routesRecordedOther', { count: routeCount })}</p> : null}
       {editorialBrief ? (
         <div className="space-y-1 text-xs text-muted-foreground">
           {editorialBrief.central_question ? <p>{editorialBrief.central_question}</p> : null}

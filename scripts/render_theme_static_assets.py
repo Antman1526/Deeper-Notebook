@@ -17,6 +17,9 @@ CSS_PATHS = (
 )
 CATALOG_PATH = ROOT / "desktop/first_run/static/theme-catalog.generated.js"
 THEME_META = {
+    # v0.8.130 — the indigo brand pair leads the featured group.
+    "gemini-forward-light": ("Gemini-Forward Light", "featured"),
+    "gemini-forward-dark": ("Gemini-Forward Dark", "featured"),
     "research-core-dark": ("Research Core Dark", "featured"),
     "research-core-light": ("Research Core Light", "featured"),
     "deep-ocean": ("Deep Ocean", "dark"),

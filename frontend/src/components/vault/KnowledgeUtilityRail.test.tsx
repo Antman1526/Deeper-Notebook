@@ -19,9 +19,9 @@ describe('KnowledgeUtilityRail', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Bookmarks' }))
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.navigation.bookmarks' }))
 
-    expect(screen.getByRole('navigation', { name: 'Bookmarks' })).toBeVisible()
+    expect(screen.getByRole('navigation', { name: 'knowledge.navigation.bookmarks' })).toBeVisible()
     expect(onNavigationChange).toHaveBeenCalledWith({ utilityMode: 'bookmarks' })
     expect(activeDocumentId).toBe('knowledge_engine_document:research')
   })
@@ -39,8 +39,8 @@ describe('KnowledgeUtilityRail', () => {
       />,
     )
 
-    expect(screen.getByRole('button', { name: 'Bookmark Current Target' })).toBeDisabled()
-    expect(screen.getByText('The active page has no unified document ID.')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'knowledge.knowledgeUtilityRail.bookmarkCurrentTarget' })).toBeDisabled()
+    expect(screen.getByText('knowledge.knowledgeUtilityRail.noDocumentId')).toBeVisible()
   })
 
   it('restores prior pointer focus while keeping keyboard activation on the rail control', async () => {
@@ -48,7 +48,7 @@ describe('KnowledgeUtilityRail', () => {
     document.body.append(invoker)
     invoker.focus()
     render(<KnowledgeUtilityRail mode="sources" sidebarVisible canBookmarkCurrent onNavigationChange={vi.fn()} onToday={vi.fn()} onRandomNote={vi.fn()} onBookmarkCurrent={vi.fn()} />)
-    const bookmarks = screen.getByRole('button', { name: 'Bookmarks' })
+    const bookmarks = screen.getByRole('button', { name: 'knowledge.navigation.bookmarks' })
 
     fireEvent.pointerDown(bookmarks)
     fireEvent.click(bookmarks)

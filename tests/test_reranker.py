@@ -1,7 +1,8 @@
 """Unit tests for the cross-encoder reranker module."""
 
-import pytest
 import httpx
+import pytest
+
 from deeper_notebook.search.reranker import extract_document_text, rerank_results
 
 

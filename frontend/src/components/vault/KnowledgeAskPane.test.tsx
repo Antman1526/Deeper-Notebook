@@ -82,13 +82,13 @@ describe('KnowledgeAskPane', () => {
     render(<KnowledgeAskPane selectedDocumentIds={['knowledge_engine_document:plan']} />)
 
     expect(ask.sendAsk).not.toHaveBeenCalled()
-    expect(screen.getByText('1 selected document')).toBeInTheDocument()
+    expect(screen.getByText('knowledge.knowledgeAskPane.selectedDocumentOne')).toBeInTheDocument()
   })
 
   it('shows the active Research Chat route without executing it', () => {
     routePlan.data = { role: 'research_chat', outcome: 'ready', selected_model_id: 'qwen-local', selected_provider: 'mlx', resource_tier: 'standard', selection_source: 'automatic', route_reason: 'Verified local route.', escalation_model_ids: [], blocked_reason: null, selected_fingerprint: 'fingerprint', selected_measurements: {} }
     render(<KnowledgeAskPane selectedDocumentIds={[]} />)
-    expect(screen.getByText('Research Chat route')).toBeInTheDocument()
+    expect(screen.getByText('knowledge.knowledgeAskPane.researchChatRoute')).toBeInTheDocument()
     expect(screen.getByText('qwen-local')).toBeInTheDocument()
     expect(ask.sendAsk).not.toHaveBeenCalled()
   })
@@ -106,20 +106,20 @@ describe('KnowledgeAskPane', () => {
   it('fails closed instead of sending a selected-source question through global Ask', () => {
     render(<KnowledgeAskPane selectedDocumentIds={['knowledge_engine_document:plan']} />)
 
-    fireEvent.change(screen.getByLabelText('Question for selected knowledge'), {
+    fireEvent.change(screen.getByLabelText('knowledge.knowledgeAskPane.questionLabel'), {
       target: { value: 'What changed?' },
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Ask selected knowledge' }))
+    fireEvent.click(screen.getByRole('button', { name: 'knowledge.knowledgeAskPane.askSelected' }))
 
     expect(ask.sendAsk).not.toHaveBeenCalled()
-    expect(screen.getByText('Scoped Ask is unavailable until selection-aware chat is available.')).toBeInTheDocument()
+    expect(screen.getByText('knowledge.knowledgeAskPane.scopedUnavailable')).toBeInTheDocument()
   })
 
   it('disables Ask with the returned readiness reason', () => {
     render(<KnowledgeAskPane selectedDocumentIds={[]} readinessReason="Local research model is unavailable" />)
 
     expect(screen.getByText('Local research model is unavailable')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Ask selected knowledge' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'knowledge.knowledgeAskPane.askSelected' })).toBeDisabled()
   })
 
   it('uses the existing local health detail as the rendered disable reason', () => {
@@ -131,7 +131,7 @@ describe('KnowledgeAskPane', () => {
     render(<KnowledgeAskPane selectedDocumentIds={['knowledge_engine_document:plan']} />)
 
     expect(screen.getByText('Configured local research model is unavailable')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Ask selected knowledge' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'knowledge.knowledgeAskPane.askSelected' })).toBeDisabled()
   })
 
   it('does not treat a healthy embedding model as readiness for the configured chat model', () => {
@@ -146,7 +146,7 @@ describe('KnowledgeAskPane', () => {
     render(<KnowledgeAskPane selectedDocumentIds={['knowledge_engine_document:plan']} />)
 
     expect(screen.getByText('Configured chat model is unavailable')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Ask selected knowledge' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'knowledge.knowledgeAskPane.askSelected' })).toBeDisabled()
   })
 
   it('joins the default model record to healthy local health by credential ID, not display name', () => {
@@ -166,6 +166,6 @@ describe('KnowledgeAskPane', () => {
     render(<KnowledgeAskPane selectedDocumentIds={['knowledge_engine_document:plan']} />)
 
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Ask selected knowledge' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'knowledge.knowledgeAskPane.askSelected' })).toBeDisabled()
   })
 })

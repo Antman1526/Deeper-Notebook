@@ -1,3 +1,4 @@
+import { markErrorReported } from '@/lib/api/client'
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query'
 import { useCallback, useMemo } from 'react'
 import { sourcesApi } from '@/lib/api/sources'
@@ -362,6 +363,11 @@ export function useAddSourcesToNotebook() {
       const results = await Promise.allSettled(
         sourceIds.map(sourceId => notebooksApi.addSource(notebookId, sourceId))
       )
+      // v0.8.130 — onSuccess reports partial failures in one toast; claim each
+      // rejection so the API client does not add a generic toast per source.
+      for (const result of results) {
+        if (result.status === 'rejected') markErrorReported(result.reason)
+      }
 
       // Count successes and failures
       const successes = results.filter(r => r.status === 'fulfilled').length

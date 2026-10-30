@@ -17,6 +17,8 @@ vi.mock('@/lib/hooks/use-create-dialogs', () => ({
 vi.mock('@/components/chat/LocalModelHealthBadges', () => ({
   LocalModelHealthBadges: () => <div data-testid="local-model-health" />,
 }))
+// The phone-bar model-health link reads the same health query; stubbed like the rail's badges.
+vi.mock('@/components/deeper-notebook/shell/ModelHealthIndicator', () => ({ ModelHealthIndicator: () => null }))
 vi.mock('@/components/deeper-notebook/ThemeSwitcher', () => ({
   ThemeSwitcher: () => <button type="button">Theme</button>,
 }))
@@ -62,14 +64,15 @@ describe('Luminous Folio navigation parity contract', () => {
     process.env.NEXT_PUBLIC_DN_STUDY_WORKBENCH = '1'
     render(<WorkspaceAppShell><div data-testid="page-slot" /></WorkspaceAppShell>)
 
+    // v0.8.130 — Phase 3b: the rail lists eight destinations and Settings (the settings
+    // family nests under Settings on its own routes; the e2e shell spec covers that).
+    // The skip link comes first, then the logo (Phase 4b: a link home).
     const expectedRoutes = [
-      '/', '/sources', '/capture', '/notebooks', '/knowledge', '/search',
-      '/studio', '/podcasts', '/study', '/settings/api-keys',
-      '/transformations', '/settings', '/settings/mcp',
-      '/settings/launcher-prefs', '/advanced',
+      '/', '/notebooks', '/sources', '/capture', '/knowledge', '/search',
+      '/studio', '/podcasts', '/study', '/settings',
     ]
     expect(screen.getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual(
-      expectedRoutes.slice(1),
+      ['#dn-main', ...expectedRoutes],
     )
     const guidedDestinations = [...expectedRoutes, '/settings/local-models']
     expect(guidedDestinations.map((href) => document.querySelectorAll(`[data-guided-tip-anchor="${href}"]`).length))

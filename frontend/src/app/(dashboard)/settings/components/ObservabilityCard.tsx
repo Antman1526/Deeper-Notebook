@@ -29,7 +29,6 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { useObservabilitySettings } from '@/lib/hooks/use-settings'
 import { useDeepHealth } from '@/lib/hooks/use-deep-health'
 import { useTranslation } from '@/lib/hooks/use-translation'
-import { cn } from '@/lib/utils'
 
 // Small helper to render an env-derived value with optional unit
 // suffix. Centralized so we can keep the visual style consistent
@@ -143,13 +142,10 @@ export function ObservabilityCard() {
               label={t('setupWizard.subsystems.worker')}
               description={t('settings.observability.workerDesc')}
               customValue={
+                // v0.8.130 — online state uses the Badge success variant (UI audit Phase 1)
                 <Badge
-                  variant={isWorkerOnline ? 'default' : 'destructive'}
-                  className={cn(
-                    'font-mono text-xs',
-                    isWorkerOnline &&
-                      'bg-emerald-600 hover:bg-emerald-600 text-white dark:bg-emerald-500 dark:hover:bg-emerald-500'
-                  )}
+                  variant={isWorkerOnline ? 'success' : 'destructive'}
+                  className="font-mono text-xs"
                 >
                   {isWorkerOnline
                     ? activeWorkersCount && activeWorkersCount > 1

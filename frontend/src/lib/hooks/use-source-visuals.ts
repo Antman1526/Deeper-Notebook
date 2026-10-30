@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient, type MutateOptions } from '@tanstack/react-query'
 
 import { sourceVisualsApi } from '@/lib/api/source-visuals'
-import { QUERY_KEYS, shouldRetryMutation } from '@/lib/api/query-client'
+import { QUERY_KEYS, shouldRetryIdempotentMutation } from '@/lib/api/query-client'
 import { sourcesApi } from '@/lib/api/sources'
 import { isVisualSystemV2Enabled } from '@/lib/features'
 import { useSourceVisualsEnabled } from '@/lib/features-client'
@@ -18,7 +18,9 @@ function useSourceVisualMutation(operation: 'refresh' | 'remove') {
   const mutation = useMutation<SourceVisualJob, unknown, VisualMutationVariables>({
     mutationFn: ({ sourceId, requestId: stableRequestId }) =>
       sourceVisualsApi[operation](sourceId, stableRequestId),
-    retry: shouldRetryMutation,
+    // v0.8.130 — the stable requestId is an idempotency key, so a lost POST may be
+    // repeated (the default policy never repeats a POST).
+    retry: shouldRetryIdempotentMutation,
     onSuccess: async (_result, { sourceId }) => {
       await Promise.all([
         client.invalidateQueries({ predicate: query => query.queryKey[0] === 'sources' && (query.queryKey[1] === 'list' || query.queryKey[1] === 'infinite' || (query.queryKey[1] === 'visual' && query.queryKey[2] === 'recent')) }),

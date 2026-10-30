@@ -27,19 +27,23 @@ const ResizablePanel = ResizablePrimitive.Panel
 
 function ResizableHandle({
   withHandle,
+  onReset,
   className,
   ...props
 }: React.ComponentProps<typeof ResizablePrimitive.PanelResizeHandle> & {
   withHandle?: boolean
+  /** v0.8.130 — double-click puts the columns back to their default widths. */
+  onReset?: () => void
 }) {
   return (
     <ResizablePrimitive.PanelResizeHandle
+      onDoubleClick={onReset}
       className={cn(
-        'group relative flex w-px items-center justify-center bg-border/80 transition-all duration-200',
+        'group relative flex w-px items-center justify-center bg-border/80 transition-colors duration-200',
         'after:absolute after:inset-y-0 after:left-1/2 after:w-3.5 after:-translate-x-1/2',
-        'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
-        'data-[resize-handle-state=hover]:bg-primary/70 data-[resize-handle-state=hover]:shadow-[0_0_8px_rgba(45,212,191,0.3)]',
-        'data-[resize-handle-state=drag]:bg-primary data-[resize-handle-state=drag]:shadow-[0_0_14px_rgba(45,212,191,0.5)]',
+        // v0.8.130 — the teal glows were the old brand hue hard-coded into every theme.
+        'data-[resize-handle-state=hover]:bg-primary/70',
+        'data-[resize-handle-state=drag]:bg-primary',
         'data-[panel-group-direction=vertical]:h-px data-[panel-group-direction=vertical]:w-full',
         'data-[panel-group-direction=vertical]:after:left-0 data-[panel-group-direction=vertical]:after:h-3.5 data-[panel-group-direction=vertical]:after:w-full data-[panel-group-direction=vertical]:after:-translate-y-1/2 data-[panel-group-direction=vertical]:after:translate-x-0',
         className
@@ -47,8 +51,24 @@ function ResizableHandle({
       {...props}
     >
       {withHandle && (
-        <div className="z-10 flex h-7 w-4 items-center justify-center rounded-full border border-border/70 bg-card/90 backdrop-blur-md shadow-xs transition-all duration-200 group-hover:scale-110 group-hover:border-primary/50 group-hover:bg-card active:scale-95">
-          <GripVertical className="h-3 w-3 text-muted-foreground/60 transition-colors group-hover:text-primary" />
+        // v0.8.130 — the grip answers the handle's own hover and drag states, which
+        // cover its wider hit area: it barely changed unless the pointer sat exactly
+        // on the 1px line, and gave no sign at all while dragging.
+        <div
+          data-dn-resize-grip=""
+          className={cn(
+            'z-10 flex h-8 w-4 items-center justify-center rounded-full border border-border bg-card shadow-xs transition-[background-color,border-color,color] duration-200',
+            'group-hover:border-primary/50 group-data-[resize-handle-state=hover]:border-primary/60',
+            'group-data-[resize-handle-state=drag]:border-primary group-data-[resize-handle-state=drag]:bg-primary',
+          )}
+        >
+          <GripVertical
+            className={cn(
+              'h-3 w-3 text-muted-foreground transition-colors',
+              'group-hover:text-primary group-data-[resize-handle-state=hover]:text-primary',
+              'group-data-[resize-handle-state=drag]:text-primary-foreground',
+            )}
+          />
         </div>
       )}
     </ResizablePrimitive.PanelResizeHandle>
