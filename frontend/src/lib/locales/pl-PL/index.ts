@@ -654,7 +654,7 @@ export const plPL = {
     askBeta: "Pytaj (beta)",
     search: "Szukaj",
     askYourKb: "Zapytaj swoją bazę wiedzy (beta)",
-    askYourKbDesc: "Model LLM odpowie na Twoje pytanie na podstawie dokumentów w Twojej bazie wiedzy.",
+    askYourKbDesc: "Odpowiedzi opierają się na dokumentach z Twojej bazy wiedzy.",
     question: "Pytanie",
     enterQuestionPlaceholder: "Wpisz pytanie...",
     pressToSubmit: "Naciśnij Cmd/Ctrl+Enter, aby wysłać",

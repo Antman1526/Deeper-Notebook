@@ -650,7 +650,7 @@ export const bnIN = {
     askBeta: "জিজ্ঞাসা (বেটা)",
     search: "অনুসন্ধান",
     askYourKb: "আপনার জ্ঞানভান্ডার জিজ্ঞাসা করুন (বেটা)",
-    askYourKbDesc: "LLM আপনার জ্ঞানভান্ডারের ভিত্তিতে আপনার প্রশ্নের উত্তর দেবে।",
+    askYourKbDesc: "উত্তরগুলি আপনার জ্ঞানভান্ডারের নথি থেকে আসে।",
     question: "প্রশ্ন",
     enterQuestionPlaceholder: "আপনার প্রশ্ন লিখুন...",
     pressToSubmit: "জমা দিতে Cmd/Ctrl+Enter চাপুন",

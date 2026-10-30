@@ -181,9 +181,10 @@ function LocalModelsWorkspace() {
     }
   }
 
+  // v0.8.130 — a section heading under the letterhead, sized like the API keys page's.
   return <div className="mx-auto max-w-6xl space-y-6 px-6 py-8 sm:px-8">
     <header className="flex flex-wrap items-start justify-between gap-4">
-      <div className="max-w-3xl space-y-2"><h2 className="flex items-center gap-3 text-3xl font-semibold"><Cpu className="h-7 w-7" />{t('settings.localModelsPage.title')}</h2><p className="text-muted-foreground">{t('settings.localModelsPage.subtitle')}</p></div>
+      <div className="max-w-3xl space-y-2"><h2 className="flex items-center gap-2 text-xl font-semibold tracking-tight"><Cpu className="h-5 w-5" />{t('settings.localModelsPage.title')}</h2><p className="text-muted-foreground">{t('settings.localModelsPage.subtitle')}</p></div>
       {inventory.isFetching && <span className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />{t('settings.localModelsPage.refreshing')}</span>}
     </header>
 

@@ -665,7 +665,7 @@ export const enUS = {
     askBeta: "Ask (beta)",
     search: "Search",
     askYourKb: "Ask your knowledge base (beta)",
-    askYourKbDesc: "The LLM will answer your query based on the documents in your knowledge base.",
+    askYourKbDesc: "Answers come from the documents in your knowledge base.",
     question: "Question",
     enterQuestionPlaceholder: "Enter your question...",
     pressToSubmit: "Press Cmd/Ctrl+Enter to submit",

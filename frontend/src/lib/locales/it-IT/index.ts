@@ -652,7 +652,7 @@ export const itIT = {
     askBeta: "Chiedi (beta)",
     search: "Cerca",
     askYourKb: "Chiedi alla tua base di conoscenza (beta)",
-    askYourKbDesc: "L'LLM risponderà alla tua domanda basandosi sui documenti nella tua base di conoscenza.",
+    askYourKbDesc: "Le risposte si basano sui documenti della tua base di conoscenza.",
     question: "Domanda",
     enterQuestionPlaceholder: "Inserisci la tua domanda...",
     pressToSubmit: "Premi Cmd/Ctrl+Invio per inviare",

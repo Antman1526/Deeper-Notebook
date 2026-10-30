@@ -652,7 +652,7 @@ export const esES = {
     askBeta: "Preguntar (beta)",
     search: "Buscar",
     askYourKb: "Pregunta a tu base de conocimiento (beta)",
-    askYourKbDesc: "El LLM responderá tu consulta basándose en los documentos de tu base de conocimiento.",
+    askYourKbDesc: "Las respuestas se basan en los documentos de tu base de conocimiento.",
     question: "Pregunta",
     enterQuestionPlaceholder: "Escribe tu pregunta...",
     pressToSubmit: "Presiona Cmd/Ctrl+Enter para enviar",

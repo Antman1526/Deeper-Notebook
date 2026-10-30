@@ -652,7 +652,7 @@ export const frFR = {
     askBeta: "Demander (bêta)",
     search: "Recherche",
     askYourKb: "Interroger votre base de connaissances (bêta)",
-    askYourKbDesc: "Le LLM répondra à votre requête en se basant sur les documents de votre base de connaissances.",
+    askYourKbDesc: "Les réponses s'appuient sur les documents de votre base de connaissances.",
     question: "Question",
     enterQuestionPlaceholder: "Entrez votre question...",
     pressToSubmit: "Appuyez sur Cmd/Ctrl+Entrée pour envoyer",

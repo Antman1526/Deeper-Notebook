@@ -650,7 +650,7 @@ export const ruRU = {
     askBeta: "Запрос (бета)",
     search: "Поиск",
     askYourKb: "Спросите базу знаний (бета)",
-    askYourKbDesc: "LLM ответит на ваш запрос на основе документов в базе знаний.",
+    askYourKbDesc: "Ответы основаны на документах из вашей базы знаний.",
     question: "Вопрос",
     enterQuestionPlaceholder: "Введите ваш вопрос...",
     pressToSubmit: "Нажмите Cmd/Ctrl+Enter для отправки",

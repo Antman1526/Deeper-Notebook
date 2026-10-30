@@ -219,6 +219,16 @@
     aspect-ratio: auto;
     min-height: 8rem;
   }
+
+  /* v0.8.130 — without a cover image the cover IS the title and status: in the
+     6rem column they broke mid-word. Full width; the actions go below. */
+  .dn-source-cover--card:has(.dn-source-cover__visual--fallback) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dn-source-cover--card .dn-source-cover__visual--fallback {
+    min-height: 0;
+  }
 }
 
 @media (max-height: 42rem) {

@@ -164,6 +164,9 @@ describe('LocalModelsPage', () => {
     expect(container).toHaveTextContent('settings.localModelsPage.title')
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
     expect(screen.getByRole('heading', { level: 2, name: 'settings.localModelsPage.title' })).toBeInTheDocument()
+    // v0.8.130 — the page letterhead already says "Local models" in display type;
+    // this is a section heading under it, not a second page title.
+    expect(screen.getByRole('heading', { level: 2, name: 'settings.localModelsPage.title' })).not.toHaveClass('text-3xl')
     expect(screen.getByTestId('model-inventory')).toHaveAttribute('data-models', '1')
     expect(screen.getByTestId('role-benchmark-panel')).toHaveAttribute('data-routes', '0')
     expect(screen.getByTestId('role-benchmark-panel')).toHaveAttribute('data-benchmark', 'benchmark-1')

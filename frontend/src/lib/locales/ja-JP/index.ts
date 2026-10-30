@@ -650,7 +650,7 @@ export const jaJP = {
     askBeta: "質問（ベータ）",
     search: "検索",
     askYourKb: "ナレッジベースに質問（ベータ）",
-    askYourKbDesc: "LLMがナレッジベース内のドキュメントに基づいてクエリに回答します。",
+    askYourKbDesc: "回答はナレッジベース内のドキュメントに基づきます。",
     question: "質問",
     enterQuestionPlaceholder: "質問を入力...",
     pressToSubmit: "Cmd/Ctrl+Enterで送信",
